@@ -1,6 +1,6 @@
 [tools]
 zig = "0.16.0"
-lefthook = "2.1.10"
+lefthook = "2.1.11"
 
 [hooks]
 postinstall = "lefthook install"
