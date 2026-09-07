@@ -4,24 +4,40 @@ rust = "1.98.1"
 
 [tasks."benchmark:smoke"]
 description = "建盘基准冒烟检查；不形成正式性能基线"
-run = "python3 scripts/benchmark.py smoke"
+run = "cargo run --quiet --manifest-path tools/xtask/Cargo.toml --locked -- benchmark smoke"
 
 [tasks."benchmark:calibrate"]
 description = "本机重复建盘测量；默认 20 轮"
-run = "python3 scripts/benchmark.py calibrate"
+run = "cargo run --quiet --manifest-path tools/xtask/Cargo.toml --locked -- benchmark calibrate"
 
 [tasks."benchmark:read:smoke"]
 description = "读取基准冒烟与元数据校验；不形成正式性能基线"
-run = "python3 scripts/read_benchmark.py smoke"
+run = "cargo run --quiet --manifest-path tools/xtask/Cargo.toml --locked -- benchmark-read smoke"
 
 [tasks."benchmark:read:calibrate"]
 description = "读取基准独立校准；20 轮，保持与建盘基准分离"
-run = "python3 scripts/read_benchmark.py calibrate"
+run = "cargo run --quiet --manifest-path tools/xtask/Cargo.toml --locked -- benchmark-read calibrate"
 
 [tasks."check:package"]
 description = "验证打包产物的独立 Rust 消费端；不发布"
-run = "python3 scripts/check_package.py"
+run = "cargo run --quiet --manifest-path tools/xtask/Cargo.toml --locked -- check-package"
+
+[tasks."check:tools"]
+description = "Rust 开发工具的格式、Clippy 与快速测试；不运行真实基准负载"
+run = [
+  "cargo fmt --manifest-path tools/xtask/Cargo.toml -- --check",
+  "cargo clippy --manifest-path tools/xtask/Cargo.toml --all-targets --locked -- -D warnings",
+  "cargo test --manifest-path tools/xtask/Cargo.toml --locked",
+]
+
+[tasks."check:tools:e2e"]
+description = "串行验证两套真实基准冒烟与输出合同；不形成性能基线"
+run = "cargo test --manifest-path tools/xtask/Cargo.toml --locked --test cli -- --ignored --test-threads=1"
 
 [tasks."check:msrv"]
-description = "使用最低 Rust 1.98.0 验证核心测试，不改变默认工具链"
-run = "mise exec rust@1.98.0 -- cargo test --workspace --all-features --locked --target-dir target/msrv"
+description = "使用最低 Rust 1.98.0 验证核心与工具，不改变默认工具链"
+run = [
+  "mise exec rust@1.98.0 -- cargo test --workspace --all-features --locked --target-dir target/msrv",
+  "mise exec rust@1.98.0 -- cargo test --manifest-path tools/xtask/Cargo.toml --locked --target-dir target/msrv/xtask",
+  "mise exec rust@1.98.0 -- cargo test --manifest-path tools/xtask/Cargo.toml --locked --target-dir target/msrv/xtask --test cli -- --ignored --test-threads=1",
+]

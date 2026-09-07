@@ -60,12 +60,10 @@ jobs:
           mise exec -- cargo build -p ziwei --locked
           mise exec -- rustdoc --edition 2024 --test README.md --extern ziwei=target/debug/libziwei.rlib -L dependency=target/debug/deps
           mise exec -- rustdoc --edition 2024 --test docs/architecture/rust-package-design.md --extern ziwei=target/debug/libziwei.rlib -L dependency=target/debug/deps
-      - name: Benchmark recorder tests
-        run: mise exec -- python3 -m unittest discover -s scripts -p 'test_*.py'
-      - name: Construction smoke only
-        run: mise run benchmark:smoke
-      - name: Read-path smoke only
-        run: mise run benchmark:read:smoke
+      - name: Rust development tools
+        run: mise run check:tools
+      - name: Development tools end-to-end smoke only
+        run: mise run check:tools:e2e
       - name: Verify package without publishing
         run: mise run check:package
 

@@ -15,9 +15,17 @@ mise run benchmark:smoke
 mise run benchmark:calibrate -- --runs 20
 ```
 
-结果放入 `target/benchmarks/<自动记录 ID>/`，包含逐轮 JSON、汇总 JSON、中文说明和每轮中位数 SVG。既有记录不覆盖。格式或样本错误会失败；测量期间源码变化会拒绝生成有效汇总。
+结果放入 `target/benchmarks/<自动记录 ID>/`，包含构建输出、逐轮原始 CSV／JSON、汇总 JSON、中文说明和每轮中位数 SVG。既有记录不覆盖。原始 stdout／stderr 在解释输出前保存；参数与基线预检通过后，构建、执行、解析、复核或输出失败会留下 `failure.json`，记录失败阶段、命令、退出码及错误，不生成有效汇总。失败记录不能作为正式基线。
+
+有效报告 JSON 在控制台写入及刷新成功后最后创建；stdout 管道关闭等写入错误按正常错误处理并留证，不通过 panic 退出。环境复核及正式基线的 Git 复核命令也进入 `commands`，以 `verify` 阶段保存退出码和原始 stdout／stderr；预检仍在记录目录创建前进行。
 
 `suite_id`、`suite_version`、`contract_fingerprint` 固定比较身份；指纹涵盖语料、计时实现、记录器和 Cargo 配置。源码另有指纹，所以允许在相同测量合同下对比不同实现。变更语料或计时方式时应递增套件版本；这不是排盘规则版本。
+
+两套记录器由独立 Rust 开发工具 `tools/xtask` 实现，通过上述 mise 任务调用。`mise run check:tools` 执行格式、Clippy 和快速测试，覆盖统计、CSV 合同、基线比较、失败留证及命令行；默认不运行真实基准负载。`mise run check:tools:e2e` 单独串行运行两套真实冒烟，并校验输出合同；Unix 平台额外以关闭 stdout 和复核命令非零退出验证失败留证。这些故障测试同样默认忽略，不用于性能结论。
+
+`contract_fingerprint` 只包含测量与记录路径实际使用的工具源码（`lib.rs`、`main.rs`、`benchmark.rs`、`record.rs`、`support.rs`）、对应套件负载、核心与工具 manifest、工具 lockfile；打包检查的 `package.rs` 不参与比较身份。共享依赖或共享工具文件的变更仍保守地使两套合同失配。另以 `recorder_fingerprint` 记录全部工具源码、工具 manifest 与 lockfile，供追溯，不作为比较门槛。因此仅修改打包检查源码会更新追溯指纹，不会使测量合同失配。
+
+迁移前及本次指纹策略变更前的旧记录不能直接作为新工具的比较基线，需重新校准和登记。读取计时协议仍为下述 version 2；construction-120 的负载、CSV 和 version 1 不变。统计内部使用明确的 `Summary` 类型，既有 JSON 统计字段及算法保持不变。记录 ID 是不透明标识，时间读取 `observed_at`，不从目录名推导。
 
 ## 正式基线与比较
 
@@ -30,13 +38,15 @@ mise run benchmark:calibrate -- --runs 20 --baseline target/benchmarks/<记录 I
 
 比较时也需设置与基线相同的 `ZIWEI_BENCH_RUNNER`。环境、工具链、套件指纹、轮数不一致，或基线不是干净状态的正式记录，一律拒绝。仅当人工审定后，才添加 `--max-regression 0.15` 之类的明确阈值；超出时命令退出非零，同时保留报告。
 
+环境身份包含当前 profile 的配置、`bench` 继承的 `CARGO_PROFILE_RELEASE_*`、增量编译和目标 rustflags／linker／runner 等覆盖项；测量结束后重新采集并比较，不缓存复核结果。相关编译变量含非 UTF-8 值时明确报错；无关变量不会使记录器崩溃。
+
 当前未提交工作树产生的报告只能标为 `provisional`，不能晋升为正式基线。不得为了采集基线擅自提交或清理用户的改动。CPU 型号和 runner ID 会记录在本地报告中，对外分享前应检查。
 
-共享 GitHub runner 对 construction-120 与 read-path-512 都只跑 smoke，不作性能回归门禁；两套 smoke 仅在 Ubuntu 的 `quality` job 串行执行，不在平台矩阵中重复计时。CI 配置采用 [actions/checkout](https://github.com/actions/checkout) 与 [jdx/mise-action](https://github.com/jdx/mise-action) 官方用法，并固定到完整提交 SHA；没有对应提交的实际运行结果，就不能声称远端 CI 已通过。
+共享 GitHub runner 对 construction-120 与 read-path-512 都只跑 smoke，不作性能回归门禁；两套 smoke 仅在 Ubuntu 的 `quality` job 串行执行，不在平台矩阵中重复计时。MSRV 与默认工具链各保留一次端到端验证：前者由 `check:msrv` 显式执行，后者由 `check:tools:e2e` 执行；不再从快速测试和额外 smoke 步骤重复运行同一工具链的负载。CI 配置采用 [actions/checkout](https://github.com/actions/checkout) 与 [jdx/mise-action](https://github.com/jdx/mise-action) 官方用法，并固定到完整提交 SHA；没有对应提交的实际运行结果，就不能声称远端 CI 已通过。
 
 ## 独立混合输入与读路径套件
 
-`benches/read_path.rs` 定义 `ziwei-read-path-512`（version 1、种子 `0x5a172026`），由 `examples/benchmark_read_path.rs` 运行。不修改上面的 construction-120 语料、Cargo 配置或记录器；两套结果不能互作基线。单版本运行器用于复跑与观察，不能将两个独立进程的一次结果当作严格配对实验。
+`benches/read_path.rs` 定义 `ziwei-read-path-512`（version 2、种子 `0x5a172026`），由 `examples/benchmark_read_path.rs` 运行。不修改上面的 construction-120 语料、计时或 Cargo 配置；两套结果不能互作基线。单版本运行器用于复跑与观察，不能将两个独立进程的一次结果当作严格配对实验。
 
 ```sh
 rtk mise exec -- cargo run --release -p ziwei --example benchmark_read_path -- --smoke
@@ -45,7 +55,11 @@ rtk mise exec -- cargo build --release -p ziwei --example benchmark_read_path
 rtk proxy /usr/bin/time -l target/release/examples/benchmark_read_path --memory
 ```
 
-输出文件通过 `create_new` 创建，已有文件会拒绝覆盖。CSV 头包含套件 ID、版本、每入口输入数和种子；其余行是 `sample,操作,轮次,样本,ns/单位`。完整运行 20 轮 × 31 样本，轮次间轮换操作顺序；smoke 为 1 × 1。该运行器不记录完整机器和源码指纹，不提供正式基线登记；保存结果时须同时记录主机、工具链、源码与负载哈希。配对实验可用同一宏对两个 crate 实例化负载；不得维护两份算法不同的基准实现。
+输出文件通过 `create_new` 创建，已有文件会拒绝覆盖。CSV 头包含套件 ID、版本、每入口输入数和种子；其余行是 `sample,操作,轮次,样本,批次数,操作数,总时长ns`。总时长保留整数纳秒，`xtask` 校验批次数和操作数后计算 `ns/单位 = 总时长 / 操作数`，不再从四舍五入的平均值反推批时长。完整运行 20 轮 × 31 样本，轮次间轮换操作顺序；smoke 为 1 × 1。该运行器不记录完整机器和源码指纹，不提供正式基线登记；保存结果时须同时记录主机、工具链、源码与负载哈希。配对实验可用同一宏对两个 crate 实例化负载；不得维护两份算法不同的基准实现。
+
+每个计时样本包含一批或多批下表中的原始负载。version 2 的完整测量仅对 `palace_star` 和 `self_transformations` 连续执行 16 批，分别计入 786,432 次查询和 524,288 次整盘遍历；其他十六项仍为单批。smoke 全部为单批，保持快速冒烟。每项全局预热仍为 5 批，不增加每轮额外预热，也不改变命中分布、迭代器消费或核心算法。
+
+较长批次用于减小短时扰动对平均值的影响，不保证波动消失。不要丢弃慢轮或通过放宽阈值掩盖波动；稳定性不足时，只作描述性结果，不用来判定几个百分点的性能变化。
 
 | 操作 | 语料及每批次数 | 单位与计时范围 |
 | --- | --- | --- |
@@ -60,13 +74,13 @@ rtk proxy /usr/bin/time -l target/release/examples/benchmark_read_path --memory
 
 出生语料含 `i32::MIN`、`i32::MAX`、零年与负数年份，直接参数保持有效六十甲子；两种入口各 512 盘。所有语料构造与合法性检查在计时外。峰值 RSS 模式在独立进程额外保留 32,768 张盘，包含分配器、运行时、预建语料和进程开销，不等于单个命盘占用或请求字节数。
 
-解读小差异前先做 A/A 对照，并分开检查建盘、查找、聚合、名称和完整生命周期。改变语料、屏障或计时边界后重做 A/A；不要将旧负载的有利结果迁移到新负载。两项 `benchmark_read_path` 测试验证语料与完整查询事实可重现，以及十八个负载的实际执行计数。
+解读小差异前先做 A/A 对照，并分开检查建盘、查找、聚合、名称和完整生命周期。改变语料、屏障或计时边界后重做 A/A；不要将旧负载的有利结果迁移到新负载。`benchmark_read_path` 测试验证语料与完整查询事实可重现、十八个负载的实际执行计数，以及完整测量与 smoke 的采样次数和批时长。
 
 ### 读取基准记录与比较
 
 原始 Rust 运行器保留上述 CSV 与计时合同；未知／重复参数、缺失输出路径和冲突模式会在创建负载前失败。`--memory` 不能与 `--smoke` 或 `--output` 同用，输出文件仍禁止覆盖。
 
-使用独立的 `scripts/read_benchmark.py` 自动记录环境与测量结果：
+使用 `tools/xtask` 的 `benchmark-read` 子命令自动记录环境与测量结果，对外仍通过 mise 调用：
 
 ```sh
 mise run benchmark:read:smoke
@@ -75,15 +89,15 @@ ZIWEI_BENCH_RUNNER=dedicated-mac-arm64 mise run benchmark:read:calibrate -- --re
 ZIWEI_BENCH_RUNNER=dedicated-mac-arm64 mise run benchmark:read:calibrate -- --baseline target/benchmarks/read-path/<记录 ID>/record.json
 ```
 
-校准保持一个进程内 20 轮 × 31 样本、逐轮旋转十八项操作的原合同，smoke 为 1 × 1；不同于 construction-120 的多进程重复，不能互作基线。每次在 `target/benchmarks/read-path/<记录 ID>/` 独占创建 `raw.csv` 和 `record.json`，不生成版本控制内的报告文档。
+校准保持一个进程内 20 轮 × 31 样本、逐轮旋转十八项操作，使用 version 2 的逐项批次协议，smoke 为 1 × 1；不同于 construction-120 的多进程重复，不能互作基线。每次在 `target/benchmarks/read-path/<记录 ID>/` 独占创建 `raw.csv` 和 `record.json`，不生成版本控制内的报告文档。
 
-记录包含套件／源码指纹、Git 状态、CPU、Rust/Cargo 版本、release 编译环境及 Cargo 配置哈希、原始样本、median、批平均值 P95 和跨轮 CV。配置只存哈希，不存原文；主机名和路径仍属于可能敏感的元数据，对外分享前检查。供电、系统负载等实验条件仍须人工控制。
+记录包含套件／源码／完整工具追溯指纹、Git 状态、CPU、Rust/Cargo 版本、release 编译环境及 Cargo 配置哈希、原始样本、median、批平均值 P95 和跨轮 CV。`commands` 记录构建、测量与复核命令、退出码及 stdout／stderr 文件位置；失败留证规则与建盘套件相同。`sampling` 按操作记录 `batches_per_sample`、`operations_per_sample`；`batch_elapsed_ns` 按轮次、操作和样本保存整数纳秒总时长；`rounds` 保留归一化后的平均耗时供汇总。配置只存哈希，不存原文；主机名、路径和错误输出仍可能包含敏感信息，对外分享前检查。供电、系统负载等实验条件仍须人工控制。
 
-读取基线同样要求干净工作树和显式 runner ID；负载、环境或样本数量不一致时拒绝比较，测量中源码／环境变化时只保留原始数据，不生成有效记录。`--max-regression` 只有在指定基线且给出有限非负比例时才可使用，默认没有性能门禁；超阈值保留记录并退出非零。共享 CI 仍只执行 smoke。
+读取基线同样要求干净工作树和显式 runner ID；负载、环境、样本数量或 `sampling` 不一致时拒绝比较。version 1 的 CSV 和基线不能用于 version 2；协议变更后的数字变化不是引擎优化收益。测量中源码／环境变化时只保留原始数据，不生成有效记录。`--max-regression` 只有在指定基线且给出有限非负比例时才可使用，默认没有性能门禁；超阈值保留记录并退出非零。共享 CI 仍只执行 smoke。
 
 ### 消费端编译配置实验（2026-09-07）
 
-本次在 Apple M4 Max、Rust 1.98.1 上，用独立消费端复用同一 read-path-512 运行器。每种配置串行执行三次全新 Cargo 目标目录构建（操作系统缓存未清空），再轮换配置顺序，各运行三组 20 轮 × 31 样本。以下为该消费端产物和批平均值的中位数，不是核心库单独的大小或正式性能基线；未提交源码、完整环境和原始 CSV 保存在本机 `target/` 实验目录。
+本次在 Apple M4 Max、Rust 1.98.1 上，用独立消费端复用当时的 read-path-512 version 1 运行器；以下历史结果不作为 version 2 的基线。每种配置串行执行三次全新 Cargo 目标目录构建（操作系统缓存未清空），再轮换配置顺序，各运行三组 20 轮 × 31 样本。以下为该消费端产物和批平均值的中位数，不是核心库单独的大小或正式性能基线；未提交源码、完整环境和原始 CSV 保存在本机 `target/` 实验目录。
 
 | 消费端配置 | 构建中位数 | 可执行文件字节数 | `palace_star` ns/查询 | 完整生命周期 ns/盘（Birth / Parameters） |
 | --- | --- | --- | --- | --- |

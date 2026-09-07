@@ -1,4 +1,4 @@
-//! 独立读路径基准；不改变 construction-120 的合同和记录器。
+//! 独立读路径基准；不改变 construction-120 的负载和计时。
 #[path = "../benches/read_path.rs"]
 mod read_path;
 read_path::define_workload!(current, ziwei);
@@ -82,13 +82,14 @@ fn main() -> std::io::Result<()> {
         for offset in 0..current::ENTRIES.len() {
             let entry = (round + offset) % current::ENTRIES.len();
             for sample in 0..samples {
-                let start = std::time::Instant::now();
-                let count = workload.execute(entry);
-                let elapsed = start.elapsed().as_nanos() as f64 / count as f64;
+                let measurement = workload.measure(entry, smoke);
                 writeln!(
                     output,
-                    "sample,{},{round},{sample},{elapsed:.6}",
-                    current::ENTRIES[entry]
+                    "sample,{},{round},{sample},{},{},{}",
+                    current::ENTRIES[entry],
+                    measurement.batches,
+                    measurement.operations,
+                    measurement.elapsed_ns
                 )?;
             }
         }

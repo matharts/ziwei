@@ -65,7 +65,12 @@ ziwei-wasm ───────────────────────
 │       │   └── fixtures/
 │       ├── benches/               # construction-120 与共享 read-path-512 负载
 │       └── examples/              # inspect 与独立读取基准运行器
-├── scripts/                       # Python 基准记录器及其测试
+├── tools/
+│   └── xtask/                     # 独立 Rust 开发工具 workspace；不参与核心库发布
+│       ├── Cargo.toml
+│       ├── Cargo.lock
+│       ├── src/                   # 统计合同、记录流程、打包消费端校验
+│       └── tests/                 # 记录器、命令行与解包测试
 ├── docs/
 │   ├── agents/
 │   ├── architecture/
@@ -75,7 +80,7 @@ ziwei-wasm ───────────────────────
 
 根 `Cargo.toml` 是 workspace 配置，不是业务包。它统一 edition 2024、MSRV 1.98、许可证、仓库地址与 lint；所有排盘领域实现和简繁名称均位于 `crates/ziwei`。当前没有根级 `tests/`、`fixtures/` 或 `bindings/` 目录。
 
-`mise.toml` 是工具链入口，当前固定 Rust `1.98.1` 和 Lefthook `2.1.12`。pre-commit 检查格式与暂存区空白，pre-push 执行测试和 Clippy；基准记录器另用本机 Python 3 标准库，不是 Rust 运行依赖。
+`mise.toml` 是工具链入口，当前固定 Rust `1.98.1` 和 Lefthook `2.1.12`。pre-commit 检查格式与暂存区空白，pre-push 执行测试和 Clippy；基准记录与打包校验由 `tools/xtask` 完成，不需要额外语言运行时。该目录通过自己的 `[workspace]`、`publish = false` 和 lockfile 隔离开发依赖，根 workspace 仍只有核心库；新增工具依赖不改变 `ziwei` 的运行依赖或公开 API。
 
 ### 未来形状
 
@@ -370,12 +375,14 @@ D-237 因而先落地紧凑 Star、保留 `Box<[Star]>`。补齐读取负载后�
 | 检查 | 环境 | 覆盖范围 |
 | --- | --- | --- |
 | `native-tests` | Ubuntu、macOS、Windows | workspace 全特性的 debug／release 测试，含公开接口、固定命例及 doctest |
-| `quality` | Ubuntu | 格式、Clippy、Rustdoc、Markdown 示例、Rust 1.98.0 测试、Python 记录器／命令行测试、两套基准 smoke、实际打包产物的独立消费端校验 |
+| `quality` | Ubuntu | 格式、Clippy、Rustdoc、Markdown 示例、Rust 1.98.0 测试、Rust 开发工具的格式／Clippy／记录器／命令行／解包测试、两套基准 smoke、实际打包产物的独立消费端校验 |
 | `verify` | Ubuntu | 汇总前两项；失败或跳过均拒绝通过，保留原有检查名称 |
 
-矩阵设置 `fail-fast: false`，一个平台失败不会取消其他平台的诊断。`check:msrv` 用 Rust 1.98.0 验证声明的最低版本，构建产物单独放入 `target/msrv`，不改变默认工具链。此处只覆盖原生 Rust，不表示 Node/Wasm 已验证。Actions 继续固定完整提交 SHA；mise 的 Rust 缓存按其[官方已知问题](https://github.com/jdx/mise-action/issues/215)关闭。本地 Lefthook 不增加检查或耗时。
+矩阵设置 `fail-fast: false`，一个平台失败不会取消其他平台的诊断。`check:msrv` 用 Rust 1.98.0 验证核心库和开发工具声明的最低版本，核心与工具测试构建产物分别放入 `target/msrv` 与 `target/msrv/xtask`，不改变默认工具链。根 workspace 的检查不覆盖嵌套的工具 workspace，后者通过 `check:tools` 单独执行格式、Clippy 和快速测试；真实负载测试默认标记为忽略，通过 `check:tools:e2e` 显式串行执行。`check:msrv` 也显式执行一次端到端测试，两套工具链各覆盖一次真实冒烟，CI 不再额外重复同一工具链的 smoke。测试内部启动的负载构建遵循 Cargo 的目标目录配置，未指定时仍使用根 `target/`。此处只覆盖原生 Rust，不表示 Node/Wasm 已验证。Actions 继续固定完整提交 SHA；mise 的 Rust 缓存按其[官方已知问题](https://github.com/jdx/mise-action/issues/215)关闭。本地 Lefthook 不增加检查或耗时。
 
-`mise run check:package` 先运行 `cargo package --locked`，再从本轮生成的 `.crate` 解包到临时目录，以独立 Cargo workspace 通过 path 依赖消费打包内容。复用包内 `public_api`、`queries`、`fixtures` 三组公开测试，在 debug／release 下各运行一次，并执行包内 `inspect` 示例；消费端不读取工作树源码。脚本使用 Python 3.12+ 的安全解包过滤，记录归档哈希、消费端 lockfile、命令和退出码到 `target/package-checks/<记录 ID>/result.json`，临时消费端随后移除，不发布。仅本地未提交验证可以显式加 `--allow-dirty`。
+基准工具在现有模块内将统计值、命令留证和执行收尾分开：统计采用明确类型，输出时转换为既有 JSON 字段；构建和测量输出先保存后解析，失败写入独立 `failure.json`，不会冒充有效基线。合同指纹排除独立打包检查源码，同时保留完整工具追溯指纹；详细规则见[基准说明](../engineering/benchmarks.md)。
+
+`mise run check:package` 先运行 `cargo package --locked`，再从本轮生成的 `.crate` 解包到临时目录，以独立 Cargo workspace 通过 path 依赖消费打包内容。复用包内 `public_api`、`queries`、`fixtures` 三组公开测试，在 debug／release 下各运行一次，并执行包内 `inspect` 示例；消费端不读取工作树源码。Rust 工具仅解包预期包目录下的普通文件和目录，拒绝越界路径、链接、特殊文件及重复覆盖。归档哈希、消费端 lockfile、命令和退出码记录到 `target/package-checks/<记录 ID>/result.json`，失败也保留记录；临时消费端通过 RAII 清理，不发布。仅本地未提交验证可以显式加 `--allow-dirty`。
 
 `cargo test` 会运行源码内的 doctest，不会自动执行独立 Markdown 文件。CI 显式编译并运行 README 与本文中的 Rust 代码块；在仓库根目录可复跑：
 

@@ -27,3 +27,21 @@ fn read_path_corpus_and_query_facts_are_reproducible() {
         current::Workload::new().facts()
     );
 }
+
+#[test]
+fn read_path_samples_record_counts_and_elapsed_time_without_expanding_smoke() {
+    let workload = current::Workload::new();
+    // Fixed protocol expectations, independent of the workload's batch selector.
+    for (entry, smoke, batches, operations) in [
+        (6, false, 16, 786_432),
+        (8, false, 16, 524_288),
+        (7, false, 1, 32_768),
+        (6, true, 1, 49_152),
+        (8, true, 1, 32_768),
+    ] {
+        let sample = workload.measure(entry, smoke);
+        assert_eq!(sample.batches, batches);
+        assert_eq!(sample.operations, operations);
+        assert!(sample.elapsed_ns > 0);
+    }
+}

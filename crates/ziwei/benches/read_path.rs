@@ -5,11 +5,11 @@ macro_rules! define_workload {
     ($module:ident, $engine:ident) => {
         #[allow(dead_code, reason = "单版本运行器、配对实验与测试共享同一负载")]
         mod $module {
-            use std::{fmt::Write, hint::black_box};
+            use std::{fmt::Write, hint::black_box, time::Instant};
             use $engine as z;
 
             pub const ID: &str = "ziwei-read-path-512";
-            pub const VERSION: u32 = 1;
+            pub const VERSION: u32 = 2;
             pub const SEED: u32 = 0x5a17_2026;
             pub const CASES: usize = 512;
             pub const ENTRIES: [&str; 18] = [
@@ -80,6 +80,13 @@ macro_rules! define_workload {
                 for branch in z::Branch::ALL {
                     black_box(chart.palace_transformations(black_box(branch)));
                 }
+            }
+
+            /// 一次计时样本；完整批时长和实际操作数共同定义平均耗时。
+            pub struct Measurement {
+                pub batches: usize,
+                pub operations: usize,
+                pub elapsed_ns: u128,
             }
 
             pub struct Workload {
@@ -247,6 +254,28 @@ macro_rules! define_workload {
                         .unwrap();
                     }
                     facts
+                }
+
+                /// V2 仅延长两项高波动查询的计时批次；smoke 保持单批。
+                pub fn measure(&self, entry: usize, smoke: bool) -> Measurement {
+                    let batches = if !smoke
+                        && matches!(ENTRIES[entry], "palace_star" | "self_transformations")
+                    {
+                        16
+                    } else {
+                        1
+                    };
+                    let start = Instant::now();
+                    let mut operations = 0;
+                    for _ in 0..batches {
+                        operations += self.execute(entry);
+                    }
+                    let elapsed_ns = start.elapsed().as_nanos();
+                    Measurement {
+                        batches,
+                        operations,
+                        elapsed_ns,
+                    }
                 }
 
                 /// 单位随 entry 明确为盘、查询或星；整个批次的准备规则固定。
