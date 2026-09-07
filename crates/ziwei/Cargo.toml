@@ -7,5 +7,8 @@ license.workspace = true
 repository.workspace = true
 description = "A Rust library for Ziwei Doushu chart construction"
 
+[dependencies]
+arrayvec = { version = "0.7.8", default-features = false }
+
 [lints]
 workspace = true

@@ -46,7 +46,7 @@ pub enum FiveElement {
 
 /// 五行局的稳定领域身份。
 ///
-/// 五行局不可拆解为可公开读取的五行和局数。
+/// 五行局不提供五行或局数的组成部分读取方法；数值判别值按 D-114 保持可观察。
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FiveElementBureau {
@@ -111,10 +111,6 @@ const FIVE_ELEMENT_BUREAUS_BY_MING_PALACE: [[FiveElementBureau; 6]; 5] = [
 impl FiveElementBureau {
     /// 根据命宫的天干和地支返回五行局。
     #[must_use]
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "由后续本命排盘构建路径按命宫干支调用")
-    )]
     pub(crate) const fn from_ming_palace(stem: Stem, branch: Branch) -> Self {
         FIVE_ELEMENT_BUREAUS_BY_MING_PALACE[five_element_bureau_stem_group(stem)]
             [five_element_bureau_branch_group(branch)]

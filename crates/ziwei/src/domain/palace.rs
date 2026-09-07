@@ -1,4 +1,8 @@
-use crate::{Branch, DecadeAge, Star, StarName, Stem};
+use crate::{Branch, FiveElementBureau, Star, StarName, Stem};
+
+// 当前十八星规则的单宫最大值；规则或星集变化时须重新验证，不是公开领域上限。
+const MAX_STARS_PER_PALACE: usize = 6;
+pub(crate) type PalaceStars = arrayvec::ArrayVec<Star, MAX_STARS_PER_PALACE>;
 
 /// 宫位名称的稳定领域身份。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -45,6 +49,58 @@ impl PalaceName {
         Self::FuDe,
         Self::FuMu,
     ];
+
+    /// 宫职在 [`Self::ALL`] 中的位置；从命宫起逆布。
+    pub(crate) const fn index(self) -> usize {
+        match self {
+            Self::Ming => 0,
+            Self::XiongDi => 1,
+            Self::FuQi => 2,
+            Self::ZiNv => 3,
+            Self::CaiBo => 4,
+            Self::JiE => 5,
+            Self::QianYi => 6,
+            Self::JiaoYou => 7,
+            Self::GuanLu => 8,
+            Self::TianZhai => 9,
+            Self::FuDe => 10,
+            Self::FuMu => 11,
+        }
+    }
+}
+
+/// 实际宫位对应的十年虚岁区间。
+///
+/// 内部顺序固定为 `[start, end]`，且结束虚岁恒为起始虚岁的九年后。
+#[repr(transparent)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct DecadeAgeRange([u8; 2]);
+
+impl DecadeAgeRange {
+    /// 由五行局与宫位的大限顺逆位置构造年龄区间。
+    ///
+    /// `position` 为从命宫沿大限顺逆方向计算的零基位置；`0` 为第一大限，
+    /// `11` 为第十二大限。
+    #[must_use]
+    pub(crate) const fn new(bureau: FiveElementBureau, position: u8) -> Self {
+        assert!(position <= 11, "大限宫位位置必须在 0..=11");
+
+        let start = bureau as u8 + 10 * position;
+
+        Self([start, start + 9])
+    }
+
+    /// 返回起始虚岁。
+    #[must_use]
+    pub const fn start(self) -> u8 {
+        self.0[0]
+    }
+
+    /// 返回结束虚岁。
+    #[must_use]
+    pub const fn end(self) -> u8 {
+        self.0[1]
+    }
 }
 
 /// 本命盘中的一个实际宫位。
@@ -55,29 +111,25 @@ pub struct Palace {
     name: PalaceName,
     branch: Branch,
     stem: Stem,
-    stars: Box<[Star]>,
-    decade_age: DecadeAge,
+    stars: PalaceStars,
+    decade_age_range: DecadeAgeRange,
 }
 
 impl Palace {
     /// 由 crate 内的排盘规则创建实际宫位。
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "由后续本命排盘规则创建十二个实际宫位")
-    )]
     pub(crate) fn new(
         name: PalaceName,
         branch: Branch,
         stem: Stem,
-        stars: Box<[Star]>,
-        decade_age: DecadeAge,
+        stars: PalaceStars,
+        decade_age_range: DecadeAgeRange,
     ) -> Self {
         Self {
             name,
             branch,
             stem,
             stars,
-            decade_age,
+            decade_age_range,
         }
     }
 
@@ -129,8 +181,8 @@ impl Palace {
 
     /// 返回该实际宫位对应的大限年龄区间。
     #[must_use]
-    pub const fn decade_age(&self) -> DecadeAge {
-        self.decade_age
+    pub const fn decade_age_range(&self) -> DecadeAgeRange {
+        self.decade_age_range
     }
 }
 
@@ -153,10 +205,10 @@ const fn natal_names(name: PalaceName) -> (&'static str, &'static str) {
 
 #[cfg(test)]
 mod tests {
-    use super::{Palace, PalaceName};
+    use super::{DecadeAgeRange, Palace, PalaceName};
     use crate::{
-        Branch, DecadeAge, FiveElementBureau, SelfTransformations, Star, StarCategory, StarGalaxy,
-        StarName, Stem,
+        Branch, FiveElementBureau, SelfTransformations, Star, StarCategory, StarGalaxy, StarName,
+        Stem,
     };
 
     #[test]
@@ -181,20 +233,40 @@ mod tests {
     }
 
     #[test]
+    fn decade_age_range_follows_the_confirmed_bureau_and_position_rule() {
+        let expected = [
+            (FiveElementBureau::WaterTwo, 0, 2, 11),
+            (FiveElementBureau::WoodThree, 0, 3, 12),
+            (FiveElementBureau::MetalFour, 0, 4, 13),
+            (FiveElementBureau::EarthFive, 0, 5, 14),
+            (FiveElementBureau::FireSix, 0, 6, 15),
+            (FiveElementBureau::FireSix, 11, 116, 125),
+        ];
+
+        for (bureau, position, start, end) in expected {
+            let age = DecadeAgeRange::new(bureau, position);
+
+            assert_eq!(age.start(), start);
+            assert_eq!(age.end(), end);
+        }
+    }
+
+    #[test]
     fn palace_holds_confirmed_natal_facts() {
         let palace = Palace::new(
             PalaceName::Ming,
             Branch::Yin,
             Stem::Jia,
-            vec![Star::new(
+            [Star::new(
                 StarName::ZiWei,
                 StarCategory::Major,
                 StarGalaxy::Central,
                 None,
                 SelfTransformations::new(None, None),
             )]
-            .into_boxed_slice(),
-            DecadeAge::new(FiveElementBureau::WaterTwo, 0),
+            .into_iter()
+            .collect(),
+            DecadeAgeRange::new(FiveElementBureau::WaterTwo, 0),
         );
 
         assert_eq!(palace.name(), PalaceName::Ming);
@@ -209,8 +281,8 @@ mod tests {
             Some(StarName::ZiWei)
         );
         assert_eq!(palace.star(StarName::TianJi), None);
-        assert_eq!(palace.decade_age().start(), 2);
-        assert_eq!(palace.decade_age().end(), 11);
+        assert_eq!(palace.decade_age_range().start(), 2);
+        assert_eq!(palace.decade_age_range().end(), 11);
     }
 
     #[test]
@@ -235,8 +307,8 @@ mod tests {
                 name,
                 Branch::Yin,
                 Stem::Jia,
-                Vec::new().into_boxed_slice(),
-                DecadeAge::new(FiveElementBureau::WaterTwo, 0),
+                super::PalaceStars::new(),
+                DecadeAgeRange::new(FiveElementBureau::WaterTwo, 0),
             );
 
             assert_eq!(palace.name(), name);

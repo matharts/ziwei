@@ -65,10 +65,6 @@ impl StarName {
     ];
 
     /// 落宫数组下标，与 [`Self::ALL`] 对齐。
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "星曜落宫规则将在后续排盘规则切片中使用此下标")
-    )]
     pub(crate) const fn index(self) -> usize {
         match self {
             Self::ZiWei => 0,
@@ -116,17 +112,10 @@ pub enum StarGalaxy {
 }
 
 /// 一颗星曜的不可变本命事实。
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// 名称和简称由身份索引静态资料，实例不重复保存字符串引用。
+#[derive(Clone, PartialEq, Eq)]
 pub struct Star {
     name: StarName,
-    /// 星曜的简体中文名称。
-    name_hans: &'static str,
-    /// 星曜的繁体中文名称。
-    name_hant: &'static str,
-    /// 星曜用于盘面的简体中文单字简称。
-    abbr_hans: &'static str,
-    /// 星曜用于盘面的繁体中文单字简称。
-    abbr_hant: &'static str,
     category: StarCategory,
     galaxy: StarGalaxy,
     birth_transformation: Option<Transformation>,
@@ -135,10 +124,6 @@ pub struct Star {
 
 impl Star {
     /// 由 crate 内的排盘规则创建一颗星曜。
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "排盘规则将在后续构建命盘切片中创建星曜")
-    )]
     pub(crate) const fn new(
         name: StarName,
         category: StarCategory,
@@ -146,15 +131,8 @@ impl Star {
         birth_transformation: Option<Transformation>,
         self_transformations: SelfTransformations,
     ) -> Self {
-        let (name_hans, name_hant) = star_names(name);
-        let (abbr_hans, abbr_hant) = star_abbreviations(name);
-
         Self {
             name,
-            name_hans,
-            name_hant,
-            abbr_hans,
-            abbr_hant,
             category,
             galaxy,
             birth_transformation,
@@ -171,25 +149,25 @@ impl Star {
     /// 返回星曜的简体中文名称。
     #[must_use]
     pub const fn name_hans(&self) -> &'static str {
-        self.name_hans
+        STAR_LABELS[self.name.index()].name_hans
     }
 
     /// 返回星曜的繁体中文名称。
     #[must_use]
     pub const fn name_hant(&self) -> &'static str {
-        self.name_hant
+        STAR_LABELS[self.name.index()].name_hant
     }
 
     /// 返回星曜用于盘面的简体中文单字简称。
     #[must_use]
     pub const fn abbr_hans(&self) -> &'static str {
-        self.abbr_hans
+        STAR_LABELS[self.name.index()].abbr_hans
     }
 
     /// 返回星曜用于盘面的繁体中文单字简称。
     #[must_use]
     pub const fn abbr_hant(&self) -> &'static str {
-        self.abbr_hant
+        STAR_LABELS[self.name.index()].abbr_hant
     }
 
     /// 返回星曜类别。
@@ -216,6 +194,56 @@ impl Star {
         self.self_transformations
     }
 }
+
+// 保留名称、简称和原字段顺序，不让内部布局改变可观察的 Debug 内容。
+impl core::fmt::Debug for Star {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("Star")
+            .field("name", &self.name())
+            .field("name_hans", &self.name_hans())
+            .field("name_hant", &self.name_hant())
+            .field("abbr_hans", &self.abbr_hans())
+            .field("abbr_hant", &self.abbr_hant())
+            .field("category", &self.category())
+            .field("galaxy", &self.galaxy())
+            .field("birth_transformation", &self.birth_transformation())
+            .field("self_transformations", &self.self_transformations())
+            .finish()
+    }
+}
+
+struct StarLabels {
+    name_hans: &'static str,
+    name_hant: &'static str,
+    abbr_hans: &'static str,
+    abbr_hant: &'static str,
+}
+
+// 编译期由现有名称映射生成，按 StarName::ALL 对齐；运行时无需再匹配名称。
+const STAR_LABELS: [StarLabels; StarName::ALL.len()] = {
+    let mut labels = [const {
+        StarLabels {
+            name_hans: "",
+            name_hant: "",
+            abbr_hans: "",
+            abbr_hant: "",
+        }
+    }; StarName::ALL.len()];
+    let mut index = 0;
+    while index < StarName::ALL.len() {
+        let name = StarName::ALL[index];
+        let (name_hans, name_hant) = star_names(name);
+        let (abbr_hans, abbr_hant) = star_abbreviations(name);
+        labels[index] = StarLabels {
+            name_hans,
+            name_hant,
+            abbr_hans,
+            abbr_hant,
+        };
+        index += 1;
+    }
+    labels
+};
 
 const fn star_names(name: StarName) -> (&'static str, &'static str) {
     match name {
@@ -267,6 +295,53 @@ const fn star_abbreviations(name: StarName) -> (&'static str, &'static str) {
 mod tests {
     use super::{Star, StarCategory, StarGalaxy, StarName};
     use crate::{SelfTransformations, Transformation};
+
+    #[test]
+    fn localized_names_remain_available_in_const_contexts() {
+        const STAR: Star = Star::new(
+            StarName::TianJi,
+            StarCategory::Major,
+            StarGalaxy::North,
+            None,
+            SelfTransformations::new(None, None),
+        );
+        const NAMES: (&str, &str, &str, &str) = (
+            STAR.name_hans(),
+            STAR.name_hant(),
+            STAR.abbr_hans(),
+            STAR.abbr_hant(),
+        );
+        assert_eq!(NAMES, ("天机", "天機", "机", "機"));
+    }
+
+    #[test]
+    fn compact_star_preserves_clone_equality_and_debug_fields() {
+        let star = Star::new(
+            StarName::ZiWei,
+            StarCategory::Major,
+            StarGalaxy::Central,
+            Some(Transformation::A),
+            SelfTransformations::new(Some(Transformation::D), None),
+        );
+        assert_eq!(star.clone(), star);
+        assert_eq!(
+            format!("{star:?}"),
+            concat!(
+                "Star { name: ZiWei, name_hans: \"紫微\", name_hant: \"紫微\", ",
+                "abbr_hans: \"紫\", abbr_hant: \"紫\", category: Major, galaxy: Central, ",
+                "birth_transformation: Some(A), self_transformations: ",
+                "SelfTransformations { inward: Some(D), outward: None } }",
+            )
+        );
+        let different = Star::new(
+            star.name(),
+            star.category(),
+            star.galaxy(),
+            Some(Transformation::B),
+            star.self_transformations(),
+        );
+        assert_ne!(star, different);
+    }
 
     #[test]
     fn star_holds_the_confirmed_natal_facts() {

@@ -1,6 +1,15 @@
 //! 限运领域对象和值。
 
-use crate::{FiveElementBureau, PalaceName};
+use crate::PalaceName;
+
+/// 大限在十二宫中的排列方向。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum DecadeDirection {
+    /// 沿寅至丑的固定顺序排列。
+    Forward,
+    /// 逆寅至丑的固定顺序排列。
+    Reverse,
+}
 
 /// 一个实际宫位在指定大限中的宫职结果。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -10,10 +19,6 @@ pub struct Decade {
 
 impl Decade {
     /// 由 crate 内的大限宫职排布规则创建结果。
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "由后续大限宫职排布规则创建十二项结果")
-    )]
     pub(crate) const fn new(name: PalaceName) -> Self {
         Self { name }
     }
@@ -66,10 +71,6 @@ pub struct Yearly {
 
 impl Yearly {
     /// 由 crate 内的流年宫职排布规则创建结果。
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "由后续流年宫职排布规则创建十二项结果")
-    )]
     pub(crate) const fn new(name: PalaceName) -> Self {
         Self { name }
     }
@@ -168,60 +169,18 @@ impl TryFrom<u8> for YearlyIndex {
     }
 }
 
-/// 实际宫位对应的十年虚岁区间。
-///
-/// 内部顺序固定为 `[start, end]`，且结束虚岁恒为起始虚岁的九年后。
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct DecadeAge([u8; 2]);
-
-impl DecadeAge {
-    /// 由五行局与宫位的大限顺逆位置构造年龄区间。
-    ///
-    /// `position` 为从命宫沿大限顺逆方向计算的零基位置；`0` 为第一大限，
-    /// `11` 为第十二大限。
-    #[must_use]
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "由后续排盘规则计算实际宫位的大限位置后调用")
-    )]
-    pub(crate) const fn new(bureau: FiveElementBureau, position: u8) -> Self {
-        assert!(position <= 11, "大限宫位位置必须在 0..=11");
-
-        let start = bureau as u8 + 10 * position;
-
-        Self([start, start + 9])
-    }
-
-    /// 返回起始虚岁。
-    #[must_use]
-    pub const fn start(self) -> u8 {
-        self.0[0]
-    }
-
-    /// 返回结束虚岁。
-    #[must_use]
-    pub const fn end(self) -> u8 {
-        self.0[1]
-    }
-}
-
 /// 一个大限内的年度摘要。
 ///
 /// 它不保存流年序号；在固定十项年度摘要数组中的位置即为该序号。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct DecadeYear {
     age: u8,
-    year: Option<i32>,
+    year: Option<i64>,
 }
 
 impl DecadeYear {
     /// 由 crate 内的大限年度计算创建摘要。
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "由后续大限年度计算创建十项年度摘要")
-    )]
-    pub(crate) const fn new(age: u8, year: Option<i32>) -> Self {
+    pub(crate) const fn new(age: u8, year: Option<i64>) -> Self {
         Self { age, year }
     }
 
@@ -231,17 +190,19 @@ impl DecadeYear {
         self.age
     }
 
-    /// 返回可用的数字年份；直接排盘输入为 `None`。
+    /// 返回可用的数字年份；仅缺少数字出生年份时为 `None`。
+    ///
+    /// 使用 `i64` 容纳任意 `i32` 出生年份加上虚岁偏移后的结果，不进行历法换算。
     #[must_use]
-    pub const fn year(&self) -> Option<i32> {
+    pub const fn year(&self) -> Option<i64> {
         self.year
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{Decade, DecadeAge, DecadeIndex, DecadeYear, Yearly, YearlyIndex};
-    use crate::{FiveElementBureau, PalaceName, ZiweiError};
+    use super::{Decade, DecadeIndex, DecadeYear, Yearly, YearlyIndex};
+    use crate::{PalaceName, ZiweiError};
 
     #[test]
     fn decade_holds_confirmed_palace_name_and_localized_names() {
@@ -313,25 +274,6 @@ mod tests {
 
         for (value, error) in expected {
             assert_eq!(DecadeIndex::try_from(value), Err(error));
-        }
-    }
-
-    #[test]
-    fn decade_age_follows_the_confirmed_bureau_and_position_rule() {
-        let expected = [
-            (FiveElementBureau::WaterTwo, 0, 2, 11),
-            (FiveElementBureau::WoodThree, 0, 3, 12),
-            (FiveElementBureau::MetalFour, 0, 4, 13),
-            (FiveElementBureau::EarthFive, 0, 5, 14),
-            (FiveElementBureau::FireSix, 0, 6, 15),
-            (FiveElementBureau::FireSix, 11, 116, 125),
-        ];
-
-        for (bureau, position, start, end) in expected {
-            let age = DecadeAge::new(bureau, position);
-
-            assert_eq!(age.start(), start);
-            assert_eq!(age.end(), end);
         }
     }
 

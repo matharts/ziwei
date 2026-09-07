@@ -180,10 +180,6 @@ impl Profile {
     ///
     /// 数字出生年份与出生日必须同时存在或同时缺失。
     #[must_use]
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "由后续两类输入的归一化排盘路径调用")
-    )]
     pub(crate) const fn new(
         birth_year: Option<i32>,
         gender: Gender,
@@ -257,10 +253,6 @@ impl Profile {
 /// 年份以甲子为 `4` 的同余关系计算；使用 `rem_euclid` 保证任意 `i32`
 /// 输入都不发生减法溢出。
 #[must_use]
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "由后续 Birth 归一化路径导出生年干支")
-)]
 pub(crate) fn sexagenary_from_birth_year(birth_year: i32) -> (Stem, Branch) {
     let stem = match birth_year.rem_euclid(10) {
         4 => Stem::Jia,

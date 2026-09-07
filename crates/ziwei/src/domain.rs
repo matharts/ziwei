@@ -8,10 +8,13 @@ mod profile;
 mod star;
 mod transformation;
 
-pub use luck::{Decade, DecadeAge, DecadeIndex, DecadeYear, Yearly, YearlyIndex};
+pub(crate) use luck::DecadeDirection;
+pub use luck::{Decade, DecadeIndex, DecadeYear, Yearly, YearlyIndex};
 pub use natal::Natal;
-pub use palace::{Palace, PalaceName};
+pub(crate) use palace::PalaceStars;
+pub use palace::{DecadeAgeRange, Palace, PalaceName};
 pub use primitive::{Branch, FiveElement, FiveElementBureau, Gender, Stem, YinYang, Zodiac};
+pub(crate) use profile::sexagenary_from_birth_year;
 pub use profile::{Birth, BirthDay, BirthMonth, Parameters, Profile};
 pub use star::{Star, StarCategory, StarGalaxy, StarName};
-pub use transformation::{SelfTransformations, Transformation};
+pub use transformation::{PalaceTransformation, SelfTransformations, Transformation};

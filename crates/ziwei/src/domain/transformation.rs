@@ -1,3 +1,5 @@
+use crate::{Branch, StarName};
+
 /// 四化的稳定领域身份。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Transformation {
@@ -16,10 +18,7 @@ impl Transformation {
     pub const ALL: [Self; 4] = [Self::A, Self::B, Self::C, Self::D];
 
     /// 四化表下标，与 [`Self::ALL`] 对齐。
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "四化规则表将在后续排盘规则切片中使用此下标")
-    )]
+    #[cfg(test)]
     pub(crate) const fn index(self) -> usize {
         match self {
             Self::A => 0,
@@ -37,12 +36,60 @@ pub struct SelfTransformations {
     outward: Option<Transformation>,
 }
 
+/// 源宫宫干发出的一条四化关系。
+///
+/// 使用实际地支定位源宫和目标宫，不存储宫位副本或期间宫职。
+/// 源、目标相同是有效关系（离心自化），不应过滤掉。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PalaceTransformation {
+    source_branch: Branch,
+    target_branch: Branch,
+    transformation: Transformation,
+    star: StarName,
+}
+
+impl PalaceTransformation {
+    pub(crate) const fn new(
+        source_branch: Branch,
+        target_branch: Branch,
+        transformation: Transformation,
+        star: StarName,
+    ) -> Self {
+        Self {
+            source_branch,
+            target_branch,
+            transformation,
+            star,
+        }
+    }
+
+    /// 发出四化的实际宫位地支。
+    #[must_use]
+    pub const fn source_branch(self) -> Branch {
+        self.source_branch
+    }
+
+    /// 承接四化星曜所在的实际宫位地支。
+    #[must_use]
+    pub const fn target_branch(self) -> Branch {
+        self.target_branch
+    }
+
+    /// 本条关系的化象。
+    #[must_use]
+    pub const fn transformation(self) -> Transformation {
+        self.transformation
+    }
+
+    /// 本条关系命中的星曜身份。
+    #[must_use]
+    pub const fn star(self) -> StarName {
+        self.star
+    }
+}
+
 impl SelfTransformations {
     /// 由 crate 内的宫干四化规则创建自化事实。
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "宫干四化规则将在后续排盘规则切片中创建自化事实")
-    )]
     pub(crate) const fn new(
         inward: Option<Transformation>,
         outward: Option<Transformation>,
