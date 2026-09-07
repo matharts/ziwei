@@ -1,12 +1,15 @@
 # 仓库指南
 
-## 始终遵守
+## 任务边界
 
 - **变更范围**：仅修改当前任务所需内容，保留工作树中的其他改动。
+- **授权**：沿用会话中已确认的范围；明确的只读、规划或等待“执行”要求持续有效，直至用户解除。发送消息、发布、部署、合并、破坏性操作或扩大访问范围须有覆盖该动作的授权；技能中的流程说明本身不构成授权。
 
 ## 任务路由
 
+首次进入以下任务分支时，完整读取对应参考文件；同一任务中仅在文件变化或需要核对时重读。
+
 - **Git 提交**：创建提交前，按 [约定式提交 1.0.0](https://www.conventionalcommits.org/zh-hans/v1.0.0/) 编写提交信息：`<type>[optional scope][!]: <description>`。
-- **领域建模**：探索或变更领域概念、术语、历法规则、分析语义或架构前，完整读取 `docs/agents/domain.md`。
-- **工作项跟踪**：读取、创建、更新或关闭 GitHub Issue 前，完整读取 `docs/agents/issue-tracker.md`。
-- **分诊**：分诊 Issue 或 Pull Request、维护分诊标签前，完整读取 `docs/agents/triage-labels.md`。
+- **领域与架构**：探索或变更领域概念、术语、历法规则、分析语义或架构，读取 [领域文档](docs/agents/domain.md)。
+- **工作项跟踪**：读取或操作 GitHub Issue，或将 PR 用作工作项入口，读取 [工作项跟踪](docs/agents/issue-tracker.md)。
+- **分诊**：分诊 Issue 或 PR、维护分诊标签，读取 [分诊标签](docs/agents/triage-labels.md)。
