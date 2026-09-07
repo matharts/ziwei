@@ -76,14 +76,14 @@
 </head>
 <body>
   <main class="frame">
-    <p class="eyebrow">Architecture · Current Working Tree · 2026-08-31</p>
+    <p class="eyebrow">Architecture · Current Working Tree · 2026-09-07</p>
     <h1><span lang="en">ziwei</span> 当前架构</h1>
-    <p class="subtitle">一个无外部依赖的 Rust 领域内核：已实现不可变领域对象与验证合同；已确认的创建入口和完整排盘路径尚未接通。</p>
+    <p class="subtitle">一个 Rust 领域内核：两条建盘入口共享统一计算路径，返回不可变本命盘；星曜索引查询、宫干四化与按需大限／流年均已实现。Node/Wasm 绑定留待后续。</p>
 
     <div class="diagram-scroll">
       <svg viewBox="0 0 1200 620" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="ziwei-architecture-title ziwei-architecture-desc">
         <title id="ziwei-architecture-title">ziwei 当前架构</title>
-        <desc id="ziwei-architecture-desc">架构图展示调用方进入 ziwei 后，从已验证输入经过尚未接通的创建与排盘路径，形成不可变 Natal，并关联宫位、星曜、大限与流年对象。</desc>
+        <desc id="ziwei-architecture-desc">已验证的 Birth 或 Parameters 经 Ziwei 创建入口，在 rules 中归一化为 Profile 并完成排盘，形成持有十二宫、十八星和私有位置索引的不可变 Natal。大限、年度摘要和流年按需生成，不存入本命对象。</desc>
         <defs>
           <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
             <polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/>
@@ -103,18 +103,18 @@
         <rect x="224" y="120" width="88" height="16" rx="4" fill="#f5f5f5"/>
         <text x="268" y="132" fill="rgba(45,49,66,0.48)" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.14em">ZIWEI</text>
 
-        <!-- Connectors: confirmed path is dashed because it is not wired yet. -->
-        <line x1="180" y1="272" x2="224" y2="272" stroke="#4f5d75" stroke-width="1" stroke-dasharray="4,4" marker-end="url(#arrow)"/>
-        <line x1="392" y1="272" x2="436" y2="272" stroke="#4f5d75" stroke-width="1" stroke-dasharray="4,4" marker-end="url(#arrow)"/>
-        <line x1="604" y1="272" x2="648" y2="272" stroke="#4f5d75" stroke-width="1" stroke-dasharray="4,4" marker-end="url(#arrow)"/>
-        <line x1="816" y1="272" x2="860" y2="272" stroke="#4f5d75" stroke-width="1" stroke-dasharray="4,4" marker-end="url(#arrow)"/>
-        <line x1="308" y1="388" x2="308" y2="324" stroke="#4f5d75" stroke-width="1" stroke-dasharray="4,4" marker-end="url(#arrow)"/>
+        <!-- Implemented logical data flow; normalization happens inside rules.rs. -->
+        <line x1="180" y1="272" x2="224" y2="272" stroke="#4f5d75" stroke-width="1" marker-end="url(#arrow)"/>
+        <line x1="392" y1="272" x2="436" y2="272" stroke="#4f5d75" stroke-width="1" marker-end="url(#arrow)"/>
+        <line x1="604" y1="272" x2="648" y2="272" stroke="#4f5d75" stroke-width="1" marker-end="url(#arrow)"/>
+        <line x1="816" y1="272" x2="860" y2="272" stroke="#4f5d75" stroke-width="1" marker-end="url(#arrow)"/>
+        <line x1="308" y1="388" x2="308" y2="324" stroke="#4f5d75" stroke-width="1" marker-end="url(#arrow)"/>
 
         <!-- Natal owns implemented facts. -->
         <path d="M 920,324 V 344 Q 920,352 912,352 H 864 Q 856,352 856,360 V 388" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
 
-        <!-- Period generation is confirmed but not implemented. -->
-        <path d="M 984,324 V 344 Q 984,352 992,352 H 1084 Q 1092,352 1092,360 V 388" fill="none" stroke="#4f5d75" stroke-width="1" stroke-dasharray="4,4" marker-end="url(#arrow)"/>
+        <!-- Period results are computed on demand, not stored in Natal. -->
+        <path d="M 984,324 V 344 Q 984,352 992,352 H 1084 Q 1092,352 1092,360 V 388" fill="none" stroke="#4f5d75" stroke-width="1" marker-end="url(#arrow)"/>
 
         <!-- External caller / adapters -->
         <rect x="24" y="220" width="156" height="104" rx="8" fill="#f5f5f5"/>
@@ -125,14 +125,14 @@
         <text x="102" y="284" fill="#4f5d75" font-size="8" font-family="'Geist Mono',monospace" text-anchor="middle">Rust app</text>
         <text x="102" y="300" fill="#7a8399" font-size="8" font-family="'Geist Mono',monospace" text-anchor="middle">future: N-API · Wasm</text>
 
-        <!-- Confirmed public creation seam, not implemented -->
+        <!-- Implemented public creation seam -->
         <rect x="224" y="220" width="168" height="104" rx="8" fill="#f5f5f5"/>
-        <rect x="224" y="220" width="168" height="104" rx="8" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.36)" stroke-width="1" stroke-dasharray="4,4"/>
+        <rect x="224" y="220" width="168" height="104" rx="8" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/>
         <rect x="236" y="228" width="48" height="16" rx="4" fill="transparent" stroke="rgba(45,49,66,0.28)" stroke-width="0.8"/>
-        <text x="260" y="240" fill="#4f5d75" font-size="8" font-family="'Geist Mono',monospace" text-anchor="middle" letter-spacing="0.08em">PLAN</text>
+        <text x="260" y="240" fill="#4f5d75" font-size="8" font-family="'Geist Mono',monospace" text-anchor="middle" letter-spacing="0.08em">IMPL</text>
         <text x="308" y="264" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','PingFang SC',sans-serif" text-anchor="middle">Ziwei 创建入口</text>
         <text x="308" y="284" fill="#4f5d75" font-size="8" font-family="'Geist Mono',monospace" text-anchor="middle">from_birth · from_parameters</text>
-        <text x="308" y="300" fill="#7a8399" font-size="8" font-family="'Geist Mono',monospace" text-anchor="middle">not in lib.rs</text>
+        <text x="308" y="300" fill="#7a8399" font-size="8" font-family="'Geist Mono',monospace" text-anchor="middle">lib.rs: pub use Ziwei</text>
 
         <!-- Implemented normalized birth context -->
         <rect x="436" y="220" width="168" height="104" rx="8" fill="#f5f5f5"/>
@@ -143,14 +143,14 @@
         <text x="520" y="284" fill="#4f5d75" font-size="8" font-family="'Geist Mono',monospace" text-anchor="middle">Profile</text>
         <text x="520" y="300" fill="#7a8399" font-size="8" font-family="'Geist Mono',monospace" text-anchor="middle">normalized facts</text>
 
-        <!-- Confirmed private construction rules, not implemented -->
+        <!-- Implemented private construction rules -->
         <rect x="648" y="220" width="168" height="104" rx="8" fill="#f5f5f5"/>
-        <rect x="648" y="220" width="168" height="104" rx="8" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.36)" stroke-width="1" stroke-dasharray="4,4"/>
+        <rect x="648" y="220" width="168" height="104" rx="8" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/>
         <rect x="660" y="228" width="48" height="16" rx="4" fill="transparent" stroke="rgba(45,49,66,0.28)" stroke-width="0.8"/>
-        <text x="684" y="240" fill="#4f5d75" font-size="8" font-family="'Geist Mono',monospace" text-anchor="middle" letter-spacing="0.08em">PLAN</text>
+        <text x="684" y="240" fill="#4f5d75" font-size="8" font-family="'Geist Mono',monospace" text-anchor="middle" letter-spacing="0.08em">IMPL</text>
         <text x="732" y="264" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','PingFang SC',sans-serif" text-anchor="middle">私有排盘规则</text>
         <text x="732" y="284" fill="#4f5d75" font-size="8" font-family="'Geist Mono',monospace" text-anchor="middle">single ruleset</text>
-        <text x="732" y="300" fill="#7a8399" font-size="8" font-family="'Geist Mono',monospace" text-anchor="middle">construction pending</text>
+        <text x="732" y="300" fill="#7a8399" font-size="8" font-family="'Geist Mono',monospace" text-anchor="middle">rules::compute_natal</text>
 
         <!-- Focal immutable result -->
         <rect x="860" y="220" width="184" height="104" rx="8" fill="#f5f5f5"/>
@@ -159,7 +159,7 @@
         <text x="896" y="240" fill="#eb6c36" font-size="8" font-family="'Geist Mono',monospace" text-anchor="middle" letter-spacing="0.08em">IMPL</text>
         <text x="952" y="264" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','PingFang SC',sans-serif" text-anchor="middle">Natal 本命盘结果</text>
         <text x="952" y="284" fill="#4f5d75" font-size="8" font-family="'Geist Mono',monospace" text-anchor="middle">immutable aggregate</text>
-        <text x="952" y="300" fill="#eb6c36" font-size="8" font-family="'Geist Mono',monospace" text-anchor="middle">read-only queries</text>
+        <text x="952" y="300" fill="#eb6c36" font-size="8" font-family="'Geist Mono',monospace" text-anchor="middle">private star index · borrowed queries</text>
 
         <!-- Implemented validated inputs -->
         <rect x="224" y="388" width="168" height="104" rx="8" fill="#f5f5f5"/>
@@ -177,16 +177,16 @@
         <text x="808" y="408" fill="#4f5d75" font-size="8" font-family="'Geist Mono',monospace" text-anchor="middle" letter-spacing="0.08em">IMPL</text>
         <text x="856" y="432" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','PingFang SC',sans-serif" text-anchor="middle">宫位与星曜事实</text>
         <text x="856" y="452" fill="#4f5d75" font-size="8" font-family="'Geist Mono',monospace" text-anchor="middle">Palace · Star</text>
-        <text x="856" y="468" fill="#7a8399" font-size="8" font-family="'Geist Mono',monospace" text-anchor="middle">12 palaces · 18 stars</text>
+        <text x="856" y="468" fill="#7a8399" font-size="8" font-family="'Geist Mono',monospace" text-anchor="middle">ArrayVec · static star labels</text>
 
-        <!-- Implemented luck scope; generation path still pending -->
+        <!-- Implemented on-demand period results -->
         <rect x="1012" y="388" width="160" height="104" rx="8" fill="#f5f5f5"/>
-        <rect x="1012" y="388" width="160" height="104" rx="8" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.36)" stroke-width="1" stroke-dasharray="4,4"/>
+        <rect x="1012" y="388" width="160" height="104" rx="8" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/>
         <rect x="1024" y="396" width="48" height="16" rx="4" fill="transparent" stroke="rgba(45,49,66,0.28)" stroke-width="0.8"/>
-        <text x="1048" y="408" fill="#4f5d75" font-size="8" font-family="'Geist Mono',monospace" text-anchor="middle" letter-spacing="0.08em">MIXED</text>
+        <text x="1048" y="408" fill="#4f5d75" font-size="8" font-family="'Geist Mono',monospace" text-anchor="middle" letter-spacing="0.08em">IMPL</text>
         <text x="1092" y="432" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','PingFang SC',sans-serif" text-anchor="middle">按需期间视图</text>
-        <text x="1092" y="452" fill="#4f5d75" font-size="8" font-family="'Geist Mono',monospace" text-anchor="middle">PalaceScope::Decade · PalaceScope::Yearly</text>
-        <text x="1092" y="468" fill="#7a8399" font-size="8" font-family="'Geist Mono',monospace" text-anchor="middle">generation pending</text>
+        <text x="1092" y="452" fill="#4f5d75" font-size="8" font-family="'Geist Mono',monospace" text-anchor="middle">Decade · Yearly · DecadeYear</text>
+        <text x="1092" y="468" fill="#7a8399" font-size="8" font-family="'Geist Mono',monospace" text-anchor="middle">on demand · no result cache</text>
 
         <!-- Legend strip -->
         <line x1="24" y1="544" x2="1176" y2="544" stroke="rgba(45,49,66,0.12)" stroke-width="0.8"/>
@@ -194,9 +194,6 @@
 
         <rect x="116" y="576" width="20" height="12" rx="4" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
         <text x="148" y="588" fill="#4f5d75" font-size="12" font-family="'Geist','Noto Sans SC','PingFang SC',sans-serif">当前已实现</text>
-
-        <rect x="320" y="576" width="20" height="12" rx="4" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.36)" stroke-width="1" stroke-dasharray="4,4"/>
-        <text x="352" y="588" fill="#4f5d75" font-size="12" font-family="'Geist','Noto Sans SC','PingFang SC',sans-serif">已确认但尚未接线</text>
 
         <rect x="600" y="576" width="20" height="12" rx="4" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
         <text x="632" y="588" fill="#4f5d75" font-size="12" font-family="'Geist','Noto Sans SC','PingFang SC',sans-serif">核心结果对象</text>
@@ -206,6 +203,8 @@
       </svg>
     </div>
 
+    <p class="subtitle">图中是逻辑数据流：输入归一化与排盘计算都位于私有 rules.rs。Natal 保存本命事实及一次建立的私有位置索引；宫干四化、十二项期间宫职和十项年度摘要按需生成。连续飞化、历法换算、解释和断语不在当前范围。</p>
+    <p class="subtitle">唯一运行依赖是关闭默认特性的 ArrayVec，自有源码禁止 unsafe；其内部存储不属于公开 ABI。模块职责与所有权见<a href="rust-package-design.md">包架构</a>，性能测量与复跑方法见<a href="../engineering/benchmarks.md">基准说明</a>。</p>
     <p class="colophon">SOURCE: Cargo workspace + ziwei source + CONTEXT.md + docs/architecture · STATUS: current working tree, not a released API snapshot</p>
   </main>
 </body>

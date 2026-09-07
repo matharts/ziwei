@@ -1,0 +1,46 @@
+# Rust 核心与未来绑定的语义合同
+
+本文件冻结现有核心能保证的值域、顺序、缺失值、错误及所有权语义。它**不是已实现的 JSON 格式、TypeScript 类型或 C ABI**；Node-API / Wasm 方法命名、异常包装与快照字段仍需在绑定阶段确定，不能借此把未确认的 wire format 反向强加给核心。
+
+## 输入边界
+
+| 核心值 | 值域和含义 | 适配层要求 |
+| --- | --- | --- |
+| `Birth::birth_year` | `i32::MIN..=i32::MAX` 的数字农历年，允许零、负数 | 不截断、不转无符号、不借 `Date` 隐式换算 |
+| `BirthMonth` / `BirthDay` | 整数 `1..=12` / `1..=30` | 拒绝小数、NaN、Infinity、越界，不能先强转 `u8` |
+| `Branch` / `Stem` | 子至亥 / 甲至癸的稳定身份 | 若使用数字，必须显式映射 `index()` 的 `0..=11` / `0..=9`；不可依赖 Rust 内存布局 |
+| `Gender` | `Female` / `Male` | 明确映射，不能从布尔值、字符串大小写或空值隐式猜测 |
+| `Parameters` | 性别、生年干支、出生月、紫微地支、时辰 | 由 `Parameters::new` 保证干支阴阳匹配；没有数字年份和出生日 |
+| `DecadeIndex` / `YearlyIndex` | `0..=11` / `0..=9` | 先检查整数和值域，再调用 Rust 转换；不能把流年序号解释成公历年 |
+
+非法原始宿主值无法由 Rust `u8` 错误载荷表达时，由适配层报告边界错误，不伪造经过截断的值。核心不执行任何历法、闰月、真太阳时或时区转换。
+
+## 输出与顺序
+
+- `Natal` 的十二宫以及 `decade` / `yearly` 的十二宫职按寅、卯、辰、巳、午、未、申、酉、戌、亥、子、丑逐项对齐。
+- 宫内星曜按 `StarName::ALL` 的子序列排列：紫微、天机、太阳、武曲、天同、廉贞、天府、太阴、贪狼、巨门、天相、天梁、七杀、破军、左辅、右弼、文昌、文曲。每颗各出现一次；允许空宫、多星同宫。
+- `birth_transformations` 始终为 A/B/C/D 四项；分别代表禄、权、科、忌。`self_transformations` 按宫位、宫内星序返回带有任一自化的星，同星同时有两种方向时不拆成两颗星。
+- `palace_transformations(source_branch: Branch)` 按 A/B/C/D 直接返回四项，每项含源地支、目标地支、化象和目标星身份；源、目标可相同，不能过滤掉，也不能改为连续路径。定位字段、入参和查询接口已于 2026-09-07 逐项确认，见 D-229。
+- `decade_years` 按时间递增返回十项，`age` 为虚岁，`year` 为 `Option<i64>`。当前由 `i32` 出生年加 `age - 1` 得到，最大值 `2147483771`，不会丢失 `i32` 之外的合法年份；不得收窄到 `i32`。
+- `Profile` 的 `birth_year` 与 `birth_day` 同时有值或同时无值。`Parameters` 路径无值；不得用 `0`、空字符串或虚构出生日期代替。序列化层应使用一种明确的缺失语义（如 JSON `null`），其具体格式随绑定快照确定。
+- 简繁名称及简称由已有 `name_hans` / `name_hant` / `abbr_hans` / `abbr_hant` 读取。名称只展示，不作为排盘键；不要基于 `Debug` 或 `Display` 生成协议身份。
+
+## 错误合同
+
+保持可机器匹配的错误身份与载荷；中文 `Display` 只供人读，不作为程序分支条件：
+
+| Rust 变体 | 保留载荷 |
+| --- | --- |
+| `InvalidSexagenaryYear` | `stem`, `branch` |
+| `InvalidLunisolarMonth` | 原始 `value` |
+| `InvalidLunisolarDay` | 原始 `value` |
+| `InvalidDecadeIndex` | 原始 `value` |
+| `InvalidYearlyIndex` | 原始 `value` |
+
+两种建盘方法都返回 `Result<Natal, ZiweiError>`；当前有效值类型构建后没有额外领域失败分支。内存耗尽不是这里承诺可恢复的领域错误。
+
+## 生命周期
+
+Rust 查询借用当前 `Natal`，不复制宫位、星曜或创建查询结果缓存。`Natal::star(StarName)` 和 `Natal::palace_by_star(StarName)` 分别返回唯一星曜及其所在宫位的借用；与可能查无此星的 `Palace::star` 不同，它们不返回 `Option`。绑定不能泄漏短于宿主对象生命周期的 Rust 借用：要么显式持有命盘句柄，要么转换为独立不可变快照。`Palace` 的私有内联星曜存储、`Natal` 的私有位置索引及 Rust enum 布局都不是稳定 ABI；绑定不输出位置索引。核心暂不承诺 `no_std`。
+
+未来验收至少覆盖同一输入的核心/宿主事实等价、所有错误载荷、缺失值、简繁名称、全部序号边界、负年与零年、超过 `i32` 的年度输出、对象释放后的访问策略。此阶段没有 Node/Wasm 绑定测试，不能声称这些运行时已经支持。
