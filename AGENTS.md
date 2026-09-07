@@ -9,7 +9,7 @@
 
 首次进入以下任务分支时，完整读取对应参考文件；同一任务中仅在文件变化或需要核对时重读。
 
-- **Git 提交**：创建提交前，按 [约定式提交 1.0.0](https://www.conventionalcommits.org/zh-hans/v1.0.0/) 编写提交信息：`<type>[optional scope][!]: <description>`。
+- **Git 提交**：提交信息统一使用英文（包括标题和正文），并遵循 [约定式提交 1.0.0](https://www.conventionalcommits.org/zh-hans/v1.0.0/) 格式：`<type>[optional scope][!]: <description>`。
 - **领域与架构**：探索或变更领域概念、术语、历法规则、分析语义或架构，读取 [领域文档](docs/agents/domain.md)。
 - **工作项跟踪**：读取或操作 GitHub Issue，或将 PR 用作工作项入口，读取 [工作项跟踪](docs/agents/issue-tracker.md)。
 - **分诊**：分诊 Issue 或 PR、维护分诊标签，读取 [分诊标签](docs/agents/triage-labels.md)。
