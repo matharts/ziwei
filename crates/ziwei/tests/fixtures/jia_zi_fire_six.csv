@@ -1,0 +1,20 @@
+# Project-rule fixture; derivation and scope are documented in README.md.
+# star,branch,birth_transformation,inward,outward (- means None)
+ZiWei,Yin,-,B,-
+TianJi,Chou,-,-,C
+TaiYang,Hai,D,-,-
+WuQu,Xu,C,-,C
+TianTong,You,-,B,-
+LianZhen,Wu,A,D,-
+TianFu,Yin,-,-,-
+TaiYin,Mao,-,C,A
+TanLang,Chen,-,-,A
+JuMen,Si,-,-,-
+TianXiang,Wu,-,-,-
+TianLiang,Wei,-,-,-
+QiSha,Shen,-,-,-
+PoJun,Zi,B,-,-
+ZuoFu,Chen,-,-,-
+YouBi,Xu,-,C,-
+WenChang,Xu,-,-,-
+WenQu,Chen,-,-,-
