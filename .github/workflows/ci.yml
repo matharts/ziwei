@@ -1,0 +1,85 @@
+name: Rust core
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: core-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native-tests:
+    name: Tests (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
+        with:
+          install_args: rust
+          # Rust is installed through rustup; see jdx/mise-action#215.
+          cache: false
+      - name: Tests
+        run: mise exec -- cargo test --workspace --all-features --locked
+      - name: Release tests
+        run: mise exec -- cargo test --workspace --all-features --release --locked
+
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # Official action releases; full SHA pins, no persisted write credentials.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
+        with:
+          install_args: rust
+          # Rust is installed through rustup; see jdx/mise-action#215.
+          cache: false
+      - name: Format
+        run: mise exec -- cargo fmt --all -- --check
+      - name: Clippy
+        run: mise exec -- cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+      - name: Rustdoc
+        run: mise exec -- cargo rustdoc -p ziwei --lib --locked -- -D warnings
+      - name: Minimum supported Rust
+        run: mise run check:msrv
+      - name: Markdown examples
+        run: |
+          mise exec -- cargo build -p ziwei --locked
+          mise exec -- rustdoc --edition 2024 --test README.md --extern ziwei=target/debug/libziwei.rlib -L dependency=target/debug/deps
+          mise exec -- rustdoc --edition 2024 --test docs/architecture/rust-package-design.md --extern ziwei=target/debug/libziwei.rlib -L dependency=target/debug/deps
+      - name: Benchmark recorder tests
+        run: mise exec -- python3 -m unittest discover -s scripts -p 'test_*.py'
+      - name: Construction smoke only
+        run: mise run benchmark:smoke
+      - name: Read-path smoke only
+        run: mise run benchmark:read:smoke
+      - name: Verify package without publishing
+        run: mise run check:package
+
+  # Keep a single stable check that cannot pass when a required job fails or skips.
+  verify:
+    needs: [native-tests, quality]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    steps:
+      - name: Require all checks
+        env:
+          NATIVE_RESULT: ${{ needs.native-tests.result }}
+          QUALITY_RESULT: ${{ needs.quality.result }}
+        run: |
+          test "$NATIVE_RESULT" = success
+          test "$QUALITY_RESULT" = success

@@ -6,9 +6,17 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "A Rust library for Ziwei Doushu chart construction"
+readme = "../../README.md"
+keywords = ["ziwei", "doushu"]
+categories = ["algorithms"]
+autobenches = false
 
 [dependencies]
 arrayvec = { version = "0.7.8", default-features = false }
+
+[[bench]]
+name = "construction"
+harness = false
 
 [lints]
 workspace = true

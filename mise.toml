@@ -1,3 +1,27 @@
 [tools]
 lefthook = "2.1.12"
 rust = "1.98.1"
+
+[tasks."benchmark:smoke"]
+description = "建盘基准冒烟检查；不形成正式性能基线"
+run = "python3 scripts/benchmark.py smoke"
+
+[tasks."benchmark:calibrate"]
+description = "本机重复建盘测量；默认 20 轮"
+run = "python3 scripts/benchmark.py calibrate"
+
+[tasks."benchmark:read:smoke"]
+description = "读取基准冒烟与元数据校验；不形成正式性能基线"
+run = "python3 scripts/read_benchmark.py smoke"
+
+[tasks."benchmark:read:calibrate"]
+description = "读取基准独立校准；20 轮，保持与建盘基准分离"
+run = "python3 scripts/read_benchmark.py calibrate"
+
+[tasks."check:package"]
+description = "验证打包产物的独立 Rust 消费端；不发布"
+run = "python3 scripts/check_package.py"
+
+[tasks."check:msrv"]
+description = "使用最低 Rust 1.98.0 验证核心测试，不改变默认工具链"
+run = "mise exec rust@1.98.0 -- cargo test --workspace --all-features --locked --target-dir target/msrv"
