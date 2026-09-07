@@ -193,6 +193,33 @@ fn help_does_not_run_the_workload() {
     }
 }
 
+fn assert_normalized_timing(actual: f64, elapsed: u64, operations: u64) {
+    assert!(elapsed > 0 && operations > 0);
+    let expected = elapsed as f64 / operations as f64;
+    // JSON decoding can round the recorded f64 by a few ULPs. Allow only
+    // relative rounding error, not a measurement or normalization tolerance.
+    let tolerance = 4.0 * f64::EPSILON * expected.abs();
+    assert!(
+        actual.is_finite() && (actual - expected).abs() <= tolerance,
+        "normalized timing {actual:?} differs from {expected:?} by more than {tolerance:?}"
+    );
+}
+
+#[test]
+fn normalized_timing_accepts_json_rounding() {
+    // Fixed sample from the MSRV CI failure; no real timing workload needed.
+    let expected = 381_455.0 / 32_768.0;
+    let json = serde_json::to_vec(&expected).unwrap();
+    let actual: f64 = serde_json::from_slice(&json).unwrap();
+    assert_normalized_timing(actual, 381_455, 32_768);
+}
+
+#[test]
+#[should_panic(expected = "normalized timing")]
+fn normalized_timing_rejects_wrong_operation_count() {
+    assert_normalized_timing(381_455.0 / 32_768.0, 381_455, 32_767);
+}
+
 // One test keeps both real workloads serial, even under the default test harness.
 #[test]
 #[ignore = "real workloads; run mise run check:tools:e2e"]
@@ -277,7 +304,7 @@ fn smoke_recorders_emit_both_independent_contracts() {
                 assert!(elapsed > 0);
                 let operations = plan["operations_per_sample"].as_u64().unwrap();
                 let ns_per_unit = record["rounds"][0][entry][0].as_f64().unwrap();
-                assert_eq!(ns_per_unit, elapsed as f64 / operations as f64);
+                assert_normalized_timing(ns_per_unit, elapsed, operations);
             }
             assert_eq!(
                 record["sampling"]["palace_star"]["operations_per_sample"],
