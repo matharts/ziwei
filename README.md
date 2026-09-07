@@ -1,18 +1,127 @@
-# Ziwei
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/ziwei-banner-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="assets/ziwei-banner-light.png">
+  <img alt="Ziwei — 紫微斗数排盘引擎" src="assets/ziwei-banner-light.png" width="100%">
+</picture>
 
-使用 Rust 实现的紫微斗数排盘引擎。当前核心支持十八星本命盘，以及按需生成的大限、流年；采用项目唯一规则，壬干化科为左辅。
+<p align="center">
+  <strong>输入农历出生资料，查询宫位、星曜与四化。</strong><br>
+  为 Rust 应用提供不可变的结构化命盘。
+</p>
 
-## 使用
+<p align="center">
+  <a href="#范围"><img alt="Status: development" src="https://badges.ws/badge/status-development-D99A23?labelColor=000000&amp;style=flat-square"></a>
+  <a href="https://github.com/matharts/ziwei/actions/workflows/ci.yml"><img alt="CI" src="https://badges.ws/github/workflow/matharts/ziwei/ci.yml?label=CI&amp;labelColor=000000&amp;style=flat-square"></a>
+  <a href="Cargo.toml"><img alt="Rust 1.98+" src="https://badges.ws/badge/Rust-1.98%2B-DEA584?labelColor=000000&amp;style=flat-square"></a>
+  <a href="https://github.com/matharts/ziwei/commits/main"><img alt="Last commit" src="https://badges.ws/github/last-commit/matharts/ziwei?label=last%20commit&amp;labelColor=000000&amp;style=flat-square"></a>
+  <a href="LICENSE"><img alt="MIT" src="https://badges.ws/badge/license-MIT-007EC6?labelColor=000000&amp;style=flat-square"></a>
+</p>
 
-当前为本地开发中的 `0.1.0`，不表示已经发布到 crates.io。工作区内可使用 path 依赖：
+<p align="center">
+  <a href="#安装">安装</a> &nbsp; / &nbsp;
+  <a href="#使用">使用</a> &nbsp; / &nbsp;
+  <a href="#进阶用法">进阶用法</a> &nbsp; / &nbsp;
+  <a href="#范围">范围</a>
+</p>
+
+> [!NOTE]
+> **开发中** · 当前通过 Git 接入开发版本，接口与功能仍可能调整。
+
+## 安装
+
+需要 **Rust 1.98+**。在你的 Rust 项目目录执行：
+
+```sh
+cargo add ziwei --git https://github.com/matharts/ziwei.git
+```
+
+<details>
+<summary>还没有项目？从这里开始</summary>
+
+在准备存放代码的目录执行：
+
+```sh
+cargo new --bin ziwei-demo
+cd ziwei-demo
+cargo add ziwei --git https://github.com/matharts/ziwei.git
+```
+
+完成后留在 `ziwei-demo` 目录，继续下方示例。
+
+</details>
+
+<details>
+<summary>使用 Cargo.toml 或固定提交</summary>
+
+也可在 `Cargo.toml` 中直接声明：
 
 ```toml
 [dependencies]
-ziwei = { path = "../ziwei/crates/ziwei" }
+ziwei = { git = "https://github.com/matharts/ziwei.git" }
 ```
 
+应用项目应保留 `Cargo.lock`，记录实际使用的提交。需要在依赖声明中固定提交时，为安装命令追加 `--rev <提交哈希>`，替换为实际提交哈希。
+
+</details>
+
+## 使用
+
+**建盘 → 查询 → 输出**。将项目的 `src/main.rs` 替换为以下完整示例：
+
 ```rust
-use ziwei::{Birth, BirthDay, BirthMonth, Branch, DecadeIndex, Gender, StarName, YearlyIndex, Ziwei};
+use ziwei::{Birth, BirthDay, BirthMonth, Branch, Gender, StarName, Ziwei};
+
+fn main() -> Result<(), ziwei::ZiweiError> {
+    let natal = Ziwei::from_birth(Birth {
+        gender: Gender::Female,
+        birth_year: 1992,
+        birth_month: BirthMonth::try_from(8)?,
+        birth_day: BirthDay::try_from(17)?,
+        birth_hour: Branch::Mao, // 卯时
+    })?;
+
+    let palace = natal.palace_by_star(StarName::ZiWei);
+    println!("紫微落宫：{}", palace.branch());
+
+    Ok(())
+}
+```
+
+在项目目录运行：
+
+```sh
+cargo run --quiet
+# 输出：紫微落宫：酉
+```
+
+修改 `Birth` 的五个字段即可更换出生资料。此例为女性、农历 1992 年八月十七、卯时；公历转换和闰月处理需在传入前完成。
+
+<details>
+<summary>只想试运行，不创建新项目</summary>
+
+克隆仓库并运行自带示例：
+
+```sh
+git clone https://github.com/matharts/ziwei.git
+cd ziwei
+cargo run --quiet -p ziwei --example inspect
+```
+
+该示例输出紫微落宫、流年宫职及宫干四化。出生资料可在 [inspect.rs](crates/ziwei/examples/inspect.rs) 中修改。
+
+</details>
+
+## 进阶用法
+
+本命盘建立后保持不可变，大限与流年按需计算。
+
+<details>
+<summary>继续查询大限与流年</summary>
+
+以下为可独立运行的完整示例，可替换项目的 `src/main.rs`：
+
+```rust
+use ziwei::{Birth, BirthDay, BirthMonth, Branch, DecadeIndex, Gender, YearlyIndex, Ziwei};
 
 fn main() -> Result<(), ziwei::ZiweiError> {
     let natal = Ziwei::from_birth(Birth {
@@ -23,13 +132,10 @@ fn main() -> Result<(), ziwei::ZiweiError> {
         birth_hour: Branch::Mao,
     })?;
 
-    let ziwei = natal.star(StarName::ZiWei);
-    let palace = natal.palace_by_star(StarName::ZiWei);
-    println!("{}: {} / {}", palace.branch(), ziwei.name_hans(), ziwei.name_hant());
-
     let decade = DecadeIndex::try_from(0)?; // 第一大限
     let yearly = natal.yearly(decade, YearlyIndex::try_from(0)?);
     let years = natal.decade_years(decade);
+
     for (palace, role) in natal.palaces().iter().zip(yearly) {
         println!("{} {}", palace.branch(), role.name_hant());
     }
@@ -38,52 +144,44 @@ fn main() -> Result<(), ziwei::ZiweiError> {
 }
 ```
 
-直接指定生年干支与紫微落宫时，用 `Parameters::new` 和 `Ziwei::from_parameters`。这一路径不要求数字出生年份或出生日，因此年度摘要仍有虚岁，数字年份为 `None`。
+</details>
 
-公开入口与查询：
+<details>
+<summary>更多查询：宫位、星曜、四化与索引约定</summary>
 
-| 需求 | 接口 |
+两种建盘入口均返回 `Natal`。所有公开类型均从 crate 根导入。
+
+| 查询内容 | 接口 |
 | --- | --- |
 | 建立本命盘 | `Ziwei::from_birth` / `Ziwei::from_parameters` |
-| 宫位读取 | `Natal::palaces` / `palace` / `palace_by_name` |
+| 宫位 | `Natal::palaces` / `palace` / `palace_by_name` |
 | 命、身、来因、紫微所在宫 | `ming_palace` / `shen_palace` / `origin_palace` / `ziwei_palace` |
 | 星曜与落宫 | `Natal::star` / `palace_by_star`，宫内可用 `Palace::star` |
 | 生年四化与自化 | `Natal::birth_transformations` / `self_transformations` |
 | 宫干四化 | `Natal::palace_transformations(source_branch)` |
-| 按需期间计算 | `Natal::decade` / `decade_years` / `yearly` |
+| 大限与流年 | `Natal::decade` / `decade_years` / `yearly` |
 
-命盘与期间宫职数组均按**寅至丑**排列；`Branch::ALL` 则按**子至亥**排列，不能直接混用下标。大限序号为 `0..=11`，大限内流年序号为 `0..=9`。
+- **数组顺序**：命盘与期间宫职数组按寅至丑排列，`Branch::ALL` 按子至亥排列，不能直接混用下标。
+- **期间索引**：大限序号为 `0..=11`，大限内流年序号为 `0..=9`。
+- **干支建盘**：通过 `Parameters::new` 与 `Ziwei::from_parameters` 指定生年干支和紫微落宫，无需提供数字出生年份或出生日。此时年度摘要包含虚岁，数字年份为 `None`。
 
-## 当前设计
-
-工作区只有 `ziwei` 一个 Rust 包，公开类型均从 crate 根导入。两条创建方法共享统一本命计算路径，返回完整、不可变的 `Natal`；`ziwei.rs` 只承载入口，具体计算放在私有 `rules.rs`，领域对象位于私有 `domain/`。
-
-宫内星曜使用固定容量内联存储，对外仍是 `&[Star]`。`Natal` 在构造时建立私有位置索引，查星与查落宫借用当前命盘，无需重新扫描全盘；名称和简称通过现有 getter 读取静态资料。宫干四化、大限和流年按需生成，不预存查询结果。
-
-完整模块职责、对象所有权和计算过程见 [包架构](docs/architecture/rust-package-design.md) 与 [架构图](docs/architecture/ziwei-architecture.html)。这些内部表示不构成跨语言 ABI，也不要求调用方改变 import 或使用方式。
+</details>
 
 ## 范围
 
-核心使用 `std`，唯一第三方运行依赖为关闭默认特性的 `arrayvec`，用于私有固定容量星曜存储。自有源码禁止 `unsafe`；ArrayVec 内部封装了 `unsafe`，不承诺整个依赖树没有 `unsafe`。不处理历法、闰月、时区、真太阳时或真实日期校验；调用方提供已经换算的紫微斗数出生资料。不提供解释、断语、连续飞化、流月、流日或流时。Node.js/TypeScript 与 Wasm 绑定留待后续交付。
+- **已支持**：十八星安星、宫位与星曜查询、生年四化、自化、宫干四化、大限与流年。
+- **后续计划**：Node.js / TypeScript 与 Wasm 绑定。
+- **当前不包含**：解释与断语、连续飞化、流月、流日、流时。
 
-## 开发与验证
+<details>
+<summary>排盘规则与集成边界</summary>
 
-```sh
-mise install
-mise exec -- cargo test --workspace
-mise exec -- cargo clippy --workspace --all-targets --all-features -- -D warnings
-mise exec -- cargo fmt --all -- --check
-mise exec -- cargo doc --no-deps
-mise exec -- cargo run -p ziwei --example inspect
-mise run benchmark:smoke
-mise run benchmark:calibrate -- --runs 20
-mise run benchmark:read:smoke
-mise run check:msrv
-mise run check:package
-```
+排盘采用统一的项目规则，其中壬干化科取左辅。历法换算、闰月处理、时区、真太阳时与真实日期校验由调用方完成，具体约定见 [领域规则](CONTEXT.md)。
 
-[CI](.github/workflows/ci.yml) 配置了 Linux、macOS、Windows 三个平台的 debug／release 测试；格式、Clippy、Rustdoc、Markdown 示例、基准 smoke 和包校验只在 Ubuntu 执行一次。`verify` 汇总全部结果，任一必需检查失败或跳过都不会通过。检查范围与 Markdown 示例的本地复跑命令见 [验证布局](docs/architecture/rust-package-design.md#自动化检查)。平台矩阵的配置不代表远端已经通过。
+核心使用 `std`，唯一第三方运行依赖为关闭默认特性的 `arrayvec`。自有源码禁止 `unsafe`；ArrayVec 内部封装了 `unsafe`。
 
-工程脚本使用本机 Python 标准库，打包消费端校验要求 Python 3.12+，不是核心库依赖。未提交工作树可显式运行 `mise run check:package -- --allow-dirty`；CI 不放宽该检查。性能数据与比较限制见 [基准说明](docs/engineering/benchmarks.md)；跨语言语义见 [适配合同](docs/architecture/adapter-contract.md)。
+</details>
 
-领域规则见 [CONTEXT.md](CONTEXT.md)，设计历史见 [决策记录](docs/architecture/v1-decision-map.md)。目前不应把“所有测试通过”理解为专家审定、跨平台 CI 已运行或正式发布完成。
+## License
+
+[MIT](LICENSE)
