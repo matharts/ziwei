@@ -9,7 +9,17 @@
 
 首次进入以下任务分支时，完整读取对应参考文件；同一任务中仅在文件变化或需要核对时重读。
 
-- **Git 提交**：提交信息统一使用英文（包括标题和正文），并遵循 [约定式提交 1.0.0](https://www.conventionalcommits.org/zh-hans/v1.0.0/) 格式：`<type>[optional scope][!]: <description>`。
 - **领域与架构**：探索或变更领域概念、术语、历法规则、分析语义或架构，读取 [领域文档](docs/agents/domain.md)。
+- **工程验证**：修改 Rust、开发工具、CI、打包配置或 Rust 文档示例时，读取 [工程验证](docs/agents/engineering.md)。
+- **性能**：修改基准、开展性能优化或报告性能结论前，读取 [基准规范](docs/engineering/benchmarks.md)。
 - **工作项跟踪**：读取或操作 GitHub Issue，或将 PR 用作工作项入口，读取 [工作项跟踪](docs/agents/issue-tracker.md)。
 - **分诊**：分诊 Issue 或 PR、维护分诊标签，读取 [分诊标签](docs/agents/triage-labels.md)。
+
+## 完成标准
+
+- 变更公开 API、领域语义或模块职责时，核对并同步受影响的上下文、决策记录、架构文档和示例；只更新与本次变更相关的内容。
+- 报告实际运行的检查及结果、未完成项与原因；本地验证、推送成功和远端 CI 通过分别陈述，远端结果须对应本次提交。
+
+## 提交约定
+
+提交信息统一使用英文（包括标题和正文），并遵循 [约定式提交 1.0.0](https://www.conventionalcommits.org/zh-hans/v1.0.0/) 格式：`<type>[optional scope][!]: <description>`。
