@@ -247,6 +247,18 @@ fn main() -> Result<(), ZiweiError> {
 
 `Natal::yearly(&self, decade: DecadeIndex, index: YearlyIndex) -> [Yearly; 12]` 按需返回指定大限内某一流年的宫职，数组按寅至丑与 `palaces()` 对齐。两个参数分别选择大限和该大限内的流年，均由值类型保证范围。公开方法只转发至 `rules::compute_yearly`，不增加字段、错误分支或缓存；结果不依赖数字出生年份，两种创建入口都可查询。
 
+`Natal::decade_palace_by_name(decade, name)` 与 `yearly_palace_by_name(decade, yearly, name)` 通过规则层直接定位期间宫职所在的实际地支，再返回本命 `&Palace`。单宫定位与完整期间布局共享期间命宫计算；单宫查询不生成十二项数组，不扫描宫职布局、不缓存、不分配堆内存。返回宫位的 `name()` 仍为本命宫职，不改变 `Decade` / `Yearly` 的事实归属。
+
+`Natal::palace_transformation_sources(target_branch)` 查询指定宫位的四化来源，在既有逐源宫四化查询上组合惰性迭代器，按源宫寅至丑、每宫 A/B/C/D 顺序筛选目标。完整消费最多检查四十八条关系，只保留当前源宫的四项临时数组，不物化全盘关系表、不建立反向缓存。无命中时为空，同宫及同源不同化象均保留。
+
+`Natal::period_indices_at_age(age)` 将虚岁直接映射为 `Option<(DecadeIndex, YearlyIndex)>`，规则层先以 `checked_sub` 检查局数起限下界，再要求偏移小于 120，通过既有校验构造索引。不遍历宫位年龄区间或年度摘要，不依赖数字年份、顺逆或缓存。
+
+`Natal::decade_by_branch(decade, branch)` / `yearly_by_branch(decade, yearly, branch)` 转发至规则层，只按值生成一项 `Decade` / `Yearly`。私有 `compute_palace_name` 同时服务完整宫职布局和单宫读取，期间命宫定位亦复用既有函数；不生成十二项临时数组，不改变本命事实或期间对象字段。`Natal::opposite_palace(branch)` 直接对寅起宫位索引增加六并环绕，返回本盘借用。
+
+`Natal::sizheng_palaces(branch)` 使用寅起宫位索引加固定偏移 `[0, 4, 8, 6]`，直接生成四个本命宫位借用。`sanfang_palaces(branch, include_self)` 复用该固定数组的迭代器，仅在不含本宫时跳过首项，公开 `ExactSizeIterator` 使调用方可读取剩余长度。两者没有堆分配、缓存或新增领域类型，空宫仍作为实际宫位返回，不按星曜内容过滤。
+
+`Natal::palace_transformation(source_branch, kind)` 转发至规则层，以源宫宫干和化象直接查既有十干四化表，再用本命星曜位置索引定位目标，仅构造一条 `PalaceTransformation`。内部启用 `Transformation::index()` 供生产查询使用，仍为 `pub(crate)`；不生成完整四项结果，不增加公开类型、字段或缓存。批量查询保持原来的单次宫干读取与四项生成方式，两入口共用四化表。
+
 ### `domain/palace.rs`、`domain/star.rs` 与 `domain/transformation.rs`
 
 这三个模块分别保存宫位、星曜和四化领域对象。`PalaceName` 与 `DecadeAgeRange` 位于 `domain/palace.rs`；前者以十二个稳定变体表达本命、大限与流年共享的宫职身份，后者表达实际宫位对应的大限虚岁区间。实际 `Palace` 固定保存 `name: PalaceName`、`branch: Branch`、`stem: Stem`、宫内星曜集合与 `decade_age_range: DecadeAgeRange`，不经过 `PalaceRole`、`PalaceScope` 或其他宫职包装类型。它始终表示本命实际宫位，并自行管理本命宫职的简、繁名称。`Star` 继续提供名称、简称、生年四化与向心/离心自化事实。

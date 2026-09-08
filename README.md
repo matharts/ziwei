@@ -121,7 +121,7 @@ cargo run --quiet -p ziwei --example inspect
 以下为可独立运行的完整示例，可替换项目的 `src/main.rs`：
 
 ```rust
-use ziwei::{Birth, BirthDay, BirthMonth, Branch, DecadeIndex, Gender, YearlyIndex, Ziwei};
+use ziwei::{Birth, BirthDay, BirthMonth, Branch, DecadeIndex, Gender, PalaceName, Transformation, YearlyIndex, Ziwei};
 
 fn main() -> Result<(), ziwei::ZiweiError> {
     let natal = Ziwei::from_birth(Birth {
@@ -132,6 +132,11 @@ fn main() -> Result<(), ziwei::ZiweiError> {
         birth_hour: Branch::Mao,
     })?;
 
+    // 指定一种宫干四化；查全部四化则调用 palace_transformations。
+    let lu = natal.palace_transformation(Branch::Zi, Transformation::A);
+    assert_eq!(lu.source_branch(), Branch::Zi);
+    assert_eq!(lu.target_branch(), Branch::Zi);
+
     let decade = DecadeIndex::try_from(0)?; // 第一大限
     let yearly = natal.yearly(decade, YearlyIndex::try_from(0)?);
     let years = natal.decade_years(decade);
@@ -140,6 +145,22 @@ fn main() -> Result<(), ziwei::ZiweiError> {
         println!("{} {}", palace.branch(), role.name_hant());
     }
     assert_eq!(years[0].year(), Some(1993));
+
+    // 直接定位流年财帛宫，再读取该实际宫位的本命事实。
+    let wealth = natal.yearly_palace_by_name(decade, YearlyIndex::try_from(0)?, PalaceName::CaiBo);
+    for relation in natal.palace_transformation_sources(wealth.branch()) {
+        println!("{} -> {}", relation.source_branch(), relation.target_branch());
+    }
+    if let Some((decade, yearly)) = natal.period_indices_at_age(35) {
+        let role = natal.yearly_by_branch(decade, yearly, Branch::Shen);
+        println!("申宫在该流年的宫职：{}", role.name_hans());
+    }
+    assert_eq!(natal.opposite_palace(Branch::Shen).branch(), Branch::Yin);
+    // false 查询三方；true 再加入本宫，与四正查询一致。
+    assert!(natal.sanfang_palaces(Branch::Yin, false)
+        .map(|palace| palace.branch()).eq([Branch::Wu, Branch::Xu, Branch::Shen]));
+    assert_eq!(natal.sizheng_palaces(Branch::Yin).map(|palace| palace.branch()),
+        [Branch::Yin, Branch::Wu, Branch::Xu, Branch::Shen]);
     Ok(())
 }
 ```
@@ -159,10 +180,23 @@ fn main() -> Result<(), ziwei::ZiweiError> {
 | 星曜与落宫 | `Natal::star` / `palace_by_star`，宫内可用 `Palace::star` |
 | 生年四化与自化 | `Natal::birth_transformations` / `self_transformations` |
 | 宫干四化 | `Natal::palace_transformations(source_branch)` |
+| 单项宫干四化 | `Natal::palace_transformation(source_branch, kind)` |
+| 某宫的四化来源 | `Natal::palace_transformation_sources(target_branch)` |
 | 大限与流年 | `Natal::decade` / `decade_years` / `yearly` |
+| 期间宫职定位 | `Natal::decade_palace_by_name(decade, name)` / `yearly_palace_by_name(decade, yearly, name)` |
+| 按实际地支读期间宫职 | `Natal::decade_by_branch(decade, branch)` / `yearly_by_branch(decade, yearly, branch)` |
+| 虚岁定位期间 | `Natal::period_indices_at_age(age)` |
+| 本命对宫 | `Natal::opposite_palace(branch)` |
+| 三方／可包含本宫 | `Natal::sanfang_palaces(branch, include_self)` |
+| 四正 | `Natal::sizheng_palaces(branch)` |
 
 - **数组顺序**：命盘与期间宫职数组按寅至丑排列，`Branch::ALL` 按子至亥排列，不能直接混用下标。
+- **三方四正顺序**：三方按相对本宫顺移四宫、八宫、六宫（对宫）排列；`include_self = true` 时先返回本宫，组成四正。四正方法固定返回同序的四项借用。
 - **期间索引**：大限序号为 `0..=11`，大限内流年序号为 `0..=9`。
+- **虚岁查询**：五行局数为 `b` 时支持 `b..=b + 119`，返回 `(大限序号, 流年序号)`；其余 `u8` 输入返回 `None`，不进行周岁或日期换算。
+- **单宫宫职**：按地支查询返回独立的 `Decade` / `Yearly` 值及对应期间名称；读取整盘时使用 `decade()` / `yearly()`。
+- **期间定位**：按期间宫职返回本命实际宫位的借用；该 `Palace::name()` 仍为本命宫职，星曜和宫干也仍为本命事实。
+- **四化反查**：按源宫寅至丑、各源宫 A/B/C/D 顺序返回命中关系；保留同宫关系，无命中时迭代器为空。
 - **干支建盘**：通过 `Parameters::new` 与 `Ziwei::from_parameters` 指定生年干支和紫微落宫，无需提供数字出生年份或出生日。此时年度摘要包含虚岁，数字年份为 `None`。
 
 </details>

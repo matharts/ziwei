@@ -18,7 +18,6 @@ impl Transformation {
     pub const ALL: [Self; 4] = [Self::A, Self::B, Self::C, Self::D];
 
     /// 四化表下标，与 [`Self::ALL`] 对齐。
-    #[cfg(test)]
     pub(crate) const fn index(self) -> usize {
         match self {
             Self::A => 0,

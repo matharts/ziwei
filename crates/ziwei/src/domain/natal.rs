@@ -1,6 +1,7 @@
 use crate::{
     Branch, Decade, DecadeIndex, DecadeYear, FiveElementBureau, Palace, PalaceName,
-    PalaceTransformation, Profile, Star, StarName, Yearly, YearlyIndex, Zodiac, rules,
+    PalaceTransformation, Profile, Star, StarName, Transformation, Yearly, YearlyIndex, Zodiac,
+    rules,
 };
 
 /// 不可变的本命盘事实。
@@ -58,6 +59,84 @@ impl Natal {
     #[must_use]
     pub fn palace(&self, branch: Branch) -> &Palace {
         &self.palaces[usize::from(branch.index_from_yin())]
+    }
+
+    /// 返回与指定实际宫位相隔六宫的本命对宫。
+    ///
+    /// 返回当前命盘内的借用，不受期间宫职影响，不复制宫位或星曜。
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ziwei::{BirthMonth, Branch, Gender, Parameters, Stem, Ziwei};
+    /// let natal = Ziwei::from_parameters(Parameters::new(
+    ///     Gender::Male, Stem::Jia, Branch::Zi, BirthMonth::try_from(1)?,
+    ///     Branch::Yin, Branch::Zi,
+    /// )?)?;
+    /// let opposite = natal.opposite_palace(Branch::Zi);
+    /// assert_eq!(opposite.branch(), Branch::Wu);
+    /// assert!(core::ptr::eq(opposite, natal.palace(Branch::Wu)));
+    /// # Ok::<(), ziwei::ZiweiError>(())
+    /// ```
+    #[must_use]
+    pub fn opposite_palace(&self, branch: Branch) -> &Palace {
+        &self.palaces[(usize::from(branch.index_from_yin()) + 6) % 12]
+    }
+
+    /// 返回指定实际宫位的三方，可选择包含本宫。
+    ///
+    /// `include_self` 为 `false` 时，依次返回沿地支正序相隔四宫、八宫的
+    /// 两个三合宫，以及相隔六宫的对宫；为 `true` 时将本宫放在首位，组成四正。
+    /// 迭代器长度分别为三或四，借用当前本命盘，不分配堆内存或缓存查询结果。
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ziwei::{BirthMonth, Branch, Gender, Parameters, Stem, Ziwei};
+    /// let natal = Ziwei::from_parameters(Parameters::new(
+    ///     Gender::Male, Stem::Jia, Branch::Zi, BirthMonth::try_from(1)?,
+    ///     Branch::Yin, Branch::Zi,
+    /// )?)?;
+    /// assert!(natal.sanfang_palaces(Branch::Yin, false)
+    ///     .map(|palace| palace.branch()).eq([Branch::Wu, Branch::Xu, Branch::Shen]));
+    /// assert!(natal.sanfang_palaces(Branch::Yin, true)
+    ///     .map(|palace| palace.branch()).eq([Branch::Yin, Branch::Wu, Branch::Xu, Branch::Shen]));
+    /// # Ok::<(), ziwei::ZiweiError>(())
+    /// ```
+    pub fn sanfang_palaces(
+        &self,
+        branch: Branch,
+        include_self: bool,
+    ) -> impl ExactSizeIterator<Item = &Palace> + '_ {
+        self.sizheng_palaces(branch)
+            .into_iter()
+            .skip(usize::from(!include_self))
+    }
+
+    /// 返回指定实际宫位的四正，顺序为本宫、两个三合宫、对宫。
+    ///
+    /// 四项沿地支正序的相对偏移分别为零、四、八、六宫。
+    /// 返回当前命盘内互不重复的宫位借用，不受期间宫职影响，不复制宫位或星曜。
+    /// 与 [`Self::sanfang_palaces`] 传入 `include_self = true` 的内容和顺序一致。
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ziwei::{BirthMonth, Branch, Gender, Parameters, Stem, Ziwei};
+    /// let natal = Ziwei::from_parameters(Parameters::new(
+    ///     Gender::Male, Stem::Jia, Branch::Zi, BirthMonth::try_from(1)?,
+    ///     Branch::Yin, Branch::Zi,
+    /// )?)?;
+    /// let palaces = natal.sizheng_palaces(Branch::Yin);
+    /// assert_eq!(palaces.map(|palace| palace.branch()),
+    ///     [Branch::Yin, Branch::Wu, Branch::Xu, Branch::Shen]);
+    /// assert!(core::ptr::eq(palaces[0], natal.palace(Branch::Yin)));
+    /// # Ok::<(), ziwei::ZiweiError>(())
+    /// ```
+    #[must_use]
+    pub fn sizheng_palaces(&self, branch: Branch) -> [&Palace; 4] {
+        let index = usize::from(branch.index_from_yin());
+        [0, 4, 8, 6].map(|offset| &self.palaces[(index + offset) % 12])
     }
 
     /// 按本命宫位名称返回唯一的实际宫位。
@@ -137,6 +216,38 @@ impl Natal {
         })
     }
 
+    /// 返回源宫宫干发出的指定一种四化关系。
+    ///
+    /// `kind` 的 `A / B / C / D` 分别表示禄、权、科、忌，每种都有唯一结果。
+    /// 源、目标均为实际地支，同宫关系保留；仅定位指定一项，不生成完整四项结果，
+    /// 不缓存、不分配堆内存、不修改本命事实。
+    /// 查询全部四化使用 [`Self::palace_transformations`]。
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ziwei::{BirthMonth, Branch, Gender, Parameters, StarName, Stem, Transformation, Ziwei};
+    /// let natal = Ziwei::from_parameters(Parameters::new(
+    ///     Gender::Male, Stem::Jia, Branch::Zi, BirthMonth::try_from(1)?,
+    ///     Branch::Yin, Branch::Zi,
+    /// )?)?;
+    /// // 寅宫为丙干，化忌命中午宫的廉贞。
+    /// let ji = natal.palace_transformation(Branch::Yin, Transformation::D);
+    /// assert_eq!(ji.source_branch(), Branch::Yin);
+    /// assert_eq!(ji.target_branch(), Branch::Wu);
+    /// assert_eq!(ji.transformation(), Transformation::D);
+    /// assert_eq!(ji.star(), StarName::LianZhen);
+    /// # Ok::<(), ziwei::ZiweiError>(())
+    /// ```
+    #[must_use]
+    pub fn palace_transformation(
+        &self,
+        source_branch: Branch,
+        kind: Transformation,
+    ) -> PalaceTransformation {
+        rules::compute_palace_transformation(self, source_branch, kind)
+    }
+
     /// 按需返回源宫宫干的四条关系，顺序固定为 `A / B / C / D`。
     ///
     /// 源、目标均为实际地支；同宫关系保留，不包含连续飞化或解释。
@@ -161,6 +272,68 @@ impl Natal {
     #[must_use]
     pub fn palace_transformations(&self, source_branch: Branch) -> [PalaceTransformation; 4] {
         rules::compute_palace_transformations(self, source_branch)
+    }
+
+    /// 查询指定实际宫位的四化来源，逐条返回命中的宫干四化关系。
+    ///
+    /// 源宫按寅至丑排列，同一源宫内按 `A / B / C / D` 排列。
+    /// 同宫关系及同一源宫的不同化象分别保留；没有命中时迭代器为空。
+    /// 不缓存、不分配堆内存，也不修改本命事实。
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ziwei::{BirthMonth, Branch, Gender, Parameters, StarName, Stem, Transformation, Ziwei};
+    /// let natal = Ziwei::from_parameters(Parameters::new(
+    ///     Gender::Female, Stem::Ren, Branch::Shen, BirthMonth::try_from(8)?,
+    ///     Branch::You, Branch::Mao,
+    /// )?)?;
+    /// // 寅、子两宫同为壬干，均向子宫天梁发出化禄；子宫的同宫关系保留。
+    /// let sources: Vec<_> = natal.palace_transformation_sources(Branch::Zi)
+    ///     .filter(|relation| relation.transformation() == Transformation::A)
+    ///     .map(|relation| {
+    ///         assert_eq!(relation.star(), StarName::TianLiang);
+    ///         relation.source_branch()
+    ///     })
+    ///     .collect();
+    /// assert_eq!(sources, [Branch::Yin, Branch::Zi]);
+    /// # Ok::<(), ziwei::ZiweiError>(())
+    /// ```
+    pub fn palace_transformation_sources(
+        &self,
+        target_branch: Branch,
+    ) -> impl Iterator<Item = PalaceTransformation> + '_ {
+        self.palaces
+            .iter()
+            .flat_map(|palace| self.palace_transformations(palace.branch()))
+            .filter(move |relation| relation.target_branch() == target_branch)
+    }
+
+    /// 按虚岁返回 `(大限序号, 大限内流年序号)`；无匹配期间时返回 `None`。
+    ///
+    /// 五行局数为 `b` 时，仅匹配闭区间 `b..=b + 119`；`0`、起限前和
+    /// 第十二大限之后的年龄均无匹配。不循环或截断到首末期间。
+    /// 输入是虚岁，不是周岁或数字年份；不依赖数字出生年份或大限顺逆。
+    /// 直接计算索引，不生成年龄摘要或期间布局，不缓存、不分配堆内存。
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ziwei::{BirthMonth, Branch, Gender, Parameters, Stem, Ziwei};
+    /// let natal = Ziwei::from_parameters(Parameters::new(
+    ///     Gender::Male, Stem::Jia, Branch::Zi, BirthMonth::try_from(1)?,
+    ///     Branch::Yin, Branch::Zi,
+    /// )?)?;
+    /// // 火六局从虚岁六岁起限：三十五岁是第三大限的第十年。
+    /// let (decade, yearly) = natal.period_indices_at_age(35).unwrap();
+    /// assert_eq!((decade.get(), yearly.get()), (2, 9));
+    /// assert_eq!(natal.period_indices_at_age(5), None);
+    /// assert_eq!(natal.period_indices_at_age(126), None);
+    /// # Ok::<(), ziwei::ZiweiError>(())
+    /// ```
+    #[must_use]
+    pub fn period_indices_at_age(&self, age: u8) -> Option<(DecadeIndex, YearlyIndex)> {
+        rules::compute_period_indices_at_age(self, age)
     }
 
     /// 按需返回指定大限的十二宫职。
@@ -192,6 +365,56 @@ impl Natal {
     #[must_use]
     pub fn decade(&self, index: DecadeIndex) -> [Decade; 12] {
         rules::compute_decade(self, index)
+    }
+
+    /// 按实际地支返回该宫在指定大限中的宫职。
+    ///
+    /// 直接按值生成一个 [`Decade`]，不生成十二项布局、不缓存、不分配堆内存。
+    /// 不修改本命宫职；读取整盘期间宫职时使用 [`Self::decade`]。
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ziwei::{BirthMonth, Branch, DecadeIndex, Gender, PalaceName, Parameters, Stem, Ziwei};
+    /// let natal = Ziwei::from_parameters(Parameters::new(
+    ///     Gender::Male, Stem::Jia, Branch::Zi, BirthMonth::try_from(1)?,
+    ///     Branch::Yin, Branch::Zi,
+    /// )?)?;
+    /// let role = natal.decade_by_branch(DecadeIndex::try_from(1)?, Branch::Mao);
+    /// assert_eq!(role.name(), PalaceName::Ming);
+    /// assert_eq!(role.name_hans(), "大命");
+    /// assert_eq!(natal.palace(Branch::Mao).name(), PalaceName::FuMu);
+    /// # Ok::<(), ziwei::ZiweiError>(())
+    /// ```
+    #[must_use]
+    pub fn decade_by_branch(&self, decade: DecadeIndex, branch: Branch) -> Decade {
+        rules::compute_decade_by_branch(self, decade, branch)
+    }
+
+    /// 按指定大限的宫职返回命盘内唯一的实际宫位。
+    ///
+    /// `decade` 为零基大限序号；不先生成十二宫职布局。
+    /// 返回本命宫位的借用，其 [`Palace::name`] 仍表示本命宫职，
+    /// 不会被改为查询时传入的大限宫职。
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ziwei::{BirthMonth, Branch, DecadeIndex, Gender, PalaceName, Parameters, Stem, Ziwei};
+    /// let natal = Ziwei::from_parameters(Parameters::new(
+    ///     Gender::Male, Stem::Jia, Branch::Zi, BirthMonth::try_from(1)?,
+    ///     Branch::Yin, Branch::Zi,
+    /// )?)?;
+    /// // 阳男顺行：第二大限的大命在卯，对应本命父母宫。
+    /// let palace = natal.decade_palace_by_name(DecadeIndex::try_from(1)?, PalaceName::Ming);
+    /// assert_eq!(palace.branch(), Branch::Mao);
+    /// assert_eq!(palace.name(), PalaceName::FuMu);
+    /// assert!(core::ptr::eq(palace, natal.palace(Branch::Mao)));
+    /// # Ok::<(), ziwei::ZiweiError>(())
+    /// ```
+    #[must_use]
+    pub fn decade_palace_by_name(&self, decade: DecadeIndex, name: PalaceName) -> &Palace {
+        self.palace(rules::compute_decade_palace_branch(self, decade, name))
     }
 
     /// 按需返回指定大限内按时间递增的十项年度摘要。
@@ -257,6 +480,77 @@ impl Natal {
     #[must_use]
     pub fn yearly(&self, decade: DecadeIndex, index: YearlyIndex) -> [Yearly; 12] {
         rules::compute_yearly(self, decade, index)
+    }
+
+    /// 按实际地支返回该宫在指定流年中的宫职。
+    ///
+    /// `yearly` 为该大限内的零基流年序号，不是数字年份。
+    /// 直接按值生成一个 [`Yearly`]，不生成期间布局或年度摘要，不依赖数字出生年份。
+    /// 不缓存、不分配堆内存、不修改本命事实；读取整盘时使用 [`Self::yearly`]。
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ziwei::{
+    ///     BirthMonth, Branch, DecadeIndex, Gender, PalaceName, Parameters, Stem, YearlyIndex, Ziwei,
+    /// };
+    /// let natal = Ziwei::from_parameters(Parameters::new(
+    ///     Gender::Female, Stem::Ren, Branch::Shen, BirthMonth::try_from(8)?,
+    ///     Branch::You, Branch::Mao,
+    /// )?)?;
+    /// let role = natal.yearly_by_branch(
+    ///     DecadeIndex::try_from(0)?, YearlyIndex::try_from(0)?, Branch::You,
+    /// );
+    /// assert_eq!(role.name(), PalaceName::Ming);
+    /// assert_eq!(role.name_hant(), "流命");
+    /// # Ok::<(), ziwei::ZiweiError>(())
+    /// ```
+    #[must_use]
+    pub fn yearly_by_branch(
+        &self,
+        decade: DecadeIndex,
+        yearly: YearlyIndex,
+        branch: Branch,
+    ) -> Yearly {
+        rules::compute_yearly_by_branch(self, decade, yearly, branch)
+    }
+
+    /// 按指定流年的宫职返回命盘内唯一的实际宫位。
+    ///
+    /// `decade` 为零基大限序号，`yearly` 为该大限内的零基流年序号。
+    /// 不依赖数字出生年份，不先生成期间布局或年度摘要。
+    /// 返回本命宫位的借用，其 [`Palace::name`] 仍表示本命宫职，
+    /// 不会被改为查询时传入的流年宫职。
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ziwei::{
+    ///     BirthMonth, Branch, DecadeIndex, Gender, PalaceName, Parameters, Stem, YearlyIndex, Ziwei,
+    /// };
+    /// let natal = Ziwei::from_parameters(Parameters::new(
+    ///     Gender::Female, Stem::Ren, Branch::Shen, BirthMonth::try_from(8)?,
+    ///     Branch::You, Branch::Mao,
+    /// )?)?;
+    /// // 壬申年、水二局：虚岁二岁的流命在酉，对应本命田宅宫。
+    /// let palace = natal.yearly_palace_by_name(
+    ///     DecadeIndex::try_from(0)?, YearlyIndex::try_from(0)?, PalaceName::Ming,
+    /// );
+    /// assert_eq!(palace.branch(), Branch::You);
+    /// assert_eq!(palace.name(), PalaceName::TianZhai);
+    /// assert!(core::ptr::eq(palace, natal.palace(Branch::You)));
+    /// # Ok::<(), ziwei::ZiweiError>(())
+    /// ```
+    #[must_use]
+    pub fn yearly_palace_by_name(
+        &self,
+        decade: DecadeIndex,
+        yearly: YearlyIndex,
+        name: PalaceName,
+    ) -> &Palace {
+        self.palace(rules::compute_yearly_palace_branch(
+            self, decade, yearly, name,
+        ))
     }
 
     /// 由 crate 内的排盘规则创建本命盘。
