@@ -4,6 +4,10 @@ rust = "1.98.1"
 node = "24.20.0"
 pnpm = "12.3.4"
 
+[settings]
+# CI may already have tool directories on PATH without a mise activation record.
+activate_aggressive = true
+
 [tasks."build:node"]
 description = "构建本机 Node 适配包；不发布"
 run = "mise exec -- node tools/node/run.mjs build"

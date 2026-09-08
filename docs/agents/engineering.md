@@ -6,9 +6,9 @@ Rust 命令通过 `mise` 执行：直接调用使用 `rtk mise exec -- <command>
 
 开始验证前，按变更范围读取 [CI 配置](../../.github/workflows/ci.yml)、[Git 钩子](../../lefthook.yml) 和相关 Cargo manifest，确定适用检查及参数。本地钩子只覆盖部分检查，钩子通过不能代替完整 CI 结果。
 
-Node 开发从仓库根使用 `mise run build:node`、`mise run check:node`，或根目录的 `pnpm run build`／`test`／`test:types`。这些入口均先通过 `mise exec -- node` 选择项目版本，再调用 [Node 任务执行器](../../tools/node/run.mjs)；执行器只转发 `packages/core/package.json` 中的既有任务，在子进程 PATH 首位放置当前 Node 的目录，并保留 pnpm 的参数与退出码。版本只由 mise 管理，不另设 pnpm 运行时版本，也不改全局 PATH。包内／`--filter @ziweijs/core` 脚本是底层入口，直接调用时仍由调用者管理运行环境。
+Node 开发从仓库根使用 `mise run build:node`、`mise run check:node`，或根目录的 `pnpm run build`／`test`／`test:types`。这些入口均先通过 `mise exec -- node` 选择项目版本，再调用 [Node 任务执行器](../../tools/node/run.mjs)；执行器只转发 `packages/core/package.json` 中的既有任务，在子进程 PATH 首位放置当前 Node 的目录，并保留 pnpm 的参数与退出码。项目 `mise.toml` 启用 `activate_aggressive`，确保工具目录即使已在 CI 的 PATH 中，也会重新置顶；不依赖交互式 shell 的激活记录。版本只由 mise 管理，不另设 pnpm 运行时版本，也不改全局 PATH。包内／`--filter @ziweijs/core` 脚本是底层入口，直接调用时仍由调用者管理运行环境。
 
-`mise run check:node:tools` 单独验证这些入口、PATH 遮蔽、嵌套子进程、参数转发及失败传播；CI 在各平台的包测试前运行它，不触发性能测量。工具测试只信任自行创建的临时 mise 配置，不修改用户全局信任列表。[mise 的项目 Node 选择](https://mise.jdx.dev/lang/node.html#usage)与 [pnpm 的脚本 PATH 行为](https://pnpm.io/cli/run#details)是本实现采用的工具边界。
+根 `pnpm-workspace.yaml` 启用 `shellEmulator`，让脚本在 Windows 与 POSIX 使用同一套解析和参数转义规则；不能仅凭执行器未启用 `shell` 就推断 pnpm 的下一层不会解释参数。`mise run check:node:tools` 单独验证这些入口、PATH 遮蔽、有／无激活记录、嵌套子进程、含引号及元字符的参数转发和失败传播；Windows 路径比较使用原生 realpath 处理长短文件名。CI 在各平台的包测试前运行它，不触发性能测量。工具测试只信任自行创建的临时 mise 配置，不修改用户全局信任列表。[mise 的 PATH 优先级设置](https://mise.jdx.dev/configuration/settings.html#activate_aggressive)与 [pnpm 的 shellEmulator](https://pnpm.io/cli/run#shellemulator)是本实现采用的工具边界。
 
 ## 按变更选择验证
 

@@ -35,6 +35,8 @@ mise run check:node
 
 上述 mise 任务与仓库根的 `pnpm run build`／`test`／`test:types` 共用 [Node 执行入口](../../tools/node/run.mjs)：显式选择 mise 配置的 Node，并让构建、测试及其子进程继承同一可执行文件目录，避免 PATH 中其他 Node 抢先。任务开头显示实际 Node 版本；`mise run check:node:tools` 验证运行时选择及失败传播。直接从本包或通过 `--filter @ziweijs/core` 调用底层脚本时，仍需调用者管理环境；执行器不新增版本声明、不改全局配置，也不进入分发包。
 
+项目 mise 设置会将工具目录重新置顶，覆盖 CI 中“目录已经在 PATH、但没有交互式激活记录”的情况。pnpm workspace 使用 `shellEmulator` 统一 Windows／POSIX 的脚本参数传递；入口测试覆盖引号、空格、中文及元字符，并使用原生路径解析比较 Windows 长短文件名。这些配置只作用于本仓库开发，不随 npm 包分发。
+
 在本包内或安装本地打包产物的应用中：
 
 ```ts

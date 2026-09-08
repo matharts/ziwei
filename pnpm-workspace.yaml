@@ -4,3 +4,6 @@ packages:
 
 allowBuilds: {}
 pmOnFail: error
+
+# Use the same script and argument semantics on Windows and POSIX hosts.
+shellEmulator: true
