@@ -1,0 +1,6 @@
+# JavaScript packages share one lockfile; mise owns the toolchain versions.
+packages:
+  - packages/*
+
+allowBuilds: {}
+pmOnFail: error

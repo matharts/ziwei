@@ -1,0 +1,32 @@
+#:schema https://raw.githubusercontent.com/SchemaStore/schemastore/cf458e6e33141d3a0506f24279de79eeeeb5130a/src/schemas/json/cargo.json
+# Keep lint definitions local to avoid Taplo's external-reference validation error.
+
+[package]
+name = "ziwei-napi"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "Node-API adapter for the ziwei Rust engine"
+
+[lib]
+crate-type = ["cdylib"]
+doctest = false
+
+[dependencies]
+ziwei = { path = "../ziwei" }
+napi = { version = "=3.12.2", default-features = false, features = ["napi8"] }
+napi-derive = "=3.6.3"
+
+[build-dependencies]
+napi-build = "=2.4.1"
+
+# napi-rs registration macros locally allow their generated unsafe operations.
+# Keep handwritten adapter code denied and leave the core's forbid unchanged.
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+correctness = "deny"

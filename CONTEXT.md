@@ -56,6 +56,11 @@
 
 ## 上下文边界
 
+- Node.js/TypeScript 的完整宿主合同见 [适配设计](docs/architecture/node-api-design.md)（D-248～D-251）。D-253、D-255、D-256 已实现两个建盘入口、全部本命与限运查询、只读属性、ALL／派生方法、结构化错误和 `toJSON`。宿主 Natal 持有核心；`profile` 与 `palaces` 分别首次成功读取后冻结并按实例保存，其余查询不缓存、不依赖全盘快照，只转换请求范围。所有结果为独立只读数据，不改变 Rust 领域事实或生命周期；本机验证不等于跨平台或发布完成。
+- D-257 取代 D-252 的 Node 同目录布局：Rust 绑定位于 `crates/ziwei_napi`（Cargo 包 `ziwei-napi`），TypeScript 位于 `packages/core/src`（npm 包 `@ziweijs/core`，禁止发布）。根 pnpm workspace 管理 `packages/*` 与共享锁文件；JS 包通过 Rust manifest 构建内部原生产物。Wasm 尚未实施，目录与分发包在实施时确定；不创建空包，不改变核心职责与公开合同。
+
+- 保留 D-254 的对象模块职责：原生持有在 `crates/ziwei_napi/src/natal.rs`，TS 包装在 `packages/core/src/natal.ts`；入口分别为各自的 `lib.rs` 与 `index.ts`。D-256 已补齐查询，D-257 只迁移位置与包名，不改变原生生命周期、两个属性的缓存合同或核心职责。
+
 - 引擎仅支持唯一的项目排盘规则：不以流派分支，不设运行时规则版本。
 - V1 包含本命盘、大限、流年、来因宫、生年四化、宫位四化与自化的原始关系；不提供解释或断语。连续飞化暂不属于 V1。
 - 大限、流年不得在构建本命 `Natal` 时全量预计算；按需生成，核心暂不缓存。它们只重排宫职，不新增星曜、宫干四化、生年四化或其他本命事实。

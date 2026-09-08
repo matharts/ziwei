@@ -1,10 +1,40 @@
 [tools]
 lefthook = "2.1.12"
 rust = "1.98.1"
+node = "24.20.0"
+pnpm = "12.3.4"
+
+[tasks."build:node"]
+description = "构建本机 Node 适配包；不发布"
+run = "mise exec -- node tools/node/run.mjs build"
+
+[tasks."check:node"]
+description = "构建 Node 适配包并验证公开入口与类型合同"
+depends = ["build:node"]
+run = [
+  "mise exec -- node tools/node/run.mjs test",
+  "mise exec -- node tools/node/run.mjs test:types",
+]
+
+[tasks."check:node:tools"]
+description = "验证 Node 开发入口、子进程运行时及 PATH 遮蔽；不运行排盘基准"
+run = "mise exec -- node --test tools/node/run.test.mjs"
 
 [tasks."benchmark:smoke"]
 description = "建盘基准冒烟检查；不形成正式性能基线"
 run = "cargo run --quiet --manifest-path tools/xtask/Cargo.toml --locked -- benchmark smoke"
+
+[tasks."benchmark:node"]
+description = "Node 公开 API 固定语料测量；构建当前包，不登记正式基线"
+run = "mise exec -- node packages/core/bench/run.mjs"
+
+[tasks."benchmark:node:smoke"]
+description = "Node 公开 API 冒烟；保存记录，不设置性能阈值"
+run = "mise exec -- node packages/core/bench/run.mjs --smoke"
+
+[tasks."check:node:bench"]
+description = "串行验证 Node 基准 CLI、记录合同与真实冒烟；与包功能测试分开"
+run = "mise exec -- node --test packages/core/bench/bench.test.mjs"
 
 [tasks."benchmark:calibrate"]
 description = "本机重复建盘测量；默认 20 轮"

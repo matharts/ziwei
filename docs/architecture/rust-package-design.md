@@ -2,7 +2,7 @@
 
 ## 状态与目的
 
-本文记录紫微斗数排盘引擎的 Rust 包设计，已于 **2026-09-07** 按当前工作区源码同步。当前已实现两条建盘入口、本命查询、宫干四化和按需大限／流年，以及 D-237、D-238 的紧凑 Star、ArrayVec 与私有位置索引。Node/Wasm 绑定仍未实现；本文不是发布声明。
+本文记录紫微斗数排盘引擎的 Rust 包设计，核心结构已于 **2026-09-07** 按工作区源码同步。当前核心已实现两条建盘入口、本命查询、宫干四化和按需大限／流年，以及 D-237、D-238 的紧凑 Star、ArrayVec 与私有位置索引。2026-09-09 的 D-253～D-256 已完成已确认的完整 Node API；Wasm 尚未实现，跨平台验收与发布未完成。
 
 本文描述当前 implementation 与已确认的架构约束，不替代领域术语表 [`CONTEXT.md`](../../CONTEXT.md) 或 [决策记录](v1-decision-map.md)。历史候选单独标注，不能当作当前实现；源码若与已确认规则冲突，仍须核对决策，不能仅以源码覆盖规格。[架构图](ziwei-architecture.html) 是本文的简化视图。
 
@@ -10,7 +10,9 @@
 
 ## 决策摘要
 
-1. 当前 workspace 只有一个包：`ziwei`。
+2026-09-09 补充：Node.js/TypeScript 的完整使用合同见 [适配设计](node-api-design.md)，docs/architecture/node-api 为独立设计声明与编译型用例。D-256 已使实际生成声明与完整设计匹配，补齐本命／四化／限运查询、身份辅助及 JSON 输出。D-257 将 Rust 绑定迁至 `crates/ziwei_napi`，TypeScript 迁至 `packages/core/src`；Cargo 包名为 `ziwei-napi`，npm 包名为 `@ziweijs/core`，两者均禁止发布；不新增第二个领域实现。
+
+1. 根 workspace 包含 `ziwei` 与 `ziwei-napi`，`default-members` 仍只选择核心 `ziwei`；开发工具保留独立 workspace。
 2. 本命构建、按需大限/流年、只读查询同属 `ziwei`；它们不是独立 Cargo 包。
 3. `PalaceName` 是本命、大限与流年共用的唯一十二宫职领域类型；`Palace`、`Decade`、`Yearly` 各自管理自己的宫职及对应简、繁名称，不保留 `PalaceRole` 或 `PalaceScope`。
 4. Node.js/TypeScript 与 WebAssembly 在接口稳定后各自成为一个 adapter 包，单向依赖 `ziwei`。
@@ -54,17 +56,42 @@ ziwei-wasm ───────────────────────
 .
 ├── Cargo.toml
 ├── Cargo.lock
+├── package.json                  # 私有 workspace 命令入口
+├── pnpm-workspace.yaml           # packages/*
+├── pnpm-lock.yaml                # npm workspace 共享锁文件
 ├── mise.toml
 ├── lefthook.yml
 ├── .github/workflows/ci.yml
 ├── crates/
-│   └── ziwei/
+│   ├── ziwei/
+│   │   ├── Cargo.toml
+│   │   ├── src/                   # 模块树见下文
+│   │   ├── tests/                 # 公开合同、查询、固定命例、负载自检
+│   │   │   └── fixtures/
+│   │   ├── benches/               # construction-120 与共享 read-path-512 负载
+│   │   └── examples/              # inspect 与独立读取基准运行器
+│   └── ziwei_napi/                # Cargo 包 ziwei-napi
 │       ├── Cargo.toml
-│       ├── src/                   # 模块树见下文
-│       ├── tests/                 # 公开合同、查询、固定命例、负载自检
-│       │   └── fixtures/
-│       ├── benches/               # construction-120 与共享 read-path-512 负载
-│       └── examples/              # inspect 与独立读取基准运行器
+│       ├── build.rs
+│       └── src/                   # 原生持有、校验与转换
+│           ├── lib.rs             # 原生构造与身份辅助入口
+│           ├── natal.rs           # 命盘持有、按需查询、投影与生命周期
+│           ├── input.rs
+│           └── error.rs
+├── packages/
+│   └── core/                      # npm 包 @ziweijs/core
+│       ├── package.json
+│       ├── tsconfig.json
+│       ├── index.mjs             # ESM 到共享 CJS 的桥接
+│       ├── src/                   # TypeScript 门面、只读与错误外观
+│       │   ├── index.ts           # 公开导出与 Ziwei 入口
+│       │   ├── natal.ts           # 私有包装、查询、深层只读与两个属性缓存
+│       │   ├── input.ts
+│       │   ├── error.ts
+│       │   └── types.ts
+│       ├── test/                  # Node、Worker、类型与独立打包消费端
+│       ├── native/                # 生成产物；不提交
+│       └── dist/                  # 生成产物；不提交
 ├── tools/
 │   └── xtask/                     # 独立 Rust 开发工具 workspace；不参与核心库发布
 │       ├── Cargo.toml
@@ -78,28 +105,15 @@ ziwei-wasm ───────────────────────
 └── CONTEXT.md
 ```
 
-根 `Cargo.toml` 是 workspace 配置，不是业务包。它统一 edition 2024、MSRV 1.98、许可证、仓库地址与 lint；所有排盘领域实现和简繁名称均位于 `crates/ziwei`。当前没有根级 `tests/`、`fixtures/` 或 `bindings/` 目录。
+根 `Cargo.toml` 是 workspace 配置，不是业务包。它统一 edition 2024、MSRV 1.98、许可证与仓库地址，默认成员仍只有核心。核心继承 `forbid(unsafe_code)`；Node 绑定单独使用 `deny(unsafe_code)`，兼容 napi-rs 注册宏内部的局部允许声明，手写绑定不使用 unsafe。所有排盘领域实现和简繁名称均位于 `crates/ziwei`。根 pnpm workspace 单独管理 JavaScript 包与共享锁文件；`packages/core` 通过 `../../crates/ziwei_napi/Cargo.toml` 构建自己的内部原生产物，没有根级 `tests/` 或 `fixtures/` 目录。
 
-`mise.toml` 是工具链入口，当前固定 Rust `1.98.1` 和 Lefthook `2.1.12`。pre-commit 检查格式与暂存区空白，pre-push 执行测试和 Clippy；基准记录与打包校验由 `tools/xtask` 完成，不需要额外语言运行时。该目录通过自己的 `[workspace]`、`publish = false` 和 lockfile 隔离开发依赖，根 workspace 仍只有核心库；新增工具依赖不改变 `ziwei` 的运行依赖或公开 API。
+`mise.toml` 固定 Rust `1.98.1`、Lefthook `2.1.12`、Node `24.20.0` 与 pnpm `12.3.4`。pre-commit 检查格式与暂存区空白，pre-push 执行 Rust 测试和 Clippy；Node 构建与验收另由 build:node/check:node 承担，不加入本地钩子。基准记录与 Rust 打包校验仍由 `tools/xtask` 完成，不依赖 Node；该目录通过自己的 workspace、publish = false 和 lockfile 隔离开发依赖，绑定与工具均不改变核心运行依赖或公开 API。
 
 ### 未来形状
 
-只有达到后文的拆分门槛后，workspace 才演进为：
+D-257 取代 D-252 的 Node 同目录布局：Rust crate 放入 `crates/`，npm 包放入 `packages/`。新 npm 包由 `packages/*` 纳入 workspace；不为证明“多包”预先创建占位包，也不增加只有转发职责的 npm 原生包。
 
-```text
-.
-├── crates/
-│   └── ziwei/
-├── bindings/
-│   ├── ziwei-napi/
-│   └── ziwei-wasm/
-├── docs/
-├── fixtures/
-│   └── natal/                      # 经人工核验的命例输入与事实
-└── tests/
-```
-
-`bindings/` 在当前不存在。不能为了目录完整性创建没有 interface、测试和交付目标的空 crate。
+Wasm 仍是独立 adapter，但其 Rust crate、JS 分发目录与加载合同在实施时确定，不能直接套用 Node 的加载方式。只有达到后文拆分门槛才创建新包；共享命例或根级测试也按实际复用需求迁移，不提前搬动核心测试。
 
 ## 包职责
 
@@ -126,7 +140,11 @@ ziwei-wasm ───────────────────────
 
 Cargo 包名与 Rust import 名均为 `ziwei`。不能通过新增纯重导出门面包来回避这一决策。
 
-### `ziwei-napi`（后续）
+### `ziwei-napi` 与 `@ziweijs/core`（完整 Node API 已实现）
+
+实际进展见 [Node 包说明](../../packages/core/README.md)。以下完整职责中的两类建盘、读取、查询、限运、身份辅助、错误、JSON 与加载均已实现；跨平台验收和发布流程不在此次实现范围。
+
+保留 D-254 的模块职责，按 D-257 分离源码位置：`crates/ziwei_napi/src/lib.rs` 与 `packages/core/src/index.ts` 保留各自的构造入口，命盘对象实现分别集中在各自私有的 `natal.rs` 和 `natal.ts`。原生持有、记账与回收不拆散，TS 冻结与实例缓存不拆散；内部包装函数不增加包根导出或包子路径。生成产物位于 `packages/core/native` 与 `packages/core/dist`，npm 消费端不依赖 Rust 源码或本仓库路径。
 
 该 adapter 面向 Node.js/TypeScript。它依赖 `ziwei`，并且只做以下转换：
 
@@ -383,15 +401,15 @@ D-237 因而先落地紧凑 Star、保留 `Box<[Star]>`。补齐读取负载后�
 
 ### 自动化检查
 
-[GitHub Actions 工作流](../../.github/workflows/ci.yml) 将原生测试与质量检查并行执行，默认使用 `mise.toml` 指定的 Rust 工具链，并在质量检查中额外验证最低版本，不重复在每个平台运行打包和基准：
+[GitHub Actions 工作流](../../.github/workflows/ci.yml) 将原生测试与质量检查并行执行，使用 mise 指定工具链，在质量检查中额外验证最低 Rust 版本。每个平台执行 Node 包消费端测试，Rust 打包与基准 smoke 仍只在质量任务执行：
 
 | 检查 | 环境 | 覆盖范围 |
 | --- | --- | --- |
-| `native-tests` | Ubuntu、macOS、Windows | workspace 全特性的 debug／release 测试，含公开接口、固定命例及 doctest |
+| `native-tests` | Ubuntu、macOS、Windows | workspace 全特性的 debug／release 测试；锁定安装 Node 开发依赖，构建适配包并运行 Node 24 集成、类型、Worker 与离线打包消费端测试 |
 | `quality` | Ubuntu | 格式、Clippy、Rustdoc、Markdown 示例、Rust 1.98.0 测试、Rust 开发工具的格式／Clippy／记录器／命令行／解包测试、两套基准 smoke、实际打包产物的独立消费端校验 |
 | `verify` | Ubuntu | 汇总前两项；失败或跳过均拒绝通过，保留原有检查名称 |
 
-矩阵设置 `fail-fast: false`，一个平台失败不会取消其他平台的诊断。`check:msrv` 用 Rust 1.98.0 验证核心库和开发工具声明的最低版本，核心与工具测试构建产物分别放入 `target/msrv` 与 `target/msrv/xtask`，不改变默认工具链。根 workspace 的检查不覆盖嵌套的工具 workspace，后者通过 `check:tools` 单独执行格式、Clippy 和快速测试；真实负载测试默认标记为忽略，通过 `check:tools:e2e` 显式串行执行。`check:msrv` 也显式执行一次端到端测试，两套工具链各覆盖一次真实冒烟，CI 不再额外重复同一工具链的 smoke。测试内部启动的负载构建遵循 Cargo 的目标目录配置，未指定时仍使用根 `target/`。此处只覆盖原生 Rust，不表示 Node/Wasm 已验证。Actions 继续固定完整提交 SHA；mise 的 Rust 缓存按其[官方已知问题](https://github.com/jdx/mise-action/issues/215)关闭。本地 Lefthook 不增加检查或耗时。
+矩阵设置 `fail-fast: false`，一个平台失败不会取消其他平台的诊断。`check:msrv` 用 Rust 1.98.0 验证根 workspace 和独立开发工具，产物分别放入 `target/msrv` 与 `target/msrv/xtask`，不改变默认工具链。根 workspace 的检查不覆盖嵌套工具，后者通过 `check:tools` 单独执行格式、Clippy 和快速测试；真实负载测试默认忽略，通过 `check:tools:e2e` 显式串行执行。`check:msrv` 也显式执行一次端到端测试，两套工具链各覆盖一次真实冒烟，CI 不额外重复同一工具链的 smoke。负载构建遵循 Cargo 目标目录配置，未指定时使用根 `target/`。Node 的远端矩阵尚待实际运行，不代表完整 Node/Wasm 支持已验证。Actions 继续固定完整提交 SHA；mise 的 Rust 缓存按其[官方已知问题](https://github.com/jdx/mise-action/issues/215)关闭。本地 Lefthook 不加入 Node 测试。
 
 基准工具在现有模块内将统计值、命令留证和执行收尾分开：统计采用明确类型，输出时转换为既有 JSON 字段；构建和测量输出先保存后解析，失败写入独立 `failure.json`，不会冒充有效基线。合同指纹排除独立打包检查源码，同时保留完整工具追溯指纹；详细规则见[基准说明](../engineering/benchmarks.md)。
 

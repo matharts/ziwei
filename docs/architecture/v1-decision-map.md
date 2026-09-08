@@ -4,6 +4,8 @@
 
 当前 implementation 的集中说明见 [Rust 包架构](rust-package-design.md)，简化视图见 [架构图](ziwei-architecture.html)。D-238 是现行宫内存储与星曜定位方案；早期 Box、槽位枚举和零依赖描述保留为历史，不再作为当前存储约束。
 
+2026-09-09 更新：D-256 已完成已确认的完整 Node API 实现与本机功能验收；Wasm、连续飞化、跨平台验收和发布不因此视为完成。下方早期条目的实施状态保留为当时记录。
+
 ## 设计树
 
 ```text
@@ -266,6 +268,21 @@
 | D-245 | 将 `Natal::palace_transformations_to` 改名为 `palace_transformation_sources`，表达“查询某宫的四化来源”。参数 `target_branch: Branch`、关系迭代器返回类型、源宫与化象顺序、同宫及同源多条关系、惰性计算均不变；同步公开调用、测试与文档，不保留旧名别名。 | 2026-09-08 用户确认命名并授权执行；已实现 |
 | D-246 | 增加 `Natal::sanfang_palaces(branch: Branch, include_self: bool) -> impl ExactSizeIterator<Item = &Palace> + '_` 与 `sizheng_palaces(branch: Branch) -> [&Palace; 4]`。三方不含本宫时按实际地支正序偏移 `[4, 8, 6]` 返回两个三合宫及对宫；包含本宫时按 `[0, 4, 8, 6]` 返回四正，与四正直接入口一致。固定偏移定位后返回当前命盘的借用，无重复、不滤空宫、不修改本命或期间事实，不新增领域对象、缓存或堆分配。 | 2026-09-08 用户要求新增三方与四正，并指定由参数控制是否包含本宫；本轮实现合同 |
 | D-247 | 增加 `Natal::palace_transformation(source_branch: Branch, kind: Transformation) -> PalaceTransformation`，直接查询源宫指定的一种宫干四化；合法化象必有唯一结果，同宫关系保留。规则层复用十干四化表和本命星曜位置索引，仅构造一条关系，不生成完整四项结果、不分配堆内存、不缓存、不修改本命事实。`Transformation::index()` 从测试辅助扩展为 crate 内部生产索引，仍不公开；既有批量查询合同不变。 | 2026-09-08 用户确认单项与批量区别并授权执行；已实现 |
+
+### Node.js/TypeScript 适配设计与实施进展
+
+| ID | 决策 | 状态 |
+| --- | --- | --- |
+| D-248 | Node.js/TypeScript 使用冻结的 Ziwei 入口对象，只含 fromBirth/fromParameters；Natal 只导出类型并持有 Rust 核心，不公开构造器或句柄。Palace/Star 为独立深层只读普通数据；数字身份和字符串身份按 [Node 适配设计](node-api-design.md) 显式映射，名称字段使用 nameHans/nameHant 等，不增加 Lang 或全局状态。 | 2026-09-09 用户授权自主完成设计；声明与文档已落地，绑定未实现 |
+| D-249 | Node 完整覆盖当前 28 个 Natal 读取/查询方法，将 Palace::star 保留为 natal.palaceStar(branch, name)，未命中返回 null；增加 toJSON 作为无行为快照出口。单项查询不依赖全盘快照；期间、关系、缺失值和顺序沿用核心，所有查询同步，不增加批量、连续飞化或解释能力。 | 2026-09-09 委托设计选择；实施与运行时验收后续进行 |
+| D-250 | Node 的 profile、palaces 分别首次成功访问后深层冻结并按实例保存，重复读取保证同一对象；其他查询不缓存，不保证与属性快照或不同查询之间引用相等。输出不反向持有原生命盘，不提供主动释放或跨 Worker 原生对象传递。Rust 的存储、借用、无查询缓存及按需限运约束不变。 | 2026-09-09 在完整查询设计后确定的实施基线，不是已验证的性能胜出结论 |
+| D-251 | Node 错误使用中文 ZiweiError，含 code 与判别联合 detail；五类核心错误码逐项映射变体，另设 INVALID_ARGUMENT 表达宿主表示错误。数字在整数收窄前验证；null 表示已确认的缺失，年数值保持精确。补全 D-239 的宿主设计，不在 Rust 核心新增错误码，不通过 Display/Debug/内存布局推导协议。 | 2026-09-09 委托设计选择；类型合同已编写，原生异常与平台支持尚未验证 |
+| D-252 | 绑定目录按宿主组织：Node 使用 `bindings/node`，Rust 绑定与 TypeScript 门面共同放置，Cargo 包名保留 `ziwei-napi`，npm 包名仍拟定为 `@matharts/ziwei`。未来 Wasm 使用平级的 `bindings/wasm`，Cargo 包名保留 `ziwei-wasm`；两者各自单向依赖核心。不因目录规划预先创建空包，不改变公开合同、领域职责或依赖方向。 | 2026-09-09 用户确认社区布局调研建议并要求执行；仅同步设计，绑定目录与 manifest 尚未创建，npm 名称与 scope 权限未核验 |
+| D-253 | 在 `bindings/node` 实现首个可运行切片：两个同步建盘入口、持有核心 Natal 的私有原生对象、按实例惰性只读 Profile、Gender/Stem/Branch 数字常量及中文结构化错误。实际包声明只公开已实现成员，完整设计声明继续作为目标；其余查询、ALL/派生方法和 toJSON 待实施。根 workspace 加入 ziwei-napi，default-members 保持核心；mise 锁定 Node/pnpm，CI 接入构建与 Node 测试。仅绑定使用 deny(unsafe_code) 兼容 napi-rs 注册宏，核心 forbid 不变；原生 holder 记账及环境回收不涉及 JS 快照。 | 2026-09-09 用户要求执行下一实施切片；本地包入口、类型、Worker、离线打包消费端已验证；禁止发布，远端 CI 与完整平台/性能矩阵尚未验证 |
+| D-254 | 保留 Node 同包布局与现有目录；将原生命盘持有、Profile 转换、结果包装及记账回收迁入私有 `src/natal.rs`，将 TS 私有命盘包装、冻结及实例缓存迁入 `js/natal.ts`。`src/lib.rs`、`js/index.ts` 保留构造与导出职责，内部辅助函数不进入公开包根或子路径。不改变 D-248～D-251 合同，不新增查询、包或发布流程。 | 2026-09-09 用户确认目标结构并要求执行；对象模块提取已完成，构建、11 项 Node 测试、NodeNext/Bundler 类型检查、Cargo 测试及 fmt/Clippy 通过；既有公开声明与配置不变，未提交、推送或发布 |
+| D-255 | 实现已确认 Node 合同中的 zodiac、fiveElementBureau、palaces 及配套身份常量、Palace/Star/SelfTransformations/DecadeAgeRange 类型。宿主身份以穷尽枚举转换确定，名称读取核心；宫位和宫内星序保持不变。palaces 与 profile 独立，分别首次成功读取后深层冻结并按实例保存；失败不缓存，子数据不持有原生句柄。不新增查询、限运、ALL/派生方法、toJSON、Wasm 或发布流程，不修改核心规则与存储。 | 2026-09-09 用户确认本命只读数据切片；按测试先行完成，甲子与壬申固定命例、16 项 Node 测试、21 个类型负例及 NodeNext/Bundler、Cargo 测试、fmt/Clippy、Rust 1.98.0 检查通过；未提交、推送、发布或验证其他平台/性能 |
+| D-256 | 按既定 D-248～D-251 合同完成剩余 Node API：本命定位与宫位关系、四化、按需大限／流年、ALL／身份派生方法及 toJSON。只调用核心公开方法，查询按请求范围转换并深层冻结，不新增查询缓存；两个属性的独立缓存合同不变。保持安全整数年份、缺失值与结构化错误，非法接收者及意外异常不伪装为领域错误；生成声明与完整目标一致。 | 2026-09-09 用户要求直接完成绑定包；28 项 Node 测试、30 个类型负例、NodeNext／Bundler、独立 ESM／CJS 打包消费端、Worker／GC、Rust debug／release、fmt／Clippy 和 1.98.0 检查通过。核心与依赖不变，文档同步；未提交、推送、发布，跨平台与性能未验证 |
+| D-257 | 取代 D-252 的 Node 同目录布局：Rust adapter 迁至 `crates/ziwei_napi`（Cargo 包保留 `ziwei-napi`），TypeScript 门面迁至 `packages/core/src`，npm 包改为 `@ziweijs/core`。根 pnpm workspace 管理 `packages/*` 和共享锁文件；JS 包通过显式 Rust manifest 构建自己的 native 产物。参考 Rolldown 的 Rust／TS 分离，保留 D-254 模块职责与 D-248～D-251 公开合同；不创建占位包、不升级依赖、不实施 Wasm 或发布。 | 2026-09-09 用户明确要求多包、改名及 Rust／TS 分离；迁移完成，离线冻结安装、28 项 Node 测试、NodeNext／Bundler、独立打包消费端、Rust debug／release、fmt／Clippy 与 1.98.0 检查通过。源码及生成声明保持一致；未提交、推送、发布，远端 CI 未运行 |
 
 ## 暂缓决策
 
