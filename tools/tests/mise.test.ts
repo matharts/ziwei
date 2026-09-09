@@ -79,9 +79,13 @@ function assertRuntime(row: Probe) {
 for (const activated of [true, false]) {
   test(`mise tasks select Node and preserve command order (activation record: ${activated})`, t => {
     const { directory, run, env } = fixture(t, { activated });
-    const blocked = spawnSync('pnpm', ['exec', '--', 'node', '--version'], { cwd: directory, env, encoding: 'utf8', timeout: 30_000 });
-    assert.notEqual(blocked.status, 0);
-    assert.match(blocked.stderr, /ERR_PNPM_BAD_RUNTIME_VERSION/);
+    // Prove the shadow is active independently of pnpm's platform-specific diagnostics.
+    // Windows needs cmd.exe to resolve the node.cmd fixture through PATH.
+    const blocked = spawnSync(process.platform === 'win32' ? 'cmd.exe' : 'node',
+      process.platform === 'win32' ? ['/d', '/s', '/c', 'node --version'] : ['--version'],
+      { cwd: directory, env, encoding: 'utf8', timeout: 30_000 });
+    assert.ifError(blocked.error);
+    assert.equal(blocked.status, 19, blocked.stderr);
     // check:node traverses the native build, TS build, package tests and type check.
     for (const [task, expected] of [
       ['check:node', ['build:node:native', 'build:node:ts', 'test:node', 'check:node:types']],
