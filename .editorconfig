@@ -11,5 +11,5 @@ charset = utf-8
 trim_trailing_whitespace = true
 insert_final_newline = true
 
-[*.{yml,yaml}]
+[*.{ts,tsx,mts,cts,json,jsonc,yml,yaml}]
 indent_size = 2

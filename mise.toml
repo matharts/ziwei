@@ -47,6 +47,22 @@ run = "pnpm exec -- node node_modules/@rstest/core/bin/rstest.js --project node-
 description = "严格检查 TypeScript 配置、测试和工具；需先构建 Node 包"
 run = "pnpm exec -- node node_modules/typescript/bin/tsc --project tsconfig.json"
 
+[tasks."lint:node"]
+description = "使用 Oxlint 检查 TypeScript 源码、配置、测试与工具；警告视为失败"
+run = "pnpm exec -- node node_modules/oxlint/bin/oxlint --deny-warnings packages tools/tests rstest.config.ts"
+
+[tasks."lint:node:fix"]
+description = "使用 Oxlint 应用安全修复；不应用建议或危险修复"
+run = "pnpm exec -- node node_modules/oxlint/bin/oxlint --fix --deny-warnings packages tools/tests rstest.config.ts"
+
+[tasks."format:node"]
+description = "使用 Oxfmt 格式化手写 TypeScript 与 Node JSON 配置"
+run = "pnpm exec -- node node_modules/oxfmt/bin/oxfmt 'packages/**/*.{ts,json,jsonc}' 'tools/tests/**/*.ts' rstest.config.ts package.json tsconfig.json .oxlintrc.json .oxfmtrc.json"
+
+[tasks."check:node:format"]
+description = "检查 Oxfmt 格式；不修改文件"
+run = "pnpm exec -- node node_modules/oxfmt/bin/oxfmt --check 'packages/**/*.{ts,json,jsonc}' 'tools/tests/**/*.ts' rstest.config.ts package.json tsconfig.json .oxlintrc.json .oxfmtrc.json"
+
 [tasks."check:node:minimum"]
 description = "以最低 Node 24.15.0 验证 ESM 构建、包消费端及 TS 工具"
 depends = ["build:node"]
@@ -55,6 +71,8 @@ run = [
   "mise run --tool node@24.15.0 test:node",
   "mise run --tool node@24.15.0 check:node:types",
   "mise run --tool node@24.15.0 check:typescript",
+  "mise run --tool node@24.15.0 lint:node",
+  "mise run --tool node@24.15.0 check:node:format",
   "mise exec node@24.15.0 -- node packages/ziwei/bench/run.ts --help",
 ]
 

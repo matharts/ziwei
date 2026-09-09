@@ -2,6 +2,10 @@ pre-commit:
   commands:
     format:
       run: mise exec -- cargo fmt --all -- --check
+    node-lint:
+      run: mise run lint:node
+    node-format:
+      run: mise run check:node:format
     whitespace:
       run: git diff --cached --check
 

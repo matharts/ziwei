@@ -10,6 +10,12 @@
     "verbatimModuleSyntax": true,
     "types": ["node"]
   },
-  "include": ["rstest.config.ts", "tools/tests/**/*.ts", "packages/ziwei/rslib.config.ts", "packages/ziwei/bench/**/*.ts", "packages/ziwei/test/**/*.ts"],
+  "include": [
+    "rstest.config.ts",
+    "tools/tests/**/*.ts",
+    "packages/ziwei/rslib.config.ts",
+    "packages/ziwei/bench/**/*.ts",
+    "packages/ziwei/test/**/*.ts"
+  ],
   "exclude": ["packages/ziwei/test/contract.test.ts"]
 }

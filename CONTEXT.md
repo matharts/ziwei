@@ -120,6 +120,8 @@
 
 - 按 D-259，开发任务统一由 mise 定义和编排，pnpm 保留依赖管理与开发版本校验；任务使用和参数边界见 [工程验证](docs/agents/engineering.md)。这一工程选择不改变领域与宿主 API。
 
+- Node 工程使用 Oxlint 与 Oxfmt，依赖纳入根 Catalog，检查和修复均通过 mise；提交钩子与 CI 只检查，Rust 保留 rustfmt 与 Clippy。范围与生成文件边界见 [Lint 与格式化](docs/agents/engineering.md#lint-与格式化)。
+
 - Node 包工程约束见 D-258：单份 ESM、最低 Node 24.15.0、手写代码全量 TypeScript、pnpm Catalog 集中依赖版本。它们不改变领域事实、公开查询语义或 Rust 与宿主的职责边界。
 
 - Node.js/TypeScript 的完整宿主合同见 [适配设计](docs/architecture/node-api-design.md)（D-248～D-251）。D-253、D-255、D-256 已实现两个建盘入口、全部本命与限运查询、只读属性、ALL／派生方法、结构化错误和 `toJSON`。宿主 Natal 持有核心；`profile` 与 `palaces` 分别首次成功读取后冻结并按实例保存，其余查询不缓存、不依赖全盘快照，只转换请求范围。所有结果为独立只读数据，不改变 Rust 领域事实或生命周期；本机验证不等于跨平台或发布完成。

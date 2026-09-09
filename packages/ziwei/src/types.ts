@@ -1,6 +1,6 @@
-import * as native from '../native/binding.cjs';
-import { unwrap } from './error.js';
-import { arity } from './input.js';
+import * as native from "../native/binding.cjs";
+import { unwrap } from "./error.js";
+import { arity } from "./input.js";
 
 const identities = native.identities();
 
@@ -8,24 +8,38 @@ export const YinYang = Object.freeze({ Yin: 0, Yang: 1 } as const);
 export type YinYang = 0 | 1;
 
 export const FiveElement = Object.freeze({
-  Water: 'Water', Wood: 'Wood', Metal: 'Metal', Earth: 'Earth', Fire: 'Fire',
+  Water: "Water",
+  Wood: "Wood",
+  Metal: "Metal",
+  Earth: "Earth",
+  Fire: "Fire",
 } as const);
-export type FiveElement = typeof FiveElement[keyof typeof FiveElement];
+export type FiveElement = (typeof FiveElement)[keyof typeof FiveElement];
 
 export type Gender = 0 | 1;
 export const Gender = Object.freeze({
-  Female: 0, Male: 1,
+  Female: 0,
+  Male: 1,
   yinYang(value: Gender): YinYang {
-    arity(arguments.length, 'value');
+    arity(arguments.length, "value");
     return unwrap(native.genderYinYang(value));
   },
 } as const);
 
 export const Stem = Object.freeze({
-  Jia: 0, Yi: 1, Bing: 2, Ding: 3, Wu: 4, Ji: 5, Geng: 6, Xin: 7, Ren: 8, Gui: 9,
+  Jia: 0,
+  Yi: 1,
+  Bing: 2,
+  Ding: 3,
+  Wu: 4,
+  Ji: 5,
+  Geng: 6,
+  Xin: 7,
+  Ren: 8,
+  Gui: 9,
   ALL: Object.freeze(identities.stems),
   yinYang(value: Stem): YinYang {
-    arity(arguments.length, 'value');
+    arity(arguments.length, "value");
     return unwrap(native.stemYinYang(value));
   },
 } as const);
@@ -33,98 +47,125 @@ export type Stem = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
 
 /** 子 = 0；时辰不是 0..23 的钟表小时。 */
 export const Branch = Object.freeze({
-  Zi: 0, Chou: 1, Yin: 2, Mao: 3, Chen: 4, Si: 5,
-  Wu: 6, Wei: 7, Shen: 8, You: 9, Xu: 10, Hai: 11,
+  Zi: 0,
+  Chou: 1,
+  Yin: 2,
+  Mao: 3,
+  Chen: 4,
+  Si: 5,
+  Wu: 6,
+  Wei: 7,
+  Shen: 8,
+  You: 9,
+  Xu: 10,
+  Hai: 11,
   ALL: Object.freeze(identities.branches),
   yinYang(value: Branch): YinYang {
-    arity(arguments.length, 'value');
+    arity(arguments.length, "value");
     return unwrap(native.branchYinYang(value));
   },
   zodiac(value: Branch): Zodiac {
-    arity(arguments.length, 'value');
+    arity(arguments.length, "value");
     return unwrap(native.branchZodiac(value));
   },
 } as const);
 export type Branch = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11;
 
 export const Zodiac = Object.freeze({
-  Rat: 'Rat', Ox: 'Ox', Tiger: 'Tiger', Rabbit: 'Rabbit', Dragon: 'Dragon', Snake: 'Snake',
-  Horse: 'Horse', Goat: 'Goat', Monkey: 'Monkey', Rooster: 'Rooster', Dog: 'Dog', Pig: 'Pig',
+  Rat: "Rat",
+  Ox: "Ox",
+  Tiger: "Tiger",
+  Rabbit: "Rabbit",
+  Dragon: "Dragon",
+  Snake: "Snake",
+  Horse: "Horse",
+  Goat: "Goat",
+  Monkey: "Monkey",
+  Rooster: "Rooster",
+  Dog: "Dog",
+  Pig: "Pig",
 } as const);
-export type Zodiac = typeof Zodiac[keyof typeof Zodiac];
+export type Zodiac = (typeof Zodiac)[keyof typeof Zodiac];
 
 export const FiveElementBureau = Object.freeze({
-  WaterTwo: 2, WoodThree: 3, MetalFour: 4, EarthFive: 5, FireSix: 6,
+  WaterTwo: 2,
+  WoodThree: 3,
+  MetalFour: 4,
+  EarthFive: 5,
+  FireSix: 6,
 } as const);
-export type FiveElementBureau = typeof FiveElementBureau[keyof typeof FiveElementBureau];
+export type FiveElementBureau = (typeof FiveElementBureau)[keyof typeof FiveElementBureau];
 
 const palaceNames = {
-  Ming: 'Ming',
-  XiongDi: 'XiongDi',
-  FuQi: 'FuQi',
-  ZiNv: 'ZiNv',
-  CaiBo: 'CaiBo',
-  JiE: 'JiE',
-  QianYi: 'QianYi',
-  JiaoYou: 'JiaoYou',
-  GuanLu: 'GuanLu',
-  TianZhai: 'TianZhai',
-  FuDe: 'FuDe',
-  FuMu: 'FuMu',
+  Ming: "Ming",
+  XiongDi: "XiongDi",
+  FuQi: "FuQi",
+  ZiNv: "ZiNv",
+  CaiBo: "CaiBo",
+  JiE: "JiE",
+  QianYi: "QianYi",
+  JiaoYou: "JiaoYou",
+  GuanLu: "GuanLu",
+  TianZhai: "TianZhai",
+  FuDe: "FuDe",
+  FuMu: "FuMu",
 } as const;
-export type PalaceName = typeof palaceNames[keyof typeof palaceNames];
+export type PalaceName = (typeof palaceNames)[keyof typeof palaceNames];
 export const PalaceName = Object.freeze({
-  ...palaceNames, ALL: Object.freeze<PalaceName[]>(identities.palaces),
+  ...palaceNames,
+  ALL: Object.freeze<PalaceName[]>(identities.palaces),
 });
 
 const starNames = {
-  ZiWei: 'ZiWei',
-  TianJi: 'TianJi',
-  TaiYang: 'TaiYang',
-  WuQu: 'WuQu',
-  TianTong: 'TianTong',
-  LianZhen: 'LianZhen',
-  TianFu: 'TianFu',
-  TaiYin: 'TaiYin',
-  TanLang: 'TanLang',
-  JuMen: 'JuMen',
-  TianXiang: 'TianXiang',
-  TianLiang: 'TianLiang',
-  QiSha: 'QiSha',
-  PoJun: 'PoJun',
-  ZuoFu: 'ZuoFu',
-  YouBi: 'YouBi',
-  WenChang: 'WenChang',
-  WenQu: 'WenQu',
+  ZiWei: "ZiWei",
+  TianJi: "TianJi",
+  TaiYang: "TaiYang",
+  WuQu: "WuQu",
+  TianTong: "TianTong",
+  LianZhen: "LianZhen",
+  TianFu: "TianFu",
+  TaiYin: "TaiYin",
+  TanLang: "TanLang",
+  JuMen: "JuMen",
+  TianXiang: "TianXiang",
+  TianLiang: "TianLiang",
+  QiSha: "QiSha",
+  PoJun: "PoJun",
+  ZuoFu: "ZuoFu",
+  YouBi: "YouBi",
+  WenChang: "WenChang",
+  WenQu: "WenQu",
 } as const;
-export type StarName = typeof starNames[keyof typeof starNames];
+export type StarName = (typeof starNames)[keyof typeof starNames];
 export const StarName = Object.freeze({
-  ...starNames, ALL: Object.freeze<StarName[]>(identities.stars),
+  ...starNames,
+  ALL: Object.freeze<StarName[]>(identities.stars),
 });
 
 export const StarCategory = Object.freeze({
-  Major: 'Major',
-  Minor: 'Minor',
-  Auxiliary: 'Auxiliary',
+  Major: "Major",
+  Minor: "Minor",
+  Auxiliary: "Auxiliary",
 } as const);
-export type StarCategory = typeof StarCategory[keyof typeof StarCategory];
+export type StarCategory = (typeof StarCategory)[keyof typeof StarCategory];
 
 export const StarGalaxy = Object.freeze({
-  South: 'South',
-  Central: 'Central',
-  North: 'North',
+  South: "South",
+  Central: "Central",
+  North: "North",
 } as const);
-export type StarGalaxy = typeof StarGalaxy[keyof typeof StarGalaxy];
+export type StarGalaxy = (typeof StarGalaxy)[keyof typeof StarGalaxy];
 
 const transformations = {
-  A: 'A',
-  B: 'B',
-  C: 'C',
-  D: 'D',
+  A: "A",
+  B: "B",
+  C: "C",
+  D: "D",
 } as const;
-export type Transformation = typeof transformations[keyof typeof transformations];
+export type Transformation = (typeof transformations)[keyof typeof transformations];
 export const Transformation = Object.freeze({
-  ...transformations, ALL: Object.freeze<Transformation[]>(identities.transformations),
+  ...transformations,
+  ALL: Object.freeze<Transformation[]>(identities.transformations),
 });
 
 export interface SelfTransformations {
@@ -189,10 +230,11 @@ interface ProfileBase {
   readonly birthHour: Branch;
 }
 
-export type Profile = ProfileBase & (
-  | { readonly birthYear: number; readonly birthDay: BirthDay }
-  | { readonly birthYear: null; readonly birthDay: null }
-);
+export type Profile = ProfileBase &
+  (
+    | { readonly birthYear: number; readonly birthDay: BirthDay }
+    | { readonly birthYear: null; readonly birthDay: null }
+  );
 
 /** 不可变本命事实与同步、按需查询；只能通过 Ziwei 创建。 */
 export interface Natal {

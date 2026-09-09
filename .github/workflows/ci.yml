@@ -63,6 +63,12 @@ jobs:
           cache: false
       - name: Install quality components
         run: mise exec -- rustup component add rustfmt clippy
+      - name: Install Node quality tools
+        run: mise exec -- pnpm install --frozen-lockfile
+      - name: TypeScript lint
+        run: mise run lint:node
+      - name: Node formatting
+        run: mise run check:node:format
       - name: Format
         run: mise exec -- cargo fmt --all -- --check
       - name: Clippy

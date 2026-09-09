@@ -22,6 +22,8 @@
 
 - 工具与基准测试分别为 `mise run check:node:tools`、`mise run check:node:bench`；后者会构建相同的 dist，不能与包消费端测试并行。
 
+- Lint 与格式化采用根 Oxc 配置；检查和修复入口、覆盖范围见 [工程验证](../../docs/agents/engineering.md#lint-与格式化)。
+
 - 保留输入防御、冻结、实例属性缓存、错误身份、Worker 与独立 tarball 消费端合同。类型负例不可作为运行时测试执行。
 
 - 发布前需独立验收平台产物、声明和清洁消费端，并获得发布授权。当前 `private: true`，不得发布。

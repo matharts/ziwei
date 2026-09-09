@@ -40,6 +40,20 @@ Node 任务通过 `pnpm exec` 执行，因此仍先经过开发版本校验；�
 
 ## Node 构建与类型检查
 
+### Lint 与格式化
+
+Node 工程使用 [Oxlint](https://oxc.rs/docs/guide/usage/linter/quickstart) 和 [Oxfmt](https://oxc.rs/docs/guide/usage/formatter/quickstart.html)，版本由根 Catalog 管理。任务入口为 `mise run lint:node`、`mise run check:node:format`；需要写入时使用 `mise run lint:node:fix` 或 `mise run format:node`。命令与文件范围以 [mise.toml](../../mise.toml) 为准，不添加第二套 package scripts。
+
+Oxlint 的 correctness 规则作为基础门禁，警告同样导致失败；安全修复不包含建议或危险修复。TypeScript 类型合同仍由独立类型检查负责，不用 lint 替代。配置分别位于根 [.oxlintrc.json](../../.oxlintrc.json) 与 [.oxfmtrc.json](../../.oxfmtrc.json)，编辑器复用相同配置。
+
+Oxfmt 的导入排序配置显式定义来源分组、升序、大小写和分区行为；`@matharts/` 归入内部命名空间，类型导入仍随来源分组并保留 `import type` 语义。空行不阻断排序，注释作为分区边界；不另设导入排序 lint 规则。行业实例、官方默认与项目取舍见[导入排序对照](../engineering/import-sorting.md)。package.json 键排序以 `sortPackageJson` 配置为准。
+
+`sortSideEffects: false` 只固定副作用导入自身的位置，普通导入仍可能跨过它排序；有初始化先后依赖的导入块须用注释划定边界。
+
+Oxfmt 读取根 [.editorconfig](../../.editorconfig)：TypeScript 和 JSON 使用两空格缩进，Rust 继续使用四空格。隔离测试复制相同的配置，避免临时目录与仓库的格式规则不同。
+
+当前覆盖包源码、配置、测试、基准工具与根 Node 配置；文档草案不纳入这一门禁，`native/`、`dist/`、`target/` 和依赖目录明确忽略。提交钩子与 CI 只检查，不自动修复或暂存文件；Rust 继续使用 rustfmt 和 Clippy。最低 Node 检查同时验证 Oxc 入口。工具测试验证错误退出、格式检查只读、生成文件忽略，以及实际 mise 任务的参数和运行时选择。
+
 ### 产物与模块模式
 
 `build:node:ts` 使用 Catalog 锁定的 Rslib，配置位于 [rslib.config.ts](../../packages/ziwei/rslib.config.ts)。采用 `bundle: false`、单份 ESM 与 ES2022 输出，保持 `dist/*.js` 和 `dist/*.d.ts` 路径；根包和 TS 包均为 `type: module`。
