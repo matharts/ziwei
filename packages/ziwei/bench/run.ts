@@ -38,18 +38,18 @@ function options(args: string[]): Options | { help: true } {
 function writeJSON(path: string, value: unknown) { writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`, { flag: 'wx' }); }
 function sourceFingerprint() {
   return fingerprint(root, [
-    ...['crates/ziwei/src', 'crates/ziwei_napi/src', 'packages/core/src'].map(path => ({ path, directory: true })),
-    ...['Cargo.toml', 'Cargo.lock', 'crates/ziwei/Cargo.toml', 'crates/ziwei_napi/Cargo.toml',
-      'crates/ziwei_napi/build.rs', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml',
-      'packages/core/package.json', 'packages/core/tsconfig.json', 'packages/core/rslib.config.ts',
+    ...['crates/ziwei/src', 'bindings/node/src', 'packages/ziwei/src'].map(path => ({ path, directory: true })),
+    ...['Cargo.toml', 'Cargo.lock', 'crates/ziwei/Cargo.toml', 'bindings/node/Cargo.toml',
+      'bindings/node/build.rs', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml',
+      'packages/ziwei/package.json', 'packages/ziwei/tsconfig.json', 'packages/ziwei/rslib.config.ts',
       'mise.toml'].map(path => ({ path })),
     { path: '.cargo', directory: true, optional: true },
   ]);
 }
 function artifactFingerprint() {
   return fingerprint(root, [
-    { path: 'packages/core/dist', directory: true }, { path: 'packages/core/native', directory: true },
-    { path: 'packages/core/package.json' },
+    { path: 'packages/ziwei/dist', directory: true }, { path: 'packages/ziwei/native', directory: true },
+    { path: 'packages/ziwei/package.json' },
   ]);
 }
 function contractFingerprint() {
@@ -130,7 +130,7 @@ async function main(config: Options) {
     ], commands);
     stage = 'validate';
     const parsed = parseRecord(readFileSync(join(output, 'run.jsonl'), 'utf8'), plan);
-    assert.ok(artifact.files.some(file => file.path === `packages/core/${parsed.runtime.nativeLibrary}`), '加载的原生库未被产物指纹覆盖');
+    assert.ok(artifact.files.some(file => file.path === `packages/ziwei/${parsed.runtime.nativeLibrary}`), '加载的原生库未被产物指纹覆盖');
     assert.equal(sourceFingerprint().sha256, source.sha256, '计时期间源码发生变化');
     assert.equal(artifactFingerprint().sha256, artifact.sha256, '计时期间产物发生变化');
     assert.equal(contractFingerprint().sha256, contract.sha256, '计时期间基准合同发生变化');

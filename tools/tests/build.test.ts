@@ -7,7 +7,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from '@rstest/core';
 
-const packageRoot = fileURLToPath(new URL('../../packages/core/', import.meta.url));
+const packageRoot = fileURLToPath(new URL('../../packages/ziwei/', import.meta.url));
 const packageRequire = createRequire(join(packageRoot, 'package.json'));
 const rslibManifest = packageRequire.resolve('@rslib/core/package.json');
 const rslib = join(dirname(rslibManifest), JSON.parse(readFileSync(rslibManifest, 'utf8')).bin.rslib);

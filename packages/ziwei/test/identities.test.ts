@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from '@rstest/core';
 import { invoke } from './runtime.ts';
-import * as api from '@ziweijs/core';
+import * as api from '@matharts/ziwei';
 
 test('identity helpers are frozen, receiver-independent and preserve the core protocol order', () => {
   assert.deepEqual(api.Stem.ALL, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);

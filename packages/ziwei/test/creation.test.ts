@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from '@rstest/core';
-import { Ziwei, Gender, Stem, Branch } from '@ziweijs/core';
+import { Ziwei, Gender, Stem, Branch } from '@matharts/ziwei';
 
 // Independent project fixture: crates/ziwei/tests/fixtures/README.md, 甲子火六局.
 test('both creation entries expose the confirmed Jia Zi birth profile', () => {

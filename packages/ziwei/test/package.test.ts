@@ -17,13 +17,13 @@ test('the packed package loads from an independent consumer without install scri
   execFileSync('pnpm', ['pack', '--out', tarball], { ...options, cwd: packageRoot });
   writeFileSync(join(directory, 'package.json'), JSON.stringify({
     name: 'ziwei-local-consumer', private: true, type: 'module',
-    dependencies: { '@ziweijs/core': 'file:./ziwei.tgz' },
+    dependencies: { '@matharts/ziwei': 'file:./ziwei.tgz' },
   }));
   // No source build, registry dependency, or install lifecycle script is needed.
   execFileSync('pnpm', ['install', '--offline', '--ignore-scripts'], { ...options, cwd: directory });
-  const installedPackage = join(directory, 'node_modules', '@ziweijs', 'core');
+  const installedPackage = join(directory, 'node_modules', '@matharts', 'ziwei');
   const manifest = JSON.parse(readFileSync(join(installedPackage, 'package.json'), 'utf8'));
-  assert.equal(manifest.name, '@ziweijs/core');
+  assert.equal(manifest.name, '@matharts/ziwei');
   assert.deepEqual(Object.keys(manifest.exports), ['.']);
   assert.equal(manifest.dependencies, undefined);
   // Consumers receive only distribution assets, never Rust/TS sources or workspace tooling.
@@ -38,7 +38,7 @@ test('the packed package loads from an independent consumer without install scri
     .flatMap(file => [file.replace(/\.ts$/, '.js'), file.replace(/\.ts$/, '.d.ts')]);
   assert.deepEqual(readdirSync(join(installedPackage, 'dist')).sort(), expectedDist.sort());
   const consumerSource = `
-    import { Ziwei, Branch, StarName, type Natal, type NatalSnapshot, type DecadeYear } from '@ziweijs/core';
+    import { Ziwei, Branch, StarName, type Natal, type NatalSnapshot, type DecadeYear } from '@matharts/ziwei';
     const natal: Natal = Ziwei.fromBirth({ gender: 1, birthYear: 1984, birthMonth: 1, birthDay: 6, birthHour: Branch.Zi });
     const snapshot: NatalSnapshot = natal.toJSON();
     const years: readonly DecadeYear[] = natal.decadeYears(11);
@@ -57,8 +57,8 @@ test('the packed package loads from an independent consumer without install scri
   const result = execFileSync(process.execPath, ['--expose-gc', '--input-type=module', '--eval', `
     import assert from 'node:assert/strict';
     import { createRequire } from 'node:module';
-    import { Ziwei, ZiweiError, Branch } from '@ziweijs/core';
-    const cjs = createRequire(import.meta.url)('@ziweijs/core');
+    import { Ziwei, ZiweiError, Branch } from '@matharts/ziwei';
+    const cjs = createRequire(import.meta.url)('@matharts/ziwei');
     assert.equal(cjs.ZiweiError, ZiweiError);
     let profile;
     let palaces;

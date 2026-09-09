@@ -14,9 +14,9 @@
 
 2026-09-09 补充：Node.js/TypeScript 的完整使用合同见 [适配设计](node-api-design.md)，docs/architecture/node-api 为独立设计声明与编译型用例。D-256 已使实际生成声明与完整设计匹配，补齐本命／四化／限运查询、身份辅助及 JSON 输出。
 
-D-257 将 Rust 绑定迁至 `crates/ziwei_napi`，TypeScript 迁至 `packages/core/src`；Cargo 包名为 `ziwei-napi`，npm 包名为 `@ziweijs/core`，两者均禁止发布；不新增第二个领域实现。
+D-260（2026-09-10）将 Rust 绑定按宿主组织到 `bindings/node`，Cargo 包改为 `ziwei-node`（Rust 标识符 `ziwei_node`）；保留 D-257 的 Rust／TS 分离，TypeScript 按 D-262 迁至 `packages/ziwei/src`，npm 包名按 D-261 改为 `@matharts/ziwei`。两者均禁止发布，不新增第二个领域实现。
 
-1. 根 workspace 包含 `ziwei` 与 `ziwei-napi`，`default-members` 仍只选择核心 `ziwei`；开发工具保留独立 workspace。
+1. 根 workspace 包含 `crates/ziwei` 与 `bindings/node`，Cargo 包分别为 `ziwei` 与 `ziwei-node`；`default-members` 仍只选择核心 `ziwei`，开发工具保留独立 workspace。
 
 2. 本命构建、按需大限/流年、只读查询同属 `ziwei`；它们不是独立 Cargo 包。
 
@@ -54,11 +54,11 @@ Node-API 与 `wasm-bindgen` 的编译目标、错误模型、对象生命周期�
 
 ```text
 上层 Rust 应用 ───────────────────────────► ziwei
-ziwei-napi ────────────────────────────────► ziwei
+ziwei-node ────────────────────────────────► ziwei
 ziwei-wasm ────────────────────────────────► ziwei
 ```
 
-`ziwei-napi` 与 `ziwei-wasm` 之间也没有依赖关系。
+`ziwei-node` 与未来的 `ziwei-wasm` 之间也没有依赖关系。
 
 ## Workspace 形状
 
@@ -75,14 +75,15 @@ ziwei-wasm ───────────────────────
 ├── lefthook.yml
 ├── .github/workflows/ci.yml
 ├── crates/
-│   ├── ziwei/
-│   │   ├── Cargo.toml
-│   │   ├── src/                   # 模块树见下文
-│   │   ├── tests/                 # 公开合同、查询、固定命例、负载自检
-│   │   │   └── fixtures/
-│   │   ├── benches/               # construction-120 与共享 read-path-512 负载
-│   │   └── examples/              # inspect 与独立读取基准运行器
-│   └── ziwei_napi/                # Cargo 包 ziwei-napi
+│   └── ziwei/
+│       ├── Cargo.toml
+│       ├── src/                   # 模块树见下文
+│       ├── tests/                 # 公开合同、查询、固定命例、负载自检
+│       │   └── fixtures/
+│       ├── benches/               # construction-120 与共享 read-path-512 负载
+│       └── examples/              # inspect 与独立读取基准运行器
+├── bindings/                     # 按宿主组织 Rust 适配层
+│   └── node/                     # Cargo 包 ziwei-node
 │       ├── Cargo.toml
 │       ├── build.rs
 │       └── src/                   # 原生持有、校验与转换
@@ -91,7 +92,7 @@ ziwei-wasm ───────────────────────
 │           ├── input.rs
 │           └── error.rs
 ├── packages/
-│   └── core/                      # npm 包 @ziweijs/core
+│   └── ziwei/                     # npm 包 @matharts/ziwei
 │       ├── package.json
 │       ├── tsconfig.json
 │       ├── rslib.config.ts        # 单份 ESM 与声明构建，native 外置
@@ -122,19 +123,19 @@ ziwei-wasm ───────────────────────
 
 根 `Cargo.toml` 是 workspace 配置，不是业务包。它统一 edition 2024、MSRV 1.98、许可证与仓库地址，默认成员仍只有核心。核心继承 `forbid(unsafe_code)`；Node 绑定单独使用 `deny(unsafe_code)`，兼容 napi-rs 注册宏内部的局部允许声明，手写绑定不使用 unsafe。
 
-所有排盘领域实现和简繁名称均位于 `crates/ziwei`。根 pnpm workspace 单独管理 JavaScript 包与共享锁文件；`packages/core` 通过 `../../crates/ziwei_napi/Cargo.toml` 构建自己的内部原生产物，没有根级 `tests/` 或 `fixtures/` 目录。
+所有排盘领域实现和简繁名称均位于 `crates/ziwei`。`bindings/` 承载各宿主的 Rust adapter，与引擎共享根 Cargo workspace 和锁文件；adapter 单向依赖 `ziwei`，彼此不依赖。根 pnpm workspace 单独管理 JavaScript 包与共享锁文件；`packages/ziwei` 通过 `../../bindings/node/Cargo.toml` 构建自己的内部原生产物，没有根级 `tests/` 或 `fixtures/` 目录。
 
 ### 工具链与开发任务
 
 `mise.toml` 固定 Rust `1.98.1`、Lefthook `2.1.12`、Node `24.21.0` 与 pnpm `12.3.4`。pre-commit 检查格式与暂存区空白，pre-push 执行 Rust 测试和 Clippy；Node 构建与验收另由 build:node/check:node 承担，不加入本地钩子。
 
-按 D-259，开发任务统一在 mise 定义，根与 core 的 package.json 不再提供重复 scripts；工程合同测试位于 `tools/tests`。基准记录与 Rust 打包校验仍由 `tools/xtask` 完成，不依赖 Node；该目录通过自己的 workspace、publish = false 和 lockfile 隔离开发依赖，绑定与工具均不改变核心运行依赖或公开 API。
+按 D-259，开发任务统一在 mise 定义，根与 TS 包的 package.json 不再提供重复 scripts；工程合同测试位于 `tools/tests`。基准记录与 Rust 打包校验仍由 `tools/xtask` 完成，不依赖 Node；该目录通过自己的 workspace、publish = false 和 lockfile 隔离开发依赖，绑定与工具均不改变核心运行依赖或公开 API。
 
 ### 未来形状
 
-D-257 取代 D-252 的 Node 同目录布局：Rust crate 放入 `crates/`，npm 包放入 `packages/`。新 npm 包由 `packages/*` 纳入 workspace；不为证明“多包”预先创建占位包，也不增加只有转发职责的 npm 原生包。
+D-260 按职责区分 `crates/`（Rust 引擎）、`bindings/`（各宿主的 Rust adapter）与 `packages/`（JavaScript／TypeScript 包）。新宿主的绑定在真正实施时加入 `bindings/<host>`，并加入根 Cargo workspace；新 npm 包由 `packages/*` 纳入 pnpm workspace。不为证明“多包”预先创建占位包，也不增加只有转发职责的 npm 原生包。
 
-Wasm 仍是独立 adapter，但其 Rust crate、JS 分发目录与加载合同在实施时确定，不能直接套用 Node 的加载方式。只有达到后文拆分门槛才创建新包；共享命例或根级测试也按实际复用需求迁移，不提前搬动核心测试。
+Wasm 仍是独立 adapter，实施时可放入 `bindings/wasm`，其 JS 分发目录与加载合同届时确定，不能直接套用 Node 的加载方式。只有达到后文拆分门槛才创建新包；共享命例或根级测试也按实际复用需求迁移，不提前搬动核心测试。
 
 ## 包职责
 
@@ -170,13 +171,13 @@ Wasm 仍是独立 adapter，但其 Rust crate、JS 分发目录与加载合同�
 
 Cargo 包名与 Rust import 名均为 `ziwei`。不能通过新增纯重导出门面包来回避这一决策。
 
-### `ziwei-napi` 与 `@ziweijs/core`（完整 Node API 已实现）
+### `ziwei-node` 与 `@matharts/ziwei`（完整 Node API 已实现）
 
-实际进展见 [Node 包说明](../../packages/core/README.md)。以下完整职责中的两类建盘、读取、查询、限运、身份辅助、错误、JSON 与加载均已实现；跨平台验收和发布流程不在此次实现范围。
+实际进展见 [Node 包说明](../../packages/ziwei/README.md)。以下完整职责中的两类建盘、读取、查询、限运、身份辅助、错误、JSON 与加载均已实现；跨平台验收和发布流程不在此次实现范围。
 
-保留 D-254 的模块职责，按 D-257 分离源码位置：`crates/ziwei_napi/src/lib.rs` 与 `packages/core/src/index.ts` 保留各自的构造入口，命盘对象实现分别集中在各自私有的 `natal.rs` 和 `natal.ts`。
+保留 D-254 的模块职责与 D-257 的 Rust／TS 分离，按 D-260 更新 Rust 绑定位置：`bindings/node/src/lib.rs` 与 `packages/ziwei/src/index.ts` 保留各自的构造入口，命盘对象实现分别集中在各自私有的 `natal.rs` 和 `natal.ts`。
 
-原生持有、记账与回收不拆散，TS 冻结与实例缓存不拆散；内部包装函数不增加包根导出或包子路径。生成产物位于 `packages/core/native` 与 `packages/core/dist`，npm 消费端不依赖 Rust 源码或本仓库路径。
+原生持有、记账与回收不拆散，TS 冻结与实例缓存不拆散；内部包装函数不增加包根导出或包子路径。生成产物位于 `packages/ziwei/native` 与 `packages/ziwei/dist`，npm 消费端不依赖 Rust 源码或本仓库路径。
 
 该 adapter 面向 Node.js/TypeScript。它依赖 `ziwei`，并且只做以下转换：
 
@@ -192,7 +193,7 @@ Cargo 包名与 Rust import 名均为 `ziwei`。不能通过新增纯重导出�
 
 ### `ziwei-wasm`（后续）
 
-该 adapter 面向浏览器和其他 Wasm host。职责与 `ziwei-napi` 相同，但实现可针对 `wasm-bindgen`、Wasm 对象生命周期和 Web 测试 runtime 调整。
+该 adapter 面向浏览器和其他 Wasm host。职责与 `ziwei-node` 相同，但实现可针对 `wasm-bindgen`、Wasm 对象生命周期和 Web 测试 runtime 调整。
 
 它同样不能包含领域规则。Wasm 不是 `ziwei` 的 feature：两者是不同 adapter，拥有不同的编译与测试约束。
 
@@ -584,7 +585,7 @@ crates/ziwei/
 
 | 候选包 | 允许创建的条件 | 依赖方向 |
 | --- | --- | --- |
-| `ziwei-napi` | 核心构建、查询、快照和错误合同已稳定，且开始交付 Node 包 | `ziwei-napi -> ziwei` |
+| `ziwei-node` | 核心构建、查询、快照和错误合同已稳定，且开始交付 Node 包 | `ziwei-node -> ziwei` |
 | `ziwei-wasm` | 核心合同已稳定，且开始交付浏览器/Wasm 产物 | `ziwei-wasm -> ziwei` |
 | `ziwei-calendar` | 项目明确纳入历法换算，并能作为向 `Birth` 提供资料的独立能力 | 可依赖 `ziwei` 的输入类型；核心不得依赖它 |
 | `ziwei-analysis` | 项目明确纳入解释/断语，并确认其独立语义与安全界限 | `ziwei-analysis -> ziwei` |

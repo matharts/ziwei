@@ -5,7 +5,7 @@ import { platform, arch, release, cpus, totalmem, freemem, loadavg } from 'node:
 import { fileURLToPath } from 'node:url';
 import { relative, resolve } from 'node:path';
 import { setImmediate } from 'node:timers/promises';
-import type { Birth, Parameters, Branch } from '@ziweijs/core';
+import type { Birth, Parameters, Branch } from '@matharts/ziwei';
 
 declare global { var __ziweiBenchSink: unknown; }
 export type Protocol = ReturnType<typeof protocol>;
@@ -59,7 +59,7 @@ function resourceState() { return { memory: process.memoryUsage(), freeMemory: f
 
 async function measure(smoke: boolean) {
   assert.ok(global.gc, '基准必须以 --expose-gc 运行');
-  const { Ziwei, StarName } = await import('@ziweijs/core');
+  const { Ziwei, StarName } = await import('@matharts/ziwei');
   const inputs = corpus();
   assert.equal(hash(inputs), corpusHash, '固定输入语料发生变化');
   const { births, parameters } = inputs;

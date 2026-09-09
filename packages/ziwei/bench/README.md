@@ -1,6 +1,6 @@
 # Node 公开 API 基准
 
-独立套件 `ziwei-node-public-512`，version 1。只从 `@ziweijs/core` 包根导入，不读取私有原生入口，也不依赖 `target/` 下的临时脚本。运行器先构建当前本机 release 原生包与 TypeScript 门面，再在独立 Node 进程中测量。
+独立套件 `ziwei-node-public-512`，version 1。只从 `@matharts/ziwei` 包根导入，不读取私有原生入口，也不依赖 `target/` 下的临时脚本。运行器先构建当前本机 release 原生包与 TypeScript 门面，再在独立 Node 进程中测量。
 
 ## 运行方式
 
@@ -18,7 +18,7 @@ mise run check:node:bench
 
 使用上面的 mise 任务选择项目工具链，并通过 `pnpm exec` 校验开发版本。运行器复用 `mise run build:node`，显式用 `--tool node@<当前版本>` 保持构建与计时的 Node 一致；计时进程仍由 `process.execPath` 启动。
 
-报告保存实际 Node/V8 和 mise 版本，不将不同运行时的结果视为同一环境；不改全局 PATH 或 Node 配置。复杂输出路径使用仓库根 `mise exec -- pnpm exec -- node packages/core/bench/run.ts --smoke --output <新目录>`，避免普通任务的 shell 转义。
+报告保存实际 Node/V8 和 mise 版本，不将不同运行时的结果视为同一环境；不改全局 PATH 或 Node 配置。复杂输出路径使用仓库根 `mise exec -- pnpm exec -- node packages/ziwei/bench/run.ts --smoke --output <新目录>`，避免普通任务的 shell 转义。
 
 ```sh
 mise run benchmark:node:smoke -- --output /tmp/ziwei-node-smoke-new
@@ -95,7 +95,7 @@ mise run benchmark:node:smoke -- --output /tmp/ziwei-node-smoke-new
 
 - `run.ts`：CLI、构建、日志、前后复核及成功／失败记录。
 
-- `bench.test.ts`：由 Rstest 的 `node-bench` 项目运行 CLI 与记录合同；包含一次真实包冒烟，以及隔离临时包中的失败测试，不混入 `core` 项目的 `test/*.test.ts` 功能测试。任务迁移只改变构建调用与工具追溯，不改变测量协议。
+- `bench.test.ts`：由 Rstest 的 `node-bench` 项目运行 CLI 与记录合同；包含一次真实包冒烟，以及隔离临时包中的失败测试，不混入 `ziwei` 项目的 `test/*.test.ts` 功能测试。任务迁移只改变构建调用与工具追溯，不改变测量协议。
 
 CI 只在 `native-tests` 的 Linux 作业、包功能测试之后串行运行 `check:node:bench`；该命令包含真实 smoke，不再增加重复 smoke 步骤，不在 macOS／Windows 矩阵重复计时。测试中的故障进程不是性能样本。`bench/` 不在 npm `files` 白名单中，不随包发布；已有独立打包消费端测试验证这一边界。
 

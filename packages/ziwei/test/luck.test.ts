@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from '@rstest/core';
-import { Ziwei } from '@ziweijs/core';
+import { Ziwei } from '@matharts/ziwei';
 
 const birth = { gender: 1, birthYear: 1984, birthMonth: 1, birthDay: 6, birthHour: 0 } as const;
 const parameters = { gender: 1, birthStem: 0, birthBranch: 0, birthMonth: 1, ziweiBranch: 2, birthHour: 0 } as const;

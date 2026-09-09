@@ -2,7 +2,7 @@
 # Keep lint definitions local to avoid Taplo's external-reference validation error.
 
 [package]
-name = "ziwei-napi"
+name = "ziwei-node"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
@@ -16,7 +16,7 @@ crate-type = ["cdylib"]
 doctest = false
 
 [dependencies]
-ziwei = { path = "../ziwei" }
+ziwei = { path = "../../crates/ziwei" }
 napi = { version = "=3.12.2", default-features = false, features = ["napi8"] }
 napi-derive = "=3.6.3"
 

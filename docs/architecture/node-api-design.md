@@ -1,6 +1,6 @@
 # Node.js / TypeScript 适配层设计
 
-状态：完整设计已确定，已确认的 Node API 已全部实现。2026-09-09，依据核心提交 `26d5cbeff3f88c64a5cbb4d6cec4a4fff861b428`。D-253、D-255、D-256 已完成两类建盘、全部读取／查询、按需限运、身份辅助、错误与 `toJSON`，见 [Node 包说明](../../packages/core/README.md)。实际生成声明与本设计逐项匹配；这不是 npm 发布、全部平台或性能验证声明。
+状态：完整设计已确定，已确认的 Node API 已全部实现。2026-09-09，依据核心提交 `26d5cbeff3f88c64a5cbb4d6cec4a4fff861b428`。D-253、D-255、D-256 已完成两类建盘、全部读取／查询、按需限运、身份辅助、错误与 `toJSON`，见 [Node 包说明](../../packages/ziwei/README.md)。实际生成声明与本设计逐项匹配；这不是 npm 发布、全部平台或性能验证声明。
 
 ## 结论与交付物
 
@@ -21,8 +21,8 @@
 | 模块 | 职责 | 不承担的工作 |
 | --- | --- | --- |
 | crates/ziwei | 唯一排盘规则与领域事实源 | Node 对象、JSON、语言配置 |
-| crates/ziwei_napi | 持有核心 Natal，验证宿主表示，调用核心，转换返回值和错误 | 重写规则、复制内部索引、导出裸指针 |
-| packages/core/src | TypeScript 公开导出、对象形状、深层只读、属性快照保存、异常外观 | 计算安星、四化或限运规则 |
+| bindings/node | 持有核心 Natal，验证宿主表示，调用核心，转换返回值和错误 | 重写规则、复制内部索引、导出裸指针 |
+| packages/ziwei/src | TypeScript 公开导出、对象形状、深层只读、属性快照保存、异常外观 | 计算安星、四化或限运规则 |
 | docs/architecture/node-api | 当前声明与编译型使用合同 | 可加载的 Node 包或绑定实现 |
 
 不额外创建只有转发作用的 npm 层或第二套领域模型。宿主 DTO 是核心结果的投影，不具有独立排盘权威。后续 Wasm adapter 继续单向依赖核心，不依赖 Node 原生模块；其初始化和释放机制另属 Wasm 实施范围，不能据此声称浏览器已经可用。
@@ -39,11 +39,11 @@
 
 ### 目录与包名
 
-按 D-257，Rust adapter 位于 `crates/ziwei_napi`，Cargo 包名仍为 `ziwei-napi`；TypeScript 门面位于 `packages/core/src`，npm 包名为 `@ziweijs/core`。根目录的 pnpm workspace 管理 `packages/*` 与共享锁文件；npm 包通过显式 Rust manifest 构建 `native/`，再由 TypeScript 构建 `dist/`。这取代 D-252 的同目录布局，不改变宿主合同或创建第二套领域实现。
+按 D-260，Rust adapter 位于 `bindings/node`，Cargo 包名为 `ziwei-node`，Rust 标识符为 `ziwei_node`；TypeScript 门面按 D-262 迁至 `packages/ziwei/src`，npm 包名按 D-261 改为 `@matharts/ziwei`。根 Cargo workspace 同时管理引擎和 Rust 绑定，根 pnpm workspace 继续管理 `packages/*` 与共享锁文件；npm 包通过显式 Rust manifest 构建 `native/`，再由 TypeScript 构建 `dist/`。D-260 调整 D-257 的绑定位置与 Cargo 包名，D-261 只调整 npm 包名及对应导入路径；保留 Rust／TS 分离，不恢复 D-252 的同目录布局，也不改变宿主方法合同或创建第二套领域实现。
 
-尚未核验 npm 名称可用性和 scope 权限，也未注册或发布。已确认的 Node API 已全部实现，设置 private/publish = false 防止误发布；Wasm 尚未进入实施，其目录与分发包在实施时确定，不预先创建空包。
+尚未核验 npm 名称可用性和 scope 权限，也未注册或发布。已确认的 Node API 已全部实现，设置 private/publish = false 防止误发布；Wasm 等宿主的 Rust adapter 在实施时加入 `bindings/`，分发包与加载合同另行确定，不预先创建空包。
 
-保留 D-254 的模块职责：命盘对象实现分别为 `crates/ziwei_napi/src/natal.rs` 和 `packages/core/src/natal.ts`；各自的 `lib.rs`、`index.ts` 保留构造与导出职责。两个目录共同实现一个 Node adapter，内部包装函数不从包根导出，不改变以下接口、错误和生命周期合同。
+保留 D-254 的模块职责：命盘对象实现分别为 `bindings/node/src/natal.rs` 和 `packages/ziwei/src/natal.ts`；各自的 `lib.rs`、`index.ts` 保留构造与导出职责。两个目录共同实现一个 Node adapter，内部包装函数不从包根导出，不改变以下接口、错误和生命周期合同。
 
 ## 2. 顶层导出与调用风格
 
@@ -240,7 +240,7 @@ INVALID_ARGUMENT 的 reason 为 missing、type、non_finite、non_integer、out_
 
 - public exports 仅包根，不开放内部二进制与实现子路径。不在导入时联网下载，不设置自动从源码编译的安装回退；缺少匹配产物时给出可操作的加载错误。
 
-- 首个切片采用 napi-rs v3、Node-API 8，补丁版本与工具版本已锁定，详见 [绑定依赖](../../crates/ziwei_napi/Cargo.toml)和[工具链配置](../../mise.toml)。必须验证生成代码与实际加载，不通过升级 Node-API 等级宣称性能收益。
+- 首个切片采用 napi-rs v3、Node-API 8，补丁版本与工具版本已锁定，详见 [绑定依赖](../../bindings/node/Cargo.toml)和[工具链配置](../../mise.toml)。必须验证生成代码与实际加载，不通过升级 Node-API 等级宣称性能收益。
 
 - 支持门槛调整为 Node >=24.15.0，开发固定 24.21.0；不再声明 Node 22 支持。平台目标仍为 macOS arm64、Linux x64 GNU、Windows x64 MSVC，未实测平台不得称为已验证。24.15.0 是本项目依赖的 `require(ESM)` 稳定版本，也涵盖 24.12.0 已稳定的 TS 类型擦除。[Node 官方模块文档](https://nodejs.org/docs/latest-v24.x/api/modules.html#loading-ecmascript-modules-using-require)
 
@@ -376,7 +376,7 @@ rtk proxy mise exec -- npm exec --yes --package=typescript@5.9.3 -- tsc --projec
 
 ### 多包目录与包名迁移（2026-09-09，D-257）
 
-按用户要求分离 Rust 与 TypeScript，将 npm 包改为合法 scoped 名称 `@ziweijs/core`。Cargo workspace 成员、根 pnpm workspace、共享锁文件、mise、CI、包自引用与消费端测试已同步；不保留旧包名兼容别名。保留薄适配职责，未引入新的领域模型、运行依赖或发布脚本。
+当时按用户要求分离 Rust 与 TypeScript，将 npm 包改为合法 scoped 名称 `@ziweijs/core`。Cargo workspace 成员、根 pnpm workspace、共享锁文件、mise、CI、包自引用与消费端测试已同步；不保留旧包名兼容别名。保留薄适配职责，未引入新的领域模型、运行依赖或发布脚本。当前包名已按 D-261 改为 `@matharts/ziwei`，本节保留历史迁移记录。
 
 本轮实际通过：
 

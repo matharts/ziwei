@@ -4,7 +4,7 @@
   <img alt="Ziwei — 紫微斗数排盘引擎" src="../../assets/ziwei-banner-light.png" width="100%">
 </picture>
 
-<h1 align="center">@ziweijs/core</h1>
+<h1 align="center">@matharts/ziwei</h1>
 
 <p align="center">
   <strong>输入农历出生资料，查询宫位、星曜与四化。</strong><br>
@@ -32,7 +32,7 @@
 需要 Node.js **24.15.0 或更高版本**。当前没有 npm 发布版本，取得与运行平台匹配的本地包（`.tgz`）后，在应用项目中安装：
 
 ```sh
-pnpm add /path/to/ziweijs-core.tgz
+pnpm add /path/to/matharts-ziwei.tgz
 ```
 
 将路径替换为实际文件位置。本地包包含平台专用的原生二进制，需要匹配的操作系统、CPU 架构和运行环境；不能将同一份包用于所有平台。
@@ -42,7 +42,7 @@ pnpm add /path/to/ziweijs-core.tgz
 通过 `Ziwei.fromBirth` 同步创建本命盘。在已安装本包的应用项目中，将以下代码保存为 `example.ts`：
 
 ```ts
-import { Ziwei, Gender, Branch, StarName } from '@ziweijs/core';
+import { Ziwei, Gender, Branch, StarName } from '@matharts/ziwei';
 
 const natal = Ziwei.fromBirth({
   gender: Gender.Male,
@@ -72,7 +72,7 @@ console.log(natal.star(StarName.WuQu).birthTransformation); // C：化科
 不提供数字年份和出生日时，使用 `Ziwei.fromParameters`。生年干支必须阴阳相配，`ziweiBranch` 是紫微所在的地支：
 
 ```ts
-import { Stem } from '@ziweijs/core';
+import { Stem } from '@matharts/ziwei';
 
 const fromParameters = Ziwei.fromParameters({
   gender: Gender.Male,
@@ -123,7 +123,7 @@ console.log(natal.palaceStar(Branch.Yin, StarName.WuQu)); // null
 大限序号为 `0..11`，`0` 表示第一大限；流年序号为该大限内的 `0..9`。年龄使用虚岁，`decadeAgeRange` 的起止两端均包含。
 
 ```ts
-import { PalaceName } from '@ziweijs/core';
+import { PalaceName } from '@matharts/ziwei';
 
 console.log(natal.periodIndicesAtAge(16)); // { decade: 1, yearly: 0 }
 console.log(natal.decadeYears(1)[0]); // { age: 16, year: 1999 }
@@ -190,7 +190,7 @@ const json = JSON.stringify(natal);
 无效输入抛出 `ZiweiError`，使用中文 `message` 说明原因，并通过只读 `code` 和判别联合 `detail` 提供结构化信息。不要解析错误文案来判断错误类型：
 
 ```ts
-import { ZiweiError } from '@ziweijs/core';
+import { ZiweiError } from '@matharts/ziwei';
 
 try {
   natal.decade(12);
@@ -208,7 +208,7 @@ try {
 
 本包支持两条建盘入口、本命数据与查询、生年四化与双向自化、宫干四化，以及按需大限／流年。不提供连续飞化、解释或断语，暂不支持流月／流日／流时。
 
-模块只从包根导出，默认使用 ESM，也可通过 Node 的 `require('@ziweijs/core')` 读取同一组命名导出；不提供默认导出、单独 CJS 构建、公开命盘构造器或内部子路径。
+模块只从包根导出，默认使用 ESM，也可通过 Node 的 `require('@matharts/ziwei')` 读取同一组命名导出；不提供默认导出、单独 CJS 构建、公开命盘构造器或内部子路径。
 
 当前已验证的运行环境为 macOS arm64／Node 24，尚未提供跨平台预编译包。Node 22 不在支持范围，Node 26 与其他平台尚未验证；本包不能直接在浏览器中运行。
 

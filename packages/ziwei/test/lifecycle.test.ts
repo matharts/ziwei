@@ -3,7 +3,7 @@ import { test } from '@rstest/core';
 import { createRequire } from 'node:module';
 import { once } from 'node:events';
 import { Worker } from 'node:worker_threads';
-import * as esm from '@ziweijs/core';
+import * as esm from '@matharts/ziwei';
 import { invoke } from './runtime.ts';
 
 const birth = { gender: 1, birthYear: 1984, birthMonth: 1, birthDay: 6, birthHour: 0 } as const;
@@ -32,7 +32,7 @@ test('profile is immutable, stable by reference, detached from input and usable 
 
 test('ESM and CJS share entry points and error identity; only the root is public', async () => {
   const require = createRequire(import.meta.url);
-  const cjs = require('@ziweijs/core');
+  const cjs = require('@matharts/ziwei');
   assert.equal(esm.Ziwei, cjs.Ziwei);
   assert.equal(esm.ZiweiError, cjs.ZiweiError);
   assert.deepEqual(Object.keys(esm).sort(), [
@@ -63,7 +63,7 @@ test('ESM and CJS share entry points and error identity; only the root is public
   // @ts-expect-error Deliberately test a forbidden operation at runtime.
   assert.throws(() => { esm.Ziwei.fromBirth = () => null; }, TypeError);
   for (const subpath of ['native/binding.cjs', 'dist/natal.js', 'src/natal.ts', 'natal']) {
-    const specifier = `@ziweijs/core/${subpath}`;
+    const specifier = `@matharts/ziwei/${subpath}`;
     assert.throws(() => require(specifier), { code: 'ERR_PACKAGE_PATH_NOT_EXPORTED' });
     await assert.rejects(import(specifier), { code: 'ERR_PACKAGE_PATH_NOT_EXPORTED' });
   }

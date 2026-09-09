@@ -137,7 +137,7 @@ importers:
         specifier: 'catalog:'
         version: 7.0.2
 
-  packages/core:
+  packages/ziwei:
     devDependencies:
       '@napi-rs/cli':
         specifier: 'catalog:'

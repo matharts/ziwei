@@ -10,7 +10,7 @@ Rust 命令通过 `mise` 执行：直接调用使用 `rtk mise exec -- <command>
 
 ### Node 版本与职责
 
-Node 开发统一从仓库根使用 mise 任务，完整命令、工作目录和执行顺序只定义在 [mise.toml](../../mise.toml)；根及 `packages/core/package.json` 不再包含开发 scripts。mise 安装并选择工具链；根 [package.json](../../package.json) 的 `devEngines` 校验 Node `>=24.15.0` 与 pnpm `12.3.4`，两者均为 `onFail: "error"`。
+Node 开发统一从仓库根使用 mise 任务，完整命令、工作目录和执行顺序只定义在 [mise.toml](../../mise.toml)；根及 `packages/ziwei/package.json` 不再包含开发 scripts。mise 安装并选择工具链；根 [package.json](../../package.json) 的 `devEngines` 校验 Node `>=24.15.0` 与 pnpm `12.3.4`，两者均为 `onFail: "error"`。
 
 Node 任务通过 `pnpm exec` 执行，因此仍先经过开发版本校验；不配置自动下载，也不使用 workspace 的 `runtimeOnFail`／`pmOnFail` 覆盖 manifest。子包 `engines.node` 保留消费端最低版本约束，不重复 `devEngines`；根私有 workspace 不使用 `engines` 或旧 `packageManager` 字段。
 
@@ -28,7 +28,7 @@ Node 任务通过 `pnpm exec` 执行，因此仍先经过开发版本校验；�
 
 ### 参数传递
 
-普通选项可用 `mise run test:node -- -t palace`。mise 的普通内联任务仍经过平台 shell，不承诺任意参数保真。包含换行、尾随反斜杠、变量字面量等复杂参数时，从仓库根使用 `mise exec -- pnpm exec -- node node_modules/@rstest/core/bin/rstest.js --project core <参数...>`；其他工具同样直接启动其 CLI，并使用对应任务的工作目录。
+普通选项可用 `mise run test:node -- -t palace`。mise 的普通内联任务仍经过平台 shell，不承诺任意参数保真。包含换行、尾随反斜杠、变量字面量等复杂参数时，从仓库根使用 `mise exec -- pnpm exec -- node node_modules/@rstest/core/bin/rstest.js --project ziwei <参数...>`；其他工具同样直接启动其 CLI，并使用对应任务的工作目录。
 
 调用 shell 本身仍需正确引用参数。pnpm 12.3.4 的 Windows `run` 即使启用 `shellEmulator` 也可能改写这些参数，不能重新包一层 `pnpm run`。[pnpm 脚本拼接](https://github.com/pnpm/pnpm/blob/v12.3.4/pnpm/crates/executor/src/run_script.rs#L238)、[mise 直接执行](https://mise.jdx.dev/cli/exec.html)与 [mise 任务执行](https://mise.jdx.dev/tasks/architecture.html)说明了各层的区别。
 
@@ -42,7 +42,7 @@ Node 任务通过 `pnpm exec` 执行，因此仍先经过开发版本校验；�
 
 ### 产物与模块模式
 
-`build:node:ts` 使用 Catalog 锁定的 Rslib，配置位于 [rslib.config.ts](../../packages/core/rslib.config.ts)。采用 `bundle: false`、单份 ESM 与 ES2022 输出，保持 `dist/*.js` 和 `dist/*.d.ts` 路径；根包和 core 均为 `type: module`。
+`build:node:ts` 使用 Catalog 锁定的 Rslib，配置位于 [rslib.config.ts](../../packages/ziwei/rslib.config.ts)。采用 `bundle: false`、单份 ESM 与 ES2022 输出，保持 `dist/*.js` 和 `dist/*.d.ts` 路径；根包和 TS 包均为 `type: module`。
 
 `import` 与 `require(ESM)` 解析到同一入口，不再维护 CJS 实现或桥接文件。公开模块图不允许 top-level await。`native/binding.cjs` 与 `.node` 由 napi 生成，外置并交给 Node 加载。
 
@@ -64,7 +64,7 @@ Node 任务通过 `pnpm exec` 执行，因此仍先经过开发版本校验；�
 
 Rslib 负责 JS 与声明输出；`tsconfig.json` 保留严格类型规则并设置 `noEmit`，独立 `tsc` 不再生成产品文件。声明生成启用 `abortOnError`，类型错误必须让构建退出非零；失败构建的任何残留文件都不可作为成功产物。`check:node:types` 继续使用 tsc 检查正负类型合同，Rslib 不代替该独立检查。
 
-`tools/tests/build.test.ts` 先确认有效源码可构建，再验证未引用源码的类型错误会阻止构建。输出布局、ESM／require 加载、声明与原生绑定由 `packages/core/test/package.test.ts` 在真实 tarball 的独立消费端统一验证；Node 基准源码指纹包含 Rslib 配置。
+`tools/tests/build.test.ts` 先确认有效源码可构建，再验证未引用源码的类型错误会阻止构建。输出布局、ESM／require 加载、声明与原生绑定由 `packages/ziwei/test/package.test.ts` 在真实 tarball 的独立消费端统一验证；Node 基准源码指纹包含 Rslib 配置。
 
 ## Node 测试框架
 
@@ -72,7 +72,7 @@ Node 侧统一使用锁定版本的 `@rstest/core`（JavaScript 框架，不是 
 
 | 项目 | 范围 | 根目录命令 |
 | --- | --- | --- |
-| `core` | 包 API、原生边界、Worker、GC 与独立打包消费端 | `mise run check:node`：先构建，再运行测试与 TypeScript 合同 |
+| `ziwei` | 包 API、原生边界、Worker、GC 与独立打包消费端 | `mise run check:node`：先构建，再运行测试与 TypeScript 合同 |
 | `node-tools` | 开发命令、运行时选择、参数、退出码与 Rslib 构建合同 | `mise run check:node:tools` |
 | `node-bench` | 基准记录器与 CLI 合同；只有 smoke，不设性能门禁 | `mise run check:node:bench` |
 
@@ -82,9 +82,9 @@ Node 侧统一使用锁定版本的 `@rstest/core`（JavaScript 框架，不是 
 
 ### 隔离与串行执行
 
-基准工具会重新构建同一份 `dist`，常规验证应按上述分组命令串行执行，不要同时运行 `core` 消费端测试与 `node-bench` 构建冒烟。
+基准工具会重新构建同一份 `dist`，常规验证应按上述分组命令串行执行，不要同时运行 `ziwei` 消费端测试与 `node-bench` 构建冒烟。
 
-测试使用独立 Node 子进程池。`core` 的包入口与内部 native seam 显式交给 Node 加载，保留 ESM/CJS 单例身份与真实 `.node` 加载；关闭 Rspack 对 Worker 的打包改写，Worker 从原始夹具路径运行。配置仅用于测试，不进入 npm 分发包。安装与迁移依据 [Rstest 官方指引](https://rstest.rs/guide/start/agent-install.md)，字段以项目安装版本的类型和 CLI 为准。
+测试使用独立 Node 子进程池。`ziwei` 的包入口与内部 native seam 显式交给 Node 加载，保留 ESM/CJS 单例身份与真实 `.node` 加载；关闭 Rspack 对 Worker 的打包改写，Worker 从原始夹具路径运行。配置仅用于测试，不进入 npm 分发包。安装与迁移依据 [Rstest 官方指引](https://rstest.rs/guide/start/agent-install.md)，字段以项目安装版本的类型和 CLI 为准。
 
 ## 按变更选择验证
 

@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import { test } from '@rstest/core';
 import { invoke } from './runtime.ts';
 import { readFileSync } from 'node:fs';
-import { Ziwei, ZiweiError, StarName } from '@ziweijs/core';
-import type { Natal, Branch } from '@ziweijs/core';
+import { Ziwei, ZiweiError, StarName } from '@matharts/ziwei';
+import type { Natal, Branch } from '@matharts/ziwei';
 type Method = { [K in keyof Natal]: Natal[K] extends (...args: never[]) => unknown ? K : never }[keyof Natal];
 
 const birth = { gender: 1, birthYear: 1984, birthMonth: 1, birthDay: 6, birthHour: 0 } as const;

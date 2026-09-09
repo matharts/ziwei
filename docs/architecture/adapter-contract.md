@@ -1,6 +1,6 @@
 # Rust 核心与未来绑定的语义合同
 
-本文件冻结现有核心能保证的值域、顺序、缺失值、错误及所有权语义；它本身不定义 JSON 格式、TypeScript 类型或 C ABI。Node.js/TypeScript 的完整合同见 [Node 适配设计](node-api-design.md) 与 [设计声明](node-api/index.d.ts)（D-248～D-251）。D-253、D-255、D-256 已实现 [完整 Node API](../../packages/core/README.md)：两类建盘、本命数据与查询、四化、按需限运、身份辅助与 `toJSON`；实际生成声明和完整设计逐项匹配。仍未发布，跨平台矩阵未完成验收。Wasm 实施应继续保持这里的核心语义，不能用宿主表示反向改写核心。
+本文件冻结现有核心能保证的值域、顺序、缺失值、错误及所有权语义；它本身不定义 JSON 格式、TypeScript 类型或 C ABI。Node.js/TypeScript 的完整合同见 [Node 适配设计](node-api-design.md) 与 [设计声明](node-api/index.d.ts)（D-248～D-251）。D-253、D-255、D-256 已实现 [完整 Node API](../../packages/ziwei/README.md)：两类建盘、本命数据与查询、四化、按需限运、身份辅助与 `toJSON`；实际生成声明和完整设计逐项匹配。仍未发布，跨平台矩阵未完成验收。Wasm 实施应继续保持这里的核心语义，不能用宿主表示反向改写核心。
 
 ## 输入边界
 

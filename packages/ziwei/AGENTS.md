@@ -2,7 +2,7 @@
 
 ## 源码与分发
 
-- 手写源码、配置、测试与工具使用 TypeScript。Rust adapter 留在 `../../crates/ziwei_napi`；排盘规则只属于 Rust 核心。
+- 手写源码、配置、测试与工具使用 TypeScript。Rust adapter 位于 `../../bindings/node`；排盘规则只属于 Rust 核心。
 
 - 包为单份 ESM 输出，只有根 `exports`。最低 Node 24.15.0；`require(ESM)` 返回同一命名导出，不生成第二份 CJS 实现。公开依赖图禁止 top-level await。
 

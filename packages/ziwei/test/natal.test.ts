@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from '@rstest/core';
 import { readFileSync } from 'node:fs';
-import { Ziwei } from '@ziweijs/core';
-import type { Birth, Natal, Star, Branch } from '@ziweijs/core';
+import { Ziwei } from '@matharts/ziwei';
+import type { Birth, Natal, Star, Branch } from '@matharts/ziwei';
 
 test('both entry points expose the confirmed zodiac and five-element bureau identities', () => {
   // First-month Zi-hour anchors: fixtures/README.md. Zodiac follows the explicit year branch.

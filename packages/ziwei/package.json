@@ -1,5 +1,5 @@
 {
-  "name": "@ziweijs/core",
+  "name": "@matharts/ziwei",
   "version": "1.0.0-dev.0",
   "private": true,
   "description": "Node.js and TypeScript bindings for the ziwei Rust engine",

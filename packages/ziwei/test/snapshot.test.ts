@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from '@rstest/core';
-import { Ziwei } from '@ziweijs/core';
+import { Ziwei } from '@matharts/ziwei';
 
 test('toJSON returns a frozen, detached snapshot with explicit missing fields and no behavior', () => {
   const fromBirth = Ziwei.fromBirth({ gender: 1, birthYear: 1984, birthMonth: 1, birthDay: 6, birthHour: 0 });

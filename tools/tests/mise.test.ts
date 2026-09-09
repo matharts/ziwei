@@ -19,12 +19,12 @@ const literalArgs = Object.freeze([
 // Independent expectations for the commands declared in mise.toml, not a runner.
 const tasks: Record<string, { cwd: string; package: string; bin: string; path: string; args: string[] }> = {
   'build:node:native': {
-    cwd: 'packages/core', package: '@napi-rs/cli', bin: 'napi', path: 'dist/cli.js',
-    args: ['build', '--manifest-path', '../../crates/ziwei_napi/Cargo.toml', '--package', 'ziwei-napi', '--platform', '--release', '--output-dir', 'native', '--js', 'binding.cjs', '--dts', 'binding.d.cts', '--', '--locked'],
+    cwd: 'packages/ziwei', package: '@napi-rs/cli', bin: 'napi', path: 'dist/cli.js',
+    args: ['build', '--manifest-path', '../../bindings/node/Cargo.toml', '--package', 'ziwei-node', '--platform', '--release', '--output-dir', 'native', '--js', 'binding.cjs', '--dts', 'binding.d.cts', '--', '--locked'],
   },
-  'build:node:ts': { cwd: 'packages/core', package: '@rslib/core', bin: 'rslib', path: 'bin/rslib.js', args: ['build'] },
-  'test:node': { cwd: '.', package: '@rstest/core', bin: 'rstest', path: 'bin/rstest.js', args: ['--project', 'core'] },
-  'check:node:types': { cwd: 'packages/core', package: 'typescript', bin: 'tsc', path: 'bin/tsc', args: ['--project', 'test/tsconfig.json'] },
+  'build:node:ts': { cwd: 'packages/ziwei', package: '@rslib/core', bin: 'rslib', path: 'bin/rslib.js', args: ['build'] },
+  'test:node': { cwd: '.', package: '@rstest/core', bin: 'rstest', path: 'bin/rstest.js', args: ['--project', 'ziwei'] },
+  'check:node:types': { cwd: 'packages/ziwei', package: 'typescript', bin: 'tsc', path: 'bin/tsc', args: ['--project', 'test/tsconfig.json'] },
   'check:typescript': { cwd: '.', package: 'typescript', bin: 'tsc', path: 'bin/tsc', args: ['--project', 'tsconfig.json'] },
 };
 
@@ -34,8 +34,8 @@ const rows = (stdout: string): Probe[] => stdout.split('\n').filter(line => line
 function fixture(t: TestContext, { activated = true } = {}) {
   const directory = mkdtempSync(join(tmpdir(), 'ziwei mise runtime-'));
   t.onTestFinished(() => rmSync(directory, { recursive: true, force: true }));
-  mkdirSync(join(directory, 'packages/core'), { recursive: true });
-  for (const file of ['package.json', 'pnpm-workspace.yaml', 'mise.toml', 'packages/core/package.json']) {
+  mkdirSync(join(directory, 'packages/ziwei'), { recursive: true });
+  for (const file of ['package.json', 'pnpm-workspace.yaml', 'mise.toml', 'packages/ziwei/package.json']) {
     cpSync(join(root, file), join(directory, file));
   }
   const cliPaths: Record<string, string> = {};
@@ -105,7 +105,7 @@ for (const activated of [true, false]) {
 }
 
 test('mise owns task definitions and CLI paths match installed dependency manifests', () => {
-  for (const path of ['package.json', 'packages/core/package.json']) {
+  for (const path of ['package.json', 'packages/ziwei/package.json']) {
     assert.equal(JSON.parse(readFileSync(join(root, path), 'utf8')).scripts, undefined);
   }
   for (const spec of Object.values(tasks)) {
@@ -117,7 +117,7 @@ test('mise owns task definitions and CLI paths match installed dependency manife
 
 test('root devEngines owns development constraints and agrees with mise and the consumer floor', () => {
   const manifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
-  const consumer = JSON.parse(readFileSync(join(root, 'packages/core/package.json'), 'utf8'));
+  const consumer = JSON.parse(readFileSync(join(root, 'packages/ziwei/package.json'), 'utf8'));
   const mise = readFileSync(join(root, 'mise.toml'), 'utf8');
   assert.deepEqual(manifest.devEngines, {
     runtime: { name: 'node', version: consumer.engines.node, onFail: 'error' },

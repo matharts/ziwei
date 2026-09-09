@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from '@rstest/core';
 import { invoke } from './runtime.ts';
-import { Ziwei, ZiweiError } from '@ziweijs/core';
+import { Ziwei, ZiweiError } from '@matharts/ziwei';
 import * as native from '../native/binding.cjs';
 
 const birth = { gender: 1, birthYear: 1984, birthMonth: 1, birthDay: 6, birthHour: 0 } as const;

@@ -131,21 +131,21 @@ function fixture(t: TestContext) {
   const root = join(directory, 'repo');
   const actualRoot = resolve(cwd, '../..');
   for (const path of [
-    'crates/ziwei/src', 'crates/ziwei_napi/src', 'packages/core/src', 'packages/core/bench',
-    'Cargo.toml', 'Cargo.lock', 'crates/ziwei/Cargo.toml', 'crates/ziwei_napi/Cargo.toml',
-    'crates/ziwei_napi/build.rs', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml',
-    'packages/core/package.json', 'packages/core/tsconfig.json', 'packages/core/rslib.config.ts', 'mise.toml',
+    'crates/ziwei/src', 'bindings/node/src', 'packages/ziwei/src', 'packages/ziwei/bench',
+    'Cargo.toml', 'Cargo.lock', 'crates/ziwei/Cargo.toml', 'bindings/node/Cargo.toml',
+    'bindings/node/build.rs', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml',
+    'packages/ziwei/package.json', 'packages/ziwei/tsconfig.json', 'packages/ziwei/rslib.config.ts', 'mise.toml',
   ]) {
     const destination = join(root, path);
     mkdirSync(dirname(destination), { recursive: true });
     cpSync(join(actualRoot, path), destination, { recursive: true });
   }
-  const pkg = join(root, 'packages/core');
+  const pkg = join(root, 'packages/ziwei');
   const configPath = join(root, 'mise.toml');
   const config = readFileSync(configPath, 'utf8');
   const buildTask = /\[tasks\."build:node"\][\s\S]*?(?=\n\[)/;
   assert.match(config, buildTask);
-  writeFileSync(configPath, config.replace(buildTask, '[tasks."build:node"]\ndir = "packages/core"\nrun = "node build-fixture.cjs"\n'));
+  writeFileSync(configPath, config.replace(buildTask, '[tasks."build:node"]\ndir = "packages/ziwei"\nrun = "node build-fixture.cjs"\n'));
   const build = join(pkg, 'build-fixture.cjs');
   writeFileSync(build, "process.stdout.write('build stdout\\n'); process.stderr.write('build stderr\\n'); process.exit(13);\n");
   const env = { ...process.env, MISE_TRUSTED_CONFIG_PATHS: root };

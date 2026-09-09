@@ -1,5 +1,5 @@
 import { parentPort, workerData } from 'node:worker_threads';
-import { Ziwei } from '@ziweijs/core';
+import { Ziwei } from '@matharts/ziwei';
 import assert from 'node:assert/strict';
 
 let profile;

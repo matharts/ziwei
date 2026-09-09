@@ -292,6 +292,9 @@
 | --- | --- | --- |
 | D-258 | npm 默认单份 ESM，根 `exports` 同时服务 import 与 require(ESM)，不保留 CJS 双构建／桥接。最低 Node 统一 >=24.15.0，mise 开发仍固定 24.20.0；前者涵盖已稳定的 TS 类型擦除与 require(ESM)。手写 Node 源码、配置、测试、Worker 和工具全部使用 TypeScript，生成 JS／native 加载器继续作为分发产物。pnpm 默认 Catalog 集中直接依赖版本，各包使用 catalog:。不改变 Rust、公开导出和领域语义，不发布。 | 2026-09-09 用户要求 ESM、Node 对齐、Catalogs 和全量 TS；本次包工程实施范围，验证状态以实际检查为准 |
 | D-259 | 开发任务统一由 mise 定义和编排；移除 Node 自建任务调度器，根及 core 的 package.json 不保留重复 scripts。Node 单项任务直接启动已安装 CLI，并保留 pnpm 的 devEngines 校验；普通 mise 任务不承诺任意参数保真，复杂参数通过 mise exec 直接启动 CLI。基准复用同一构建任务并追溯 mise 配置，不改变排盘 API、语料、采样或统计。 | 2026-09-09 用户选择 mise 作为唯一任务入口；本地与跨平台验证分别报告 |
+| D-260 | 按职责区分 `crates/`（Rust 引擎）、`bindings/`（按宿主组织的 Rust adapter）与 `packages/`（JavaScript／TypeScript 包）。Node Rust adapter 迁至 `bindings/node`，Cargo 包由 `ziwei-napi` 改为 `ziwei-node`（Rust 标识符 `ziwei_node`）；调整 D-257 的绑定路径和 Cargo 包名，保留其 Rust／TS 分离、`packages/core` 与 `@ziweijs/core`。绑定继续加入根 Cargo workspace、单向依赖 `ziwei`，不引入独立绑定 workspace 或第二套领域实现；其他宿主在实施时加入，不创建空包。同步构建、测试、指纹路径与文档，不改变公开 API、生成产物名称、生命周期、冻结／缓存合同、测量负载或统计。 | 2026-09-10 用户确认多宿主目录与命名方案；本轮结构迁移，验证结果以实际检查为准；未提交、推送或发布 |
+| D-261 | npm 包由 `@ziweijs/core` 改为 `@matharts/ziwei`，同步包自引用、Rstest 外置模块、类型与独立消费端测试、基准入口和使用文档；不保留旧包名别名。保留 `packages/core` 目录、`bindings/node` 与 Cargo 包 `ziwei-node`，原生二进制基名仍为 `ziwei-native`。只改变 npm 身份与导入路径，不改变方法、类型、领域行为、测量负载、工具链或依赖版本；继续禁止发布。 | 2026-09-10 用户明确要求修改 TS 包名；验证结果以实际检查为准；未提交、推送或发布 |
+| D-262 | TypeScript 包目录由 `packages/core` 改为 `packages/ziwei`，Rstest 包测试项目名同步改为 `ziwei`；更新 mise 工作目录、TypeScript 检查范围、pnpm 锁文件的 workspace 路径、工程测试、基准指纹与文档链接。保留 D-261 的 npm 包名 `@matharts/ziwei`、D-260 的 `bindings/node` 与 Cargo 包 `ziwei-node`；不改变公开 API、依赖版本、运行时要求或测量负载，不新增包与兼容目录。 | 2026-09-10 用户要求将 core 改为 ziwei；本次目录迁移，验证结果以实际检查为准；未提交、推送或发布 |
 
 ## 暂缓决策
 

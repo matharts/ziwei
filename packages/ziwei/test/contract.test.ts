@@ -1,10 +1,10 @@
 // Compile only: exact comparison of generated public declarations with the full design.
-import { Ziwei, ZiweiError, Gender, Branch } from '@ziweijs/core';
-import * as Actual from '@ziweijs/core';
+import { Ziwei, ZiweiError, Gender, Branch } from '@matharts/ziwei';
+import * as Actual from '@matharts/ziwei';
 import type {
   Birth, Parameters, Profile, Natal, ZiweiErrorDetail, Palace, Star, SelfTransformations,
   DecadeAgeRange, Zodiac, FiveElementBureau, PalaceName, StarName, StarCategory, StarGalaxy, Transformation,
-} from '@ziweijs/core';
+} from '@matharts/ziwei';
 import type * as Design from '../../../docs/architecture/node-api/index.js';
 
 type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends

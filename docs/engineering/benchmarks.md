@@ -1,6 +1,6 @@
 # 建盘与查询基准
 
-当前有两套 Rust 负载和一套独立 Node 负载：下文首先说明 construction-120，它仅测 `Ziwei::from_birth` 和 `Ziwei::from_parameters`；随后说明 Rust 混合输入与读路径套件。Node 公开 API 使用独立的 [ziwei-node-public-512](../../packages/core/bench/README.md)。不能用建盘结果宣称查询延迟，也不能将不同套件互作基线。
+当前有两套 Rust 负载和一套独立 Node 负载：下文首先说明 construction-120，它仅测 `Ziwei::from_birth` 和 `Ziwei::from_parameters`；随后说明 Rust 混合输入与读路径套件。Node 公开 API 使用独立的 [ziwei-node-public-512](../../packages/ziwei/bench/README.md)。不能用建盘结果宣称查询延迟，也不能将不同套件互作基线。
 
 当前生产设计为紧凑 Star + ArrayVec + 私有星曜位置索引，实现与取舍见 [包架构](../architecture/rust-package-design.md)。性能结论应按本文约定记录负载、源码与环境；不同实现或不同负载的历史结果不能作为当前正式基线。
 
