@@ -251,13 +251,13 @@ INVALID_ARGUMENT 的 reason 为 missing、type、non_finite、non_integer、out_
 
 ## 9. 包装与兼容性目标
 
-- 一个 npm 包默认 ESM，`import` 与 Node 的 `require(ESM)` 共同加载单份 `dist/index.js`，共享命名导出、身份常量和 ZiweiError 类；无 CJS 双构建、无桥接文件、无 top-level await，不把原生内部类作为公开构造器。
+- 一个用户入口 npm 包默认 ESM，`import` 与 Node 的 `require(ESM)` 共同加载单份 `dist/index.js`，共享命名导出、身份常量和 ZiweiError 类；无 CJS 双构建、无桥接文件、无 top-level await，不把原生内部类作为公开构造器。按 D-263，分发主包不含 `.node`，通过精确同版本 optionalDependencies 引用对应平台包；[分发设计](node-distribution-proposal.md)规定暂存、验收与发布边界。
 
 - public exports 仅包根，不开放内部二进制与实现子路径。不在导入时联网下载，不设置自动从源码编译的安装回退；缺少匹配产物时给出可操作的加载错误。
 
 - 首个切片采用 napi-rs v3、Node-API 8，补丁版本与工具版本已锁定，详见 [绑定依赖](../../bindings/node/Cargo.toml)和[工具链配置](../../mise.toml)。必须验证生成代码与实际加载，不通过升级 Node-API 等级宣称性能收益。
 
-- 支持门槛调整为 Node >=24.15.0，开发固定 24.21.0；不再声明 Node 22 支持。平台目标仍为 macOS arm64、Linux x64 GNU、Windows x64 MSVC，未实测平台不得称为已验证。24.15.0 是本项目依赖的 `require(ESM)` 稳定版本，也涵盖 24.12.0 已稳定的 TS 类型擦除。[Node 官方模块文档](https://nodejs.org/docs/latest-v24.x/api/modules.html#loading-ecmascript-modules-using-require)
+- 支持门槛调整为 Node >=24.15.0，开发固定 24.21.0；不再声明 Node 22 支持。首批目标按 D-263 扩至八个桌面／服务器组合，未实测平台不得称为已验证。24.15.0 是本项目依赖的 `require(ESM)` 稳定版本，也涵盖 24.12.0 已稳定的 TS 类型擦除。[Node 官方模块文档](https://nodejs.org/docs/latest-v24.x/api/modules.html#loading-ecmascript-modules-using-require)
 
 - 每个平台需要产物构建和干净环境的真实 import、创建、查询与失败路径测试；OS 最低版本、glibc 和 SDK 底线随构建产物验证后公布。未在矩阵内的平台、Bun、Deno、Electron 和浏览器不作首版支持声明。
 

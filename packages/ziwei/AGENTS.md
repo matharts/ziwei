@@ -8,6 +8,8 @@
 
 - `src/` 是门面；`native/` 与 `dist/` 是生成产物，不手改、不提交。napi 的 `binding.cjs` 和 `.node` 保持外置；不把 TypeScript 源码直接分发给 Node 执行。
 
+- 分发暂存、平台包、加载与 CI 变更先读取 [Node 分发设计](../../docs/architecture/node-distribution-proposal.md)；源码开发包与无二进制分发主包分别验收，平台配置不等于已验证支持。
+
 ## 工具链与任务
 
 - 依赖版本统一由根 `pnpm-workspace.yaml` 的 Catalog 管理；本包使用 `catalog:`，不得新增第二套版本配置。

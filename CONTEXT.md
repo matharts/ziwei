@@ -118,6 +118,8 @@
 
 ### 宿主适配与工程
 
+- D-263 的[Node 分发设计](docs/architecture/node-distribution-proposal.md)将用户入口主包与原生产物包分开。首批八目标进入构建／验收配置，另七目标保留候选；平台包仅为分发产物，不是领域模块。源码 workspace 不依赖未发布平台包；独立暂存区按本次完整产物集生成精确版本依赖，主包不含 `.node`，所有包继续禁止发布。平台配置、实测通过与发布是不同状态。
+
 - 按 D-259，开发任务统一由 mise 定义和编排，pnpm 保留依赖管理与开发版本校验；任务使用和参数边界见 [工程验证](docs/agents/engineering.md)。这一工程选择不改变领域与宿主 API。
 
 - Node 工程使用 Oxlint 与 Oxfmt，依赖纳入根 Catalog，检查和修复均通过 mise；提交钩子与 CI 只检查，Rust 保留 rustfmt 与 Clippy。范围与生成文件边界见 [Lint 与格式化](docs/agents/engineering.md#lint-与格式化)。

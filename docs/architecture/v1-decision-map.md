@@ -299,6 +299,7 @@
 | D-260 | 按职责区分 `crates/`（Rust 引擎）、`bindings/`（按宿主组织的 Rust adapter）与 `packages/`（JavaScript／TypeScript 包）。Node Rust adapter 迁至 `bindings/node`，Cargo 包由 `ziwei-napi` 改为 `ziwei-node`（Rust 标识符 `ziwei_node`）；调整 D-257 的绑定路径和 Cargo 包名，保留其 Rust／TS 分离、`packages/core` 与 `@ziweijs/core`。绑定继续加入根 Cargo workspace、单向依赖 `ziwei`，不引入独立绑定 workspace 或第二套领域实现；其他宿主在实施时加入，不创建空包。同步构建、测试、指纹路径与文档，不改变公开 API、生成产物名称、生命周期、冻结／缓存合同、测量负载或统计。 | 2026-09-10 用户确认多宿主目录与命名方案；本轮结构迁移，验证结果以实际检查为准；未提交、推送或发布 |
 | D-261 | npm 包由 `@ziweijs/core` 改为 `@matharts/ziwei`，同步包自引用、Rstest 外置模块、类型与独立消费端测试、基准入口和使用文档；不保留旧包名别名。保留 `packages/core` 目录、`bindings/node` 与 Cargo 包 `ziwei-node`，原生二进制基名仍为 `ziwei-native`。只改变 npm 身份与导入路径，不改变方法、类型、领域行为、测量负载、工具链或依赖版本；继续禁止发布。 | 2026-09-10 用户明确要求修改 TS 包名；验证结果以实际检查为准；未提交、推送或发布 |
 | D-262 | TypeScript 包目录由 `packages/core` 改为 `packages/ziwei`，Rstest 包测试项目名同步改为 `ziwei`；更新 mise 工作目录、TypeScript 检查范围、pnpm 锁文件的 workspace 路径、工程测试、基准指纹与文档链接。保留 D-261 的 npm 包名 `@matharts/ziwei`、D-260 的 `bindings/node` 与 Cargo 包 `ziwei-node`；不改变公开 API、依赖版本、运行时要求或测量负载，不新增包与兼容目录。 | 2026-09-10 用户要求将 core 改为 ziwei；本次目录迁移，验证结果以实际检查为准；未提交、推送或发布 |
+| D-263 | Node 采用一个用户入口 `@matharts/ziwei` 与按平台分发的原生产物包，不增加转发包或 Rust crate。参考 Rolldown 的十五个原生目标，首批为 macOS／Windows x64、arm64 与 Linux x64、arm64 的 glibc／musl，共八项；其余七项保留候选，WASI 另议。源码 manifest 保持私有且不依赖未发布包；独立暂存区按显式选择且产物齐全的目标生成精确同版本 optionalDependencies，主包不含 `.node`。保留本机开发加载，新增真实拆包消费端验收与对应 CI；所有包继续 private，不授权发布或把配置当作已验证支持。 | 2026-09-10 用户确认 Rolldown 对照方案并要求执行；详见 [Node 分发设计](node-distribution-proposal.md) |
 
 ## 暂缓决策
 

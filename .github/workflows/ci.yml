@@ -13,13 +13,28 @@ concurrency:
 
 jobs:
   native-tests:
-    name: Tests (${{ matrix.os }})
+    name: Tests (${{ matrix.target }})
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+          - os: macos-15
+            target: aarch64-apple-darwin
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+          - os: windows-2025
+            target: x86_64-pc-windows-msvc
+          - os: windows-11-arm
+            target: aarch64-pc-windows-msvc
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
+    timeout-minutes: 25
+    env:
+      ZIWEI_NODE_TARGET: ${{ matrix.target }}
+      CARGO_BUILD_TARGET: ${{ matrix.target }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -29,6 +44,8 @@ jobs:
           install_args: rust node pnpm
           # Rust is installed through rustup; see jdx/mise-action#215.
           cache: false
+      - name: Install expected Rust target
+        run: mise exec -- rustup target add "${{ matrix.target }}"
       - name: Tests
         run: mise exec -- cargo test --workspace --all-features --locked
       - name: Release tests
@@ -42,11 +59,61 @@ jobs:
       - name: TypeScript tooling and test contracts
         run: mise run check:typescript
       - name: Minimum supported Node runtime
-        if: runner.os == 'Linux'
+        if: matrix.target == 'x86_64-unknown-linux-gnu'
         run: mise run check:node:minimum
       - name: Node benchmark contract tests (smoke only, no performance gate)
-        if: runner.os == 'Linux'
+        if: matrix.target == 'x86_64-unknown-linux-gnu'
         run: mise run check:node:bench
+
+  musl-distribution:
+    name: Distribution (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-musl
+            docker-platform: linux/amd64
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
+            docker-platform: linux/arm64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    env:
+      CARGO_BUILD_TARGET: ${{ matrix.target }}
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER: musl-gcc
+      CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER: musl-gcc
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
+        with:
+          install_args: rust node pnpm
+          cache: false
+      - name: Install matching-architecture musl toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes musl-tools
+          mise exec -- rustup target add "$CARGO_BUILD_TARGET"
+      - name: Build and pack musl distribution without publishing
+        run: |
+          mise exec -- pnpm install --frozen-lockfile
+          mise run build:node
+          mise run check:node:types
+          mise run pack:node -- --target "$CARGO_BUILD_TARGET"
+      - name: Clean Alpine consumer on the target CPU (no emulation)
+        env:
+          DOCKER_PLATFORM: ${{ matrix.docker-platform }}
+        run: |
+          docker run --rm --platform "$DOCKER_PLATFORM" \
+            --mount "type=bind,src=$PWD,dst=/work,readonly" \
+            -e ZIWEI_NPM_CLI=/usr/local/lib/node_modules/npm/bin/npm-cli.js \
+            node:24.21.0-alpine3.23 sh -eu -c '
+              for artifacts in /work/target/node-distribution/ziwei-*; do
+                node /work/packages/ziwei/test/fixtures/distribution-consumer.ts "$artifacts"
+              done
+            '
 
   quality:
     runs-on: ubuntu-latest
@@ -91,7 +158,7 @@ jobs:
 
   # Keep a single stable check that cannot pass when a required job fails or skips.
   verify:
-    needs: [native-tests, quality]
+    needs: [native-tests, musl-distribution, quality]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 1
@@ -99,7 +166,9 @@ jobs:
       - name: Require all checks
         env:
           NATIVE_RESULT: ${{ needs.native-tests.result }}
+          MUSL_RESULT: ${{ needs.musl-distribution.result }}
           QUALITY_RESULT: ${{ needs.quality.result }}
         run: |
           test "$NATIVE_RESULT" = success
+          test "$MUSL_RESULT" = success
           test "$QUALITY_RESULT" = success

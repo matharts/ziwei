@@ -13,7 +13,7 @@ description = "构建本机 Node 适配包；不发布"
 run = [{ task = "build:node:native" }, { task = "build:node:ts" }]
 
 [tasks."build:node:native"]
-description = "构建本机 Node 原生绑定"
+description = "构建 Node 原生绑定；默认本机，可用 CARGO_BUILD_TARGET 指定目标"
 dir = "packages/ziwei"
 run = "pnpm exec -- node node_modules/@napi-rs/cli/dist/cli.js build --manifest-path ../../bindings/node/Cargo.toml --package ziwei-node --platform --release --output-dir native --js binding.cjs --dts binding.d.cts -- --locked"
 
@@ -25,6 +25,10 @@ run = "pnpm exec -- node node_modules/@rslib/core/bin/rslib.js build"
 [tasks."test:node"]
 description = "验证已构建 Node 包的公开入口"
 run = "pnpm exec -- node node_modules/@rstest/core/bin/rstest.js --project ziwei"
+
+[tasks."pack:node"]
+description = "将已构建的指定目标打包到独立暂存区；不发布"
+run = "pnpm exec -- node packages/ziwei/tools/pack.ts"
 
 [tasks."check:node:types"]
 description = "验证已构建 Node 包的 TypeScript 消费端合同"

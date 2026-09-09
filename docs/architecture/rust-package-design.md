@@ -116,6 +116,7 @@ ziwei-wasm（后续） ───────────────────
 │       │   ├── error.ts
 │       │   └── types.ts
 │       ├── test/                  # Node、Worker、类型与独立打包消费端
+│       ├── tools/pack.ts          # 私有分发暂存与 tarball 组装；不发布
 │       ├── native/                # 生成产物；不提交
 │       └── dist/                  # 生成产物；不提交
 ├── tools/
@@ -137,6 +138,8 @@ ziwei-wasm（后续） ───────────────────
 根 `Cargo.toml` 是 workspace 配置，不是业务包。它统一 edition 2024、MSRV 1.98、许可证与仓库地址，默认成员仍只有核心。核心继承 `forbid(unsafe_code)`；Node 绑定单独使用 `deny(unsafe_code)`，兼容 napi-rs 注册宏内部的局部允许声明，手写绑定不使用 unsafe。
 
 所有排盘领域实现和简繁名称均位于 `crates/ziwei`。`bindings/` 承载各宿主的 Rust adapter，与引擎共享根 Cargo workspace 和锁文件；adapter 单向依赖 `ziwei`，彼此不依赖。根 pnpm workspace 单独管理 JavaScript 包与共享锁文件；`packages/ziwei` 通过 `../../bindings/node/Cargo.toml` 构建自己的内部原生产物，没有根级 `tests/` 或 `fixtures/` 目录。
+
+按 D-263，[平台分发包](node-distribution-proposal.md)仅在独立暂存区生成，不新增含源码的 workspace 包或 Rust crate。主包与平台包共同构成 Node 分发，仍只有 `@matharts/ziwei` 一个用户入口。
 
 ### 工具链与开发任务
 
@@ -501,9 +504,10 @@ D-237 因而先落地紧凑 Star、保留 `Box<[Star]>`。补齐读取负载后�
 
 | 检查 | 环境 | 覆盖范围 |
 | --- | --- | --- |
-| `native-tests` | Ubuntu、macOS、Windows | workspace 全特性的 debug／release 测试；锁定安装 Node 开发依赖，构建适配包并运行 Node 24 集成、类型、Worker 与离线打包消费端测试 |
+| `native-tests` | Ubuntu glibc、macOS、Windows 各 x64／arm64 | workspace 全特性的 debug／release 测试；锁定安装 Node 开发依赖，构建适配包并运行 Node 24 集成、类型、Worker、自包含与拆包消费端测试 |
+| `musl-distribution` | Ubuntu x64／arm64 构建，对应 CPU 的 Alpine 运行 | 原生 musl 产物、声明检查、拆包安装、真实加载、公开查询及失败路径；不声明最低 OS／libc 已验证 |
 | `quality` | Ubuntu | 格式、Clippy、Rustdoc、Markdown 示例、Rust 1.98.0 测试、Rust 开发工具的格式／Clippy／记录器／命令行／解包测试、两套基准 smoke、实际打包产物的独立消费端校验 |
-| `verify` | Ubuntu | 汇总前两项；失败或跳过均拒绝通过，保留原有检查名称 |
+| `verify` | Ubuntu | 汇总上述三项；失败或跳过均拒绝通过，保留原有检查名称 |
 
 矩阵设置 `fail-fast: false`，一个平台失败不会取消其他平台的诊断。`check:msrv` 用 Rust 1.98.0 验证根 workspace 和独立开发工具，产物分别放入 `target/msrv` 与 `target/msrv/xtask`，不改变默认工具链。
 

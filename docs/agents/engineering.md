@@ -72,6 +72,12 @@ Oxfmt 读取根 [.editorconfig](../../.editorconfig)：TypeScript 和 JSON 使�
 
 库源码仍通过 Rslib 分发生成的 JS，不在 node_modules 内直接执行 TS。负例通过 `invoke` 或有说明的 `@ts-expect-error` 测试运行时拒绝，不放宽公开类型。
 
+### 原生分发验收
+
+`mise run pack:node -- --target <Rust target>` 对已构建产物生成独立私有暂存包，不隐式构建或发布；布局、平台批次和完整性边界见 [Node 分发设计](../architecture/node-distribution-proposal.md)。`packages/ziwei/tools/pack.ts` 负责实际组装，不是第二套任务调度器。
+
+`check:node` 同时覆盖原有自包含包和新的无二进制主包／平台包。后者用 Node 随附 npm 离线安装本地 tarball，override 仅存在于临时消费端；仓库依赖管理继续使用 pnpm。正常 runner 从已安装包检查声明，musl 在对应 CPU 的 Alpine 运行同一消费端夹具、在构建机检查声明。注册表安装和八目标可选依赖的自动筛选须另行验收。
+
 ### 依赖版本管理
 
 根 [pnpm-workspace.yaml](../../pnpm-workspace.yaml) 的默认 Catalog 是直接 npm 开发依赖版本的唯一来源，各 manifest 使用 `catalog:`；`catalogMode: strict` 约束后续依赖添加，CI 继续冻结安装。Rust 依赖与 mise 工具链版本不进入 Catalog。
