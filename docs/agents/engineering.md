@@ -28,6 +28,8 @@ Node 任务通过 `pnpm exec` 执行，因此仍先经过开发版本校验；�
 
 ### 参数传递
 
+供工具自身解析的 glob 在 mise 任务中使用双引号包裹；Windows 默认 shell 会把单引号原样传入参数。
+
 普通选项可用 `mise run test:node -- -t palace`。mise 的普通内联任务仍经过平台 shell，不承诺任意参数保真。包含换行、尾随反斜杠、变量字面量等复杂参数时，从仓库根使用 `mise exec -- pnpm exec -- node node_modules/@rstest/core/bin/rstest.js --project ziwei <参数...>`；其他工具同样直接启动其 CLI，并使用对应任务的工作目录。
 
 调用 shell 本身仍需正确引用参数。pnpm 12.3.4 的 Windows `run` 即使启用 `shellEmulator` 也可能改写这些参数，不能重新包一层 `pnpm run`。[pnpm 脚本拼接](https://github.com/pnpm/pnpm/blob/v12.3.4/pnpm/crates/executor/src/run_script.rs#L238)、[mise 直接执行](https://mise.jdx.dev/cli/exec.html)与 [mise 任务执行](https://mise.jdx.dev/tasks/architecture.html)说明了各层的区别。
@@ -50,7 +52,7 @@ Oxfmt 的导入排序配置显式定义来源分组、升序、大小写和分�
 
 `sortSideEffects: false` 只固定副作用导入自身的位置，普通导入仍可能跨过它排序；有初始化先后依赖的导入块须用注释划定边界。
 
-Oxfmt 读取根 [.editorconfig](../../.editorconfig)：TypeScript 和 JSON 使用两空格缩进，Rust 继续使用四空格。隔离测试复制相同的配置，避免临时目录与仓库的格式规则不同。
+Oxfmt 读取根 [.editorconfig](../../.editorconfig)：TypeScript 和 JSON 使用两空格缩进，Rust 继续使用四空格。[.gitattributes](../../.gitattributes) 将文本检出为 LF，与 EditorConfig 保持一致，不依赖个人 `core.autocrlf` 设置。隔离测试复制相同的配置，并通过真实 Git checkout 验证换行规则。
 
 当前覆盖包源码、配置、测试、基准工具与根 Node 配置；文档草案不纳入这一门禁，`native/`、`dist/`、`target/` 和依赖目录明确忽略。提交钩子与 CI 只检查，不自动修复或暂存文件；Rust 继续使用 rustfmt 和 Clippy。最低 Node 检查同时验证 Oxc 入口。工具测试验证错误退出、格式检查只读、生成文件忽略，以及实际 mise 任务的参数和运行时选择。
 

@@ -57,11 +57,11 @@ run = "pnpm exec -- node node_modules/oxlint/bin/oxlint --fix --deny-warnings pa
 
 [tasks."format:node"]
 description = "使用 Oxfmt 格式化手写 TypeScript 与 Node JSON 配置"
-run = "pnpm exec -- node node_modules/oxfmt/bin/oxfmt 'packages/**/*.{ts,json,jsonc}' 'tools/tests/**/*.ts' rstest.config.ts package.json tsconfig.json .oxlintrc.json .oxfmtrc.json"
+run = 'pnpm exec -- node node_modules/oxfmt/bin/oxfmt "packages/**/*.{ts,json,jsonc}" "tools/tests/**/*.ts" rstest.config.ts package.json tsconfig.json .oxlintrc.json .oxfmtrc.json'
 
 [tasks."check:node:format"]
 description = "检查 Oxfmt 格式；不修改文件"
-run = "pnpm exec -- node node_modules/oxfmt/bin/oxfmt --check 'packages/**/*.{ts,json,jsonc}' 'tools/tests/**/*.ts' rstest.config.ts package.json tsconfig.json .oxlintrc.json .oxfmtrc.json"
+run = 'pnpm exec -- node node_modules/oxfmt/bin/oxfmt --check "packages/**/*.{ts,json,jsonc}" "tools/tests/**/*.ts" rstest.config.ts package.json tsconfig.json .oxlintrc.json .oxfmtrc.json'
 
 [tasks."check:node:minimum"]
 description = "以最低 Node 24.15.0 验证 ESM 构建、包消费端及 TS 工具"

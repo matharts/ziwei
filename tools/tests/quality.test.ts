@@ -1,6 +1,15 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -70,6 +79,32 @@ test("Oxfmt check is read-only and formatting leaves generated files untouched",
   for (const folder of ["native", "dist", "node_modules", "target"]) {
     assert.equal(readFileSync(join(directory, folder, "index.ts"), "utf8"), "export const = ;\n");
   }
+});
+
+test("Oxfmt accepts a Git checkout with core.autocrlf enabled", (t) => {
+  const { directory, run } = fixture(t);
+  const files = [".editorconfig", ".oxlintrc.json", ".oxfmtrc.json"];
+  if (existsSync(join(root, ".gitattributes"))) {
+    cpSync(join(root, ".gitattributes"), join(directory, ".gitattributes"));
+    files.push(".gitattributes");
+  }
+  // Exercise real Git checkout conversion, not a platform-specific string mock.
+  const git = (...args: string[]) => {
+    const result = spawnSync(
+      "git",
+      ["-c", "core.autocrlf=true", "-c", "core.safecrlf=false", ...args],
+      { cwd: directory, encoding: "utf8", timeout: 30_000 },
+    );
+    assert.ifError(result.error);
+    assert.equal(result.signal, null, result.stderr);
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+  };
+  git("init", "--quiet");
+  git("add", "--", ...files);
+  for (const file of files) unlinkSync(join(directory, file));
+  git("checkout-index", "--all");
+  const checked = run("oxfmt", ["--check", "."]);
+  assert.equal(checked.status, 0, checked.stdout + checked.stderr);
 });
 
 test("Oxfmt sorts origin groups, workspace imports and types across blank lines", (t) => {

@@ -1,0 +1,2 @@
+# Match EditorConfig regardless of the contributor's core.autocrlf setting.
+* text=auto eol=lf
