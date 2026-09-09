@@ -150,7 +150,17 @@ pub fn evidence_dir(parent: &Path) -> Result<PathBuf> {
 }
 
 pub fn sha256(bytes: &[u8]) -> String {
-    format!("{:x}", Sha256::digest(bytes))
+    hex_digest(&Sha256::digest(bytes))
+}
+
+fn hex_digest(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut output = String::with_capacity(bytes.len() * 2);
+    for &byte in bytes {
+        output.push(char::from(HEX[usize::from(byte >> 4)]));
+        output.push(char::from(HEX[usize::from(byte & 0x0f)]));
+    }
+    output
 }
 
 pub fn rust_files(root: &Path, directory: &Path) -> Result<Vec<String>> {
@@ -185,7 +195,7 @@ pub fn fingerprint(root: &Path, mut paths: Vec<String>) -> Result<String> {
         );
         digest.update([0]);
     }
-    Ok(format!("{:x}", digest.finalize()))
+    Ok(hex_digest(&digest.finalize()))
 }
 
 pub fn source_fingerprint(root: &Path) -> Result<String> {
@@ -305,6 +315,33 @@ fn build_environment(
 mod tests {
     use super::*;
     use std::ffi::OsString;
+
+    #[test]
+    fn sha256_preserves_lowercase_zero_padded_known_vectors() {
+        assert_eq!(
+            sha256(b""),
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
+        assert_eq!(
+            sha256(b"abc"),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+    }
+
+    #[test]
+    fn fingerprint_preserves_sorted_deduplicated_path_and_content_hash() {
+        let directory = tempfile::tempdir().unwrap();
+        fs::write(directory.path().join("a.rs"), b"alpha").unwrap();
+        fs::write(directory.path().join("b.rs"), b"beta").unwrap();
+        assert_eq!(
+            fingerprint(
+                directory.path(),
+                vec!["b.rs".into(), "a.rs".into(), "a.rs".into()]
+            )
+            .unwrap(),
+            "c7006cc48a80319f6b78e001642d94eec0905c2812bf3edf336b016c3106460e"
+        );
+    }
 
     #[test]
     fn bench_identity_includes_inherited_release_settings() {
