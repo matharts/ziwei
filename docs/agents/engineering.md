@@ -50,7 +50,7 @@ Node 任务通过 `pnpm exec` 执行，因此仍先经过开发版本校验；�
 
 最低版本统一为 Node `>=24.15.0`：内置 TypeScript 类型擦除在 24.12.0 稳定，`require(ESM)` 在 24.15.0 稳定，见 [Node TypeScript](https://nodejs.org/docs/latest-v24.x/api/typescript.html) 与 [require(ESM)](https://nodejs.org/docs/latest-v24.x/api/modules.html#loading-ecmascript-modules-using-require)。
 
-这是项目支持门槛，不表示更早版本无法执行生成的 JS。mise 开发版本仍固定 24.20.0；`check:node:minimum` 额外运行 24.15.0，CI 只在 Linux 执行此版本检查。
+这是项目支持门槛，不表示更早版本无法执行生成的 JS。mise 开发版本固定 24.21.0；`check:node:minimum` 额外运行 24.15.0，CI 只在 Linux 执行此版本检查。
 
 手写源码、测试、Worker、配置和工具全部使用 `.ts`；Node 直接执行工具的可擦除 TS 语法，保留 `.ts` 导入扩展名，不依赖 tsx。根 `tsconfig.json` 严格检查这些文件，并启用 `erasableSyntaxOnly`、`verbatimModuleSyntax`；`mise run check:typescript` 需在产品构建后运行。
 

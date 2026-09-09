@@ -126,7 +126,7 @@ ziwei-wasm ───────────────────────
 
 ### 工具链与开发任务
 
-`mise.toml` 固定 Rust `1.98.1`、Lefthook `2.1.12`、Node `24.20.0` 与 pnpm `12.3.4`。pre-commit 检查格式与暂存区空白，pre-push 执行 Rust 测试和 Clippy；Node 构建与验收另由 build:node/check:node 承担，不加入本地钩子。
+`mise.toml` 固定 Rust `1.98.1`、Lefthook `2.1.12`、Node `24.21.0` 与 pnpm `12.3.4`。pre-commit 检查格式与暂存区空白，pre-push 执行 Rust 测试和 Clippy；Node 构建与验收另由 build:node/check:node 承担，不加入本地钩子。
 
 按 D-259，开发任务统一在 mise 定义，根与 core 的 package.json 不再提供重复 scripts；工程合同测试位于 `tools/tests`。基准记录与 Rust 打包校验仍由 `tools/xtask` 完成，不依赖 Node；该目录通过自己的 workspace、publish = false 和 lockfile 隔离开发依赖，绑定与工具均不改变核心运行依赖或公开 API。
 
