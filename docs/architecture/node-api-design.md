@@ -242,7 +242,7 @@ INVALID_ARGUMENT 的 reason 为 missing、type、non_finite、non_integer、out_
 
 - 首个切片采用 napi-rs v3、Node-API 8，补丁版本与工具版本已锁定，详见 [绑定依赖](../../crates/ziwei_napi/Cargo.toml)和[工具链配置](../../mise.toml)。必须验证生成代码与实际加载，不通过升级 Node-API 等级宣称性能收益。
 
-- 支持门槛调整为 Node >=24.15.0，开发固定 24.20.0；不再声明 Node 22 支持。平台目标仍为 macOS arm64、Linux x64 GNU、Windows x64 MSVC，未实测平台不得称为已验证。24.15.0 是本项目依赖的 `require(ESM)` 稳定版本，也涵盖 24.12.0 已稳定的 TS 类型擦除。[Node 官方模块文档](https://nodejs.org/docs/latest-v24.x/api/modules.html#loading-ecmascript-modules-using-require)
+- 支持门槛调整为 Node >=24.15.0，开发固定 24.21.0；不再声明 Node 22 支持。平台目标仍为 macOS arm64、Linux x64 GNU、Windows x64 MSVC，未实测平台不得称为已验证。24.15.0 是本项目依赖的 `require(ESM)` 稳定版本，也涵盖 24.12.0 已稳定的 TS 类型擦除。[Node 官方模块文档](https://nodejs.org/docs/latest-v24.x/api/modules.html#loading-ecmascript-modules-using-require)
 
 - 每个平台需要产物构建和干净环境的真实 import、创建、查询与失败路径测试；OS 最低版本、glibc 和 SDK 底线随构建产物验证后公布。未在矩阵内的平台、Bun、Deno、Electron 和浏览器不作首版支持声明。
 
@@ -250,7 +250,7 @@ INVALID_ARGUMENT 的 reason 为 missing、type、non_finite、non_integer、out_
 
 - TypeScript 声明检查基线已按用户要求升级为 7.0.2，实际包与完整设计合同通过 NodeNext／Bundler 检查。D-256 另以最终包入口测试已实现查询、限运及 JSON，并在独立消费端验证打包后的声明；不能由此宣称其他宿主已得到验证。先前 5.9.3 的设计阶段核验记录保留如下。
 
-- mise 管理 Rust、Node 24.20.0、pnpm 12.3.4 及 build:node/check:node。根 Cargo workspace 已加入绑定，default-members 仍为核心；CI 已接入首轮 Node 构建与测试。本地钩子不新增 Node 测试，Rust 工具链不变。
+- mise 管理 Rust、Node 24.21.0、pnpm 12.3.4 及 build:node/check:node。根 Cargo workspace 已加入绑定，default-members 仍为核心；CI 已接入首轮 Node 构建与测试。本地钩子不新增 Node 测试，Rust 工具链不变。
 
 ## 10. 验收与完成界限
 

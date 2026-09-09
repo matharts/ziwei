@@ -1,7 +1,7 @@
 [tools]
 lefthook = "2.1.12"
 rust = "1.98.1"
-node = "24.20.0"
+node = "24.21.0"
 pnpm = "12.3.4"
 
 [settings]
