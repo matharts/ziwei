@@ -312,7 +312,7 @@ test("root devEngines owns development constraints and agrees with mise and the 
     runtime: { name: "node", version: consumer.engines.node, onFail: "error" },
     packageManager: {
       name: "pnpm",
-      version: /^pnpm = "([^"]+)"$/m.exec(mise)?.[1],
+      version: /^pnpm = \{ version = "([^"]+)"/m.exec(mise)?.[1],
       onFail: "error",
     },
   });
