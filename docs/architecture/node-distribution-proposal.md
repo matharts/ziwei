@@ -88,9 +88,9 @@ mise run pack:node -- --target aarch64-apple-darwin
 
 ## CI 配置与验证边界
 
-六个 glibc／macOS／Windows 目标使用[明确 CPU 的 GitHub runner](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)，执行现有完整测试与新分发合同。两个 musl 目标分别在 Ubuntu x64／arm64 上使用同架构 `musl-gcc` 构建，再在同架构 `node:24.21.0-alpine3.23` 容器中执行相同分发消费端夹具；不使用 CPU 仿真。Node 镜像自身对 musl 的实验性支持仍须保留。[Ubuntu musl-tools](https://packages.ubuntu.com/noble/musl-tools)、[Node Alpine 说明](https://github.com/nodejs/docker-node#nodealpine)
+六个 glibc／macOS／Windows 目标使用[明确 CPU 的 GitHub runner](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)，执行现有完整测试与新分发合同。两个 musl 目标分别在 Ubuntu x64／arm64 上使用 Zig 工具链构建，再在同架构 `node:24.21.0-alpine3.23` 容器中执行相同分发消费端夹具；不使用 CPU 仿真。Node 镜像自身对 musl 的实验性支持仍须保留。[Node Alpine 说明](https://github.com/nodejs/docker-node#nodealpine)
 
-musl 构建复用 `build:node`，以 napi-rs 支持的 `CARGO_BUILD_TARGET` 选择目标、Cargo linker 环境变量选择 `musl-gcc`；napi-rs 为 musl 加入动态 CRT 参数。Alpine 仅包含运行时，声明在构建机检查，不复制 workspace 开发依赖。[napi-rs 构建](https://napi.rs/docs/cli/build)
+musl 构建使用 `build:node:musl`，以 napi-rs 支持的 `CARGO_BUILD_TARGET` 选择目标，复用原生与 TS 构建任务。mise 在该任务内锁定 Zig／cargo-zigbuild；原生任务的 `--cross-compile` 交给 napi-rs，后者为 musl 加入动态 CRT 参数。首轮 CI 已证明 Ubuntu 的 `musl-gcc` 路径缺少 `libgcc_s.so.1`，因此改用官方推荐的 Zig 路径，不链接宿主 glibc 的运行库。Alpine 仅包含运行时，声明在构建机检查，不复制 workspace 开发依赖。[napi-rs 交叉构建](https://napi.rs/docs/cross-build)
 
 本机已验证 macOS arm64 的真实分发路径、八目标元数据及 CI 静态检查；本机无 Docker，其他目标、Alpine 运行及本次远端 CI 尚未验证。不存在发布工作流、产物上传或 npm 发布。
 

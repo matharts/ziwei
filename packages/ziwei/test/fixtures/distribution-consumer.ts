@@ -122,6 +122,7 @@ export function verifyDistribution(artifactsDirectory: string) {
     const runtime = run(
       `
       import assert from 'node:assert/strict';
+      import { realpathSync } from 'node:fs';
       import { createRequire } from 'node:module';
       import { Ziwei, ZiweiError, Branch } from '@matharts/ziwei';
       const require = createRequire(import.meta.url);
@@ -138,7 +139,7 @@ export function verifyDistribution(artifactsDirectory: string) {
       const queried = Ziwei.fromParameters({ gender: 1, birthStem: 0, birthBranch: 0, birthMonth: 1, ziweiBranch: 2, birthHour: 0 });
       assert.equal(queried.decadeYears(0)[0].year, null);
       assert.throws(() => Ziwei.fromBirth(null), ZiweiError);
-      assert.equal(require.resolve(${JSON.stringify(platform.name)}), ${JSON.stringify(realpathSync.native(join(nativeRoot, nativeManifest.main)))});
+      assert.equal(realpathSync.native(require.resolve(${JSON.stringify(platform.name)})), ${JSON.stringify(realpathSync.native(join(nativeRoot, nativeManifest.main)))});
     `,
       { NAPI_RS_ENFORCE_VERSION_CHECK: "1" },
     );

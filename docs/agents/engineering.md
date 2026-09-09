@@ -12,6 +12,8 @@ Rust 命令通过 `mise` 执行：直接调用使用 `rtk mise exec -- <command>
 
 Node 开发统一从仓库根使用 mise 任务，完整命令、工作目录和执行顺序只定义在 [mise.toml](../../mise.toml)；根及 `packages/ziwei/package.json` 不再包含开发 scripts。mise 安装并选择工具链；根 [package.json](../../package.json) 的 `devEngines` 校验 Node `>=24.15.0` 与 pnpm `12.3.4`，两者均为 `onFail: "error"`。
 
+pnpm 通过 mise 的 `npm:pnpm` 后端安装：当前 Aqua 后端排除 macOS x64，而同版本 npm 包提供该平台二进制。工具别名仍为 `pnpm`，不改变 workspace 包管理器或开发版本约束。
+
 Node 任务通过 `pnpm exec` 执行，因此仍先经过开发版本校验；不配置自动下载，也不使用 workspace 的 `runtimeOnFail`／`pmOnFail` 覆盖 manifest。子包 `engines.node` 保留消费端最低版本约束，不重复 `devEngines`；根私有 workspace 不使用 `engines` 或旧 `packageManager` 字段。
 
 字段职责见 [pnpm devEngines](https://pnpm.io/package_json#devenginesruntime) 与 [npm engines](https://docs.npmjs.com/cli/v11/configuring-npm/package-json#engines)。
@@ -75,6 +77,8 @@ Oxfmt 读取根 [.editorconfig](../../.editorconfig)：TypeScript 和 JSON 使�
 ### 原生分发验收
 
 `mise run pack:node -- --target <Rust target>` 对已构建产物生成独立私有暂存包，不隐式构建或发布；布局、平台批次和完整性边界见 [Node 分发设计](../architecture/node-distribution-proposal.md)。`packages/ziwei/tools/pack.ts` 负责实际组装，不是第二套任务调度器。
+
+musl 使用 `CARGO_BUILD_TARGET` 指定目标，运行 `mise run build:node:musl`。此任务锁定 Zig／cargo-zigbuild 并复用原生与 TS 构建；`build:node:native --cross-compile` 将选项传给 napi，不传入 `--` 后的 Cargo 参数。普通 `build:node` 不需要交叉链接工具链。
 
 `check:node` 同时覆盖原有自包含包和新的无二进制主包／平台包。后者用 Node 随附 npm 离线安装本地 tarball，override 仅存在于临时消费端；仓库依赖管理继续使用 pnpm。正常 runner 从已安装包检查声明，musl 在对应 CPU 的 Alpine 运行同一消费端夹具、在构建机检查声明。注册表安装和八目标可选依赖的自动筛选须另行验收。
 

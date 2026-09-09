@@ -274,6 +274,20 @@ for (const activated of [true, false]) {
   });
 }
 
+test("native cross compilation passes the flag to napi, not Cargo", (t) => {
+  const { run } = fixture(t, { activated: true });
+  const result = run(["run", "build:node:native", "--cross-compile"]);
+  assert.equal(result.status, 0, result.stderr);
+  const output = rows(result.stdout);
+  assert.equal(output.length, 1);
+  assertRuntime(output[0]);
+  assert.deepEqual(output[0].args, [
+    "build",
+    "--cross-compile",
+    ...tasks["build:node:native"].args.slice(1),
+  ]);
+});
+
 test("mise owns task definitions and CLI paths match installed dependency manifests", () => {
   for (const path of ["package.json", "packages/ziwei/package.json"]) {
     assert.equal(JSON.parse(readFileSync(join(root, path), "utf8")).scripts, undefined);

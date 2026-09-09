@@ -81,8 +81,6 @@ jobs:
     timeout-minutes: 25
     env:
       CARGO_BUILD_TARGET: ${{ matrix.target }}
-      CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER: musl-gcc
-      CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER: musl-gcc
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -91,15 +89,12 @@ jobs:
         with:
           install_args: rust node pnpm
           cache: false
-      - name: Install matching-architecture musl toolchain
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes musl-tools
-          mise exec -- rustup target add "$CARGO_BUILD_TARGET"
+      - name: Install musl Rust target
+        run: mise exec -- rustup target add "$CARGO_BUILD_TARGET"
       - name: Build and pack musl distribution without publishing
         run: |
           mise exec -- pnpm install --frozen-lockfile
-          mise run build:node
+          mise run build:node:musl
           mise run check:node:types
           mise run pack:node -- --target "$CARGO_BUILD_TARGET"
       - name: Clean Alpine consumer on the target CPU (no emulation)

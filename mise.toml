@@ -4,6 +4,10 @@ rust = "1.98.1"
 node = "24.21.0"
 pnpm = "12.3.4"
 
+[tool_alias]
+# Aqua's pnpm entry excludes macOS x64; the npm release includes that binary.
+pnpm = "npm:pnpm"
+
 [settings]
 # CI may already have tool directories on PATH without a mise activation record.
 activate_aggressive = true
@@ -15,7 +19,15 @@ run = [{ task = "build:node:native" }, { task = "build:node:ts" }]
 [tasks."build:node:native"]
 description = "构建 Node 原生绑定；默认本机，可用 CARGO_BUILD_TARGET 指定目标"
 dir = "packages/ziwei"
-run = "pnpm exec -- node node_modules/@napi-rs/cli/dist/cli.js build --manifest-path ../../bindings/node/Cargo.toml --package ziwei-node --platform --release --output-dir native --js binding.cjs --dts binding.d.cts -- --locked"
+usage = 'flag "--cross-compile" help="使用 napi-rs 的交叉链接工具链"'
+run = "pnpm exec -- node node_modules/@napi-rs/cli/dist/cli.js build {% if usage.cross_compile %}--cross-compile {% endif %}--manifest-path ../../bindings/node/Cargo.toml --package ziwei-node --platform --release --output-dir native --js binding.cjs --dts binding.d.cts -- --locked"
+
+[tasks."build:node:musl"]
+description = "使用锁定的 Zig 工具链构建 CARGO_BUILD_TARGET 指定的 musl 包"
+run = [
+  "mise run --tool zig@0.16.0 --tool aqua:rust-cross/cargo-zigbuild@0.23.4 build:node:native --cross-compile",
+  { task = "build:node:ts" },
+]
 
 [tasks."build:node:ts"]
 description = "通过 Rslib 构建 ESM 与类型声明；需已有原生绑定"
