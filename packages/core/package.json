@@ -1,0 +1,38 @@
+{
+  "name": "@ziweijs/core",
+  "version": "1.0.0-dev.0",
+  "private": true,
+  "description": "Node.js and TypeScript bindings for the ziwei Rust engine",
+  "license": "MIT",
+  "files": [
+    "dist",
+    "native",
+    "AGENTS.md",
+    "README.md"
+  ],
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "devDependencies": {
+    "@napi-rs/cli": "catalog:",
+    "@rslib/core": "catalog:",
+    "typescript": "catalog:"
+  },
+  "napi": {
+    "binaryName": "ziwei-native",
+    "targets": [
+      "aarch64-apple-darwin",
+      "x86_64-unknown-linux-gnu",
+      "x86_64-pc-windows-msvc"
+    ]
+  },
+  "engines": {
+    "node": ">=24.15.0"
+  }
+}

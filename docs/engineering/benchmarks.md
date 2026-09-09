@@ -1,6 +1,6 @@
 # 建盘与查询基准
 
-当前有两套独立负载：下文首先说明 construction-120，它仅测 `Ziwei::from_birth` 和 `Ziwei::from_parameters`；随后说明混合输入与读路径套件。不能用建盘结果宣称查询延迟，也不能将两套结果互作基线。
+当前有两套 Rust 负载和一套独立 Node 负载：下文首先说明 construction-120，它仅测 `Ziwei::from_birth` 和 `Ziwei::from_parameters`；随后说明 Rust 混合输入与读路径套件。Node 公开 API 使用独立的 [ziwei-node-public-512](../../packages/core/bench/README.md)。不能用建盘结果宣称查询延迟，也不能将不同套件互作基线。
 
 当前生产设计为紧凑 Star + ArrayVec + 私有星曜位置索引，实现与取舍见 [包架构](../architecture/rust-package-design.md)。性能结论应按本文约定记录负载、源码与环境；不同实现或不同负载的历史结果不能作为当前正式基线。
 
@@ -9,6 +9,8 @@
 报告 median / P95 是**每批平均 ns/chart** 的统计，不是每次调用的尾延迟。跨轮 CV 基于各轮中位数；建议退化阈值 `max(5%, 3 × CV)` 只是人工审定的起点，不是自动验收线或统计置信区间。
 
 ## 命令
+
+以下命令及正式基线机制仅适用于 Rust 两套负载。Node 使用 `mise run benchmark:node:smoke`、`mise run benchmark:node`；`mise run check:node:bench` 验证 CLI、记录合同和真实冒烟，不经过 Rust xtask。Node 记录始终为 smoke／provisional，没有登记正式基线或性能门禁的入口。
 
 ```sh
 mise run benchmark:smoke

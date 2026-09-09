@@ -107,6 +107,12 @@ $RECYCLE.BIN/
 debug
 target
 
+# Node adapter dependencies and generated build outputs
+node_modules/
+/packages/*/dist/
+/packages/*/native/
+/packages/*/*.tgz
+
 # Local execution checkpoints, not library source
 /work/agent-state/
 

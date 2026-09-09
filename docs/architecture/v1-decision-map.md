@@ -4,6 +4,8 @@
 
 当前 implementation 的集中说明见 [Rust 包架构](rust-package-design.md)，简化视图见 [架构图](ziwei-architecture.html)。D-238 是现行宫内存储与星曜定位方案；早期 Box、槽位枚举和零依赖描述保留为历史，不再作为当前存储约束。
 
+2026-09-09 更新：D-256 已完成已确认的完整 Node API 实现与本机功能验收；Wasm、连续飞化、跨平台验收和发布不因此视为完成。下方早期条目的实施状态保留为当时记录。
+
 ## 设计树
 
 ```text
@@ -20,6 +22,8 @@
 ```
 
 ## 已确认决策
+
+### 领域与 Rust 核心
 
 | ID | 决策 | 状态 |
 | --- | --- | --- |
@@ -257,6 +261,37 @@
 | D-236 | 用户同意隔离验证私有 `PalaceStars` 枚举：分别持有空集合或 1～6 颗真实 Star，不构造占位星曜，保留切片读取、顺序与 Clone/Eq/Debug，无新增生产文件、依赖或 unsafe。验证正确且零分配，但保留当前 72 B Star 时建盘变慢；结合尚未确认的紧凑 Star 才获得明显建盘收益，同时宫干四化查询稳定退化约 30%。不将验证授权视为紧凑 Star 或查询性能取舍的确认。 | 2026-09-07 授权验证并完成隔离实验；不合入正式源码，最终布局待定 |
 | D-237 | 用户授权执行全流程 review 的顺序：先补齐混合输入、所有星曜查找／四化聚合、名称和保留命盘的独立负载，再分别验证紧凑 Star 与固定容量容器。采用紧凑 Star：私有静态资料按 StarName 索引，实例不重复携带名称／简称引用；四个 const getter、其他事实、构造参数、Clone/Eq 和原 Debug 内容不变。修订先前对 Star 名称实例字段的存储约束，不改变公开 interface 或领域规则。Box 组装暂保留；完整读取对照发现枚举有多项聚合退化，连同未解决问题的非内联遍历试验不合入。旧 construction-120 合同、无缓存／无 unsafe／无新依赖约束不变。 | 2026-09-07 用户授权执行；紧凑 Star 和独立基准已实现 |
 | D-238 | 在紧凑 Star 基础上，分别验证固定容量容器、位置索引与组合后，用户明确接受名称遍历、大限查询和保留命盘 RSS 的代价，合入 `ArrayVec<Star, 6>` 与十八项私有星曜位置索引。ArrayVec 0.7.8 关闭默认特性，封装底层 unsafe；自有源码仍禁止 unsafe。容量私有，仅保存真实星曜，超容量显式失败，不扩容或堆回退。`Natal::new` 从最终宫位一次建立宫位／宫内下标，不保存自引用。星曜、落宫、生年四化及宫干四化直接定位，自化仍顺序遍历，限运仍按需计算。公开 interface、借用、顺序、Clone/Eq/Debug、规则与旧基准合同不变，不缓存查询结果。修订 D-228、D-232、D-237 中不增私有字段、保留 Box 和零新增依赖的约束。 | 2026-09-07 用户确认取舍；已合入工作区，未提交推送 |
+| D-239 | 收尾 #326：查询沿用已确认的 `Natal` 只读方法与返回语义；V1 Rust 核心以 `ZiweiError` 变体及载荷作为机器可匹配的错误合同，不新增字符串或数字错误码接口。跨语言稳定错误码、宿主边界错误及异常包装在 Node/Wasm 绑定实现时确定并验证，不从 `Display`、`Debug` 或 Rust 内存布局推导。计算追踪明确延期到 V1 之后，当前不提供追踪 API、过程记录、绑定输出或对应验收要求；恢复时重新设计内容、开销和生命周期。 | 2026-09-08 用户确认并授权执行；文档已同步，现有 Rust API 与行为不变 |
+| D-240 | 增加 `Natal::decade_palace_by_name(decade: DecadeIndex, name: PalaceName) -> &Palace` 和 `yearly_palace_by_name(decade: DecadeIndex, yearly: YearlyIndex, name: PalaceName) -> &Palace`。按指定期间宫职直接定位本命实际宫位，返回的宫名、宫干、星曜仍为本命事实；不创建期间宫位副本或新增字段。规则层与完整期间布局共享命宫计算，单宫定位不生成数组、不扫描布局、不缓存、不分配堆内存。年龄反查与三方四正的待定语义不纳入本轮。 | 2026-09-08 用户授权并发执行新增查询；实现与验证在本轮完成 |
+| D-241 | 增加 `Natal::palace_transformation_sources(target_branch: Branch) -> impl Iterator<Item = PalaceTransformation> + '_`，筛选既有单步宫干四化。按源宫寅至丑、各源宫 A/B/C/D 顺序返回所有命中，同宫关系和同源不同化象均保留；无命中时为空。不缓存、不分配堆内存，不创建全盘关系表或连续路径。实现复用逐源宫查询，完整消费最多检查四十八条关系。 | 2026-09-08 用户授权并发执行新增查询；已实现；方法名由 D-245 修订，语义不变 |
+| D-242 | 增加 `Natal::period_indices_at_age(age: u8) -> Option<(DecadeIndex, YearlyIndex)>`。局数为 `b` 时只匹配 `[b, b + 119]`，返回 `(offset / 10, offset % 10)` 的有效索引；`0`、起限前、超出十二大限范围均返回 `None`，不循环、不截断、不新增错误类别。先安全减去局数再检查偏移，不依赖数字出生年份或顺逆，不生成期间数组或摘要、不缓存、不分配堆内存。 | 2026-09-08 用户确认设计并授权执行；已实现 |
+| D-243 | 增加 `Natal::decade_by_branch(decade: DecadeIndex, branch: Branch) -> Decade`、`yearly_by_branch(decade: DecadeIndex, yearly: YearlyIndex, branch: Branch) -> Yearly`。按实际地支直接生成单个期间宫职，保留对应对象的身份与简繁名称，按值返回而非借用或可选值；不新增字段、不修改本命宫职。规则层与整盘布局共享期间命宫和宫职计算，不先生成十二项数组、不缓存、不分配堆内存。 | 2026-09-08 用户确认设计并授权执行；已实现 |
+| D-244 | 增加 `Natal::opposite_palace(branch: Branch) -> &Palace`，直接定位相隔六宫的本命实际宫位，返回当前命盘的借用；不接收外来宫位引用、不复制宫位或星曜、不受期间宫职影响，不附加解释或三方四正语义。 | 2026-09-08 用户确认设计并授权执行；已实现 |
+| D-245 | 将 `Natal::palace_transformations_to` 改名为 `palace_transformation_sources`，表达“查询某宫的四化来源”。参数 `target_branch: Branch`、关系迭代器返回类型、源宫与化象顺序、同宫及同源多条关系、惰性计算均不变；同步公开调用、测试与文档，不保留旧名别名。 | 2026-09-08 用户确认命名并授权执行；已实现 |
+| D-246 | 增加 `Natal::sanfang_palaces(branch: Branch, include_self: bool) -> impl ExactSizeIterator<Item = &Palace> + '_` 与 `sizheng_palaces(branch: Branch) -> [&Palace; 4]`。三方不含本宫时按实际地支正序偏移 `[4, 8, 6]` 返回两个三合宫及对宫；包含本宫时按 `[0, 4, 8, 6]` 返回四正，与四正直接入口一致。固定偏移定位后返回当前命盘的借用，无重复、不滤空宫、不修改本命或期间事实，不新增领域对象、缓存或堆分配。 | 2026-09-08 用户要求新增三方与四正，并指定由参数控制是否包含本宫；本轮实现合同 |
+| D-247 | 增加 `Natal::palace_transformation(source_branch: Branch, kind: Transformation) -> PalaceTransformation`，直接查询源宫指定的一种宫干四化；合法化象必有唯一结果，同宫关系保留。规则层复用十干四化表和本命星曜位置索引，仅构造一条关系，不生成完整四项结果、不分配堆内存、不缓存、不修改本命事实。`Transformation::index()` 从测试辅助扩展为 crate 内部生产索引，仍不公开；既有批量查询合同不变。 | 2026-09-08 用户确认单项与批量区别并授权执行；已实现 |
+
+### Node.js/TypeScript 适配设计与实施进展
+
+| ID | 决策 | 状态 |
+| --- | --- | --- |
+| D-248 | Node.js/TypeScript 使用冻结的 Ziwei 入口对象，只含 fromBirth/fromParameters；Natal 只导出类型并持有 Rust 核心，不公开构造器或句柄。Palace/Star 为独立深层只读普通数据；数字身份和字符串身份按 [Node 适配设计](node-api-design.md) 显式映射，名称字段使用 nameHans/nameHant 等，不增加 Lang 或全局状态。 | 2026-09-09 用户授权自主完成设计；声明与文档已落地，绑定未实现 |
+| D-249 | Node 完整覆盖当前 28 个 Natal 读取/查询方法，将 Palace::star 保留为 natal.palaceStar(branch, name)，未命中返回 null；增加 toJSON 作为无行为快照出口。单项查询不依赖全盘快照；期间、关系、缺失值和顺序沿用核心，所有查询同步，不增加批量、连续飞化或解释能力。 | 2026-09-09 委托设计选择；实施与运行时验收后续进行 |
+| D-250 | Node 的 profile、palaces 分别首次成功访问后深层冻结并按实例保存，重复读取保证同一对象；其他查询不缓存，不保证与属性快照或不同查询之间引用相等。输出不反向持有原生命盘，不提供主动释放或跨 Worker 原生对象传递。Rust 的存储、借用、无查询缓存及按需限运约束不变。 | 2026-09-09 在完整查询设计后确定的实施基线，不是已验证的性能胜出结论 |
+| D-251 | Node 错误使用中文 ZiweiError，含 code 与判别联合 detail；五类核心错误码逐项映射变体，另设 INVALID_ARGUMENT 表达宿主表示错误。数字在整数收窄前验证；null 表示已确认的缺失，年数值保持精确。补全 D-239 的宿主设计，不在 Rust 核心新增错误码，不通过 Display/Debug/内存布局推导协议。 | 2026-09-09 委托设计选择；类型合同已编写，原生异常与平台支持尚未验证 |
+| D-252 | 绑定目录按宿主组织：Node 使用 `bindings/node`，Rust 绑定与 TypeScript 门面共同放置，Cargo 包名保留 `ziwei-napi`，npm 包名仍拟定为 `@matharts/ziwei`。未来 Wasm 使用平级的 `bindings/wasm`，Cargo 包名保留 `ziwei-wasm`；两者各自单向依赖核心。不因目录规划预先创建空包，不改变公开合同、领域职责或依赖方向。 | 2026-09-09 用户确认社区布局调研建议并要求执行；仅同步设计，绑定目录与 manifest 尚未创建，npm 名称与 scope 权限未核验 |
+| D-253 | 在 `bindings/node` 实现首个可运行切片：两个同步建盘入口、持有核心 Natal 的私有原生对象、按实例惰性只读 Profile、Gender/Stem/Branch 数字常量及中文结构化错误。实际包声明只公开已实现成员，完整设计声明继续作为目标；其余查询、ALL/派生方法和 toJSON 待实施。根 workspace 加入 ziwei-napi，default-members 保持核心；mise 锁定 Node/pnpm，CI 接入构建与 Node 测试。仅绑定使用 deny(unsafe_code) 兼容 napi-rs 注册宏，核心 forbid 不变；原生 holder 记账及环境回收不涉及 JS 快照。 | 2026-09-09 用户要求执行下一实施切片；本地包入口、类型、Worker、离线打包消费端已验证；禁止发布，远端 CI 与完整平台/性能矩阵尚未验证 |
+| D-254 | 保留 Node 同包布局与现有目录；将原生命盘持有、Profile 转换、结果包装及记账回收迁入私有 `src/natal.rs`，将 TS 私有命盘包装、冻结及实例缓存迁入 `js/natal.ts`。`src/lib.rs`、`js/index.ts` 保留构造与导出职责，内部辅助函数不进入公开包根或子路径。不改变 D-248～D-251 合同，不新增查询、包或发布流程。 | 2026-09-09 用户确认目标结构并要求执行；对象模块提取已完成，构建、11 项 Node 测试、NodeNext/Bundler 类型检查、Cargo 测试及 fmt/Clippy 通过；既有公开声明与配置不变，未提交、推送或发布 |
+| D-255 | 实现已确认 Node 合同中的 zodiac、fiveElementBureau、palaces 及配套身份常量、Palace/Star/SelfTransformations/DecadeAgeRange 类型。宿主身份以穷尽枚举转换确定，名称读取核心；宫位和宫内星序保持不变。palaces 与 profile 独立，分别首次成功读取后深层冻结并按实例保存；失败不缓存，子数据不持有原生句柄。不新增查询、限运、ALL/派生方法、toJSON、Wasm 或发布流程，不修改核心规则与存储。 | 2026-09-09 用户确认本命只读数据切片；按测试先行完成，甲子与壬申固定命例、16 项 Node 测试、21 个类型负例及 NodeNext/Bundler、Cargo 测试、fmt/Clippy、Rust 1.98.0 检查通过；未提交、推送、发布或验证其他平台/性能 |
+| D-256 | 按既定 D-248～D-251 合同完成剩余 Node API：本命定位与宫位关系、四化、按需大限／流年、ALL／身份派生方法及 toJSON。只调用核心公开方法，查询按请求范围转换并深层冻结，不新增查询缓存；两个属性的独立缓存合同不变。保持安全整数年份、缺失值与结构化错误，非法接收者及意外异常不伪装为领域错误；生成声明与完整目标一致。 | 2026-09-09 用户要求直接完成绑定包；28 项 Node 测试、30 个类型负例、NodeNext／Bundler、独立 ESM／CJS 打包消费端、Worker／GC、Rust debug／release、fmt／Clippy 和 1.98.0 检查通过。核心与依赖不变，文档同步；未提交、推送、发布，跨平台与性能未验证 |
+| D-257 | 取代 D-252 的 Node 同目录布局：Rust adapter 迁至 `crates/ziwei_napi`（Cargo 包保留 `ziwei-napi`），TypeScript 门面迁至 `packages/core/src`，npm 包改为 `@ziweijs/core`。根 pnpm workspace 管理 `packages/*` 和共享锁文件；JS 包通过显式 Rust manifest 构建自己的 native 产物。参考 Rolldown 的 Rust／TS 分离，保留 D-254 模块职责与 D-248～D-251 公开合同；不创建占位包、不升级依赖、不实施 Wasm 或发布。 | 2026-09-09 用户明确要求多包、改名及 Rust／TS 分离；迁移完成，离线冻结安装、28 项 Node 测试、NodeNext／Bundler、独立打包消费端、Rust debug／release、fmt／Clippy 与 1.98.0 检查通过。源码及生成声明保持一致；未提交、推送、发布，远端 CI 未运行 |
+
+#### 包工程与开发入口
+
+| ID | 决策 | 状态 |
+| --- | --- | --- |
+| D-258 | npm 默认单份 ESM，根 `exports` 同时服务 import 与 require(ESM)，不保留 CJS 双构建／桥接。最低 Node 统一 >=24.15.0，mise 开发仍固定 24.20.0；前者涵盖已稳定的 TS 类型擦除与 require(ESM)。手写 Node 源码、配置、测试、Worker 和工具全部使用 TypeScript，生成 JS／native 加载器继续作为分发产物。pnpm 默认 Catalog 集中直接依赖版本，各包使用 catalog:。不改变 Rust、公开导出和领域语义，不发布。 | 2026-09-09 用户要求 ESM、Node 对齐、Catalogs 和全量 TS；本次包工程实施范围，验证状态以实际检查为准 |
+| D-259 | 开发任务统一由 mise 定义和编排；移除 Node 自建任务调度器，根及 core 的 package.json 不保留重复 scripts。Node 单项任务直接启动已安装 CLI，并保留 pnpm 的 devEngines 校验；普通 mise 任务不承诺任意参数保真，复杂参数通过 mise exec 直接启动 CLI。基准复用同一构建任务并追溯 mise 配置，不改变排盘 API、语料、采样或统计。 | 2026-09-09 用户选择 mise 作为唯一任务入口；本地与跨平台验证分别报告 |
 
 ## 暂缓决策
 

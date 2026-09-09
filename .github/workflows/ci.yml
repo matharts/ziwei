@@ -26,13 +26,27 @@ jobs:
           persist-credentials: false
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
         with:
-          install_args: rust
+          install_args: rust node pnpm
           # Rust is installed through rustup; see jdx/mise-action#215.
           cache: false
       - name: Tests
         run: mise exec -- cargo test --workspace --all-features --locked
       - name: Release tests
         run: mise exec -- cargo test --workspace --all-features --release --locked
+      - name: Install Node adapter development dependencies
+        run: mise exec -- pnpm install --frozen-lockfile
+      - name: Node development runtime contracts
+        run: mise run check:node:tools
+      - name: Node adapter integration and type contracts
+        run: mise run check:node
+      - name: TypeScript tooling and test contracts
+        run: mise run check:typescript
+      - name: Minimum supported Node runtime
+        if: runner.os == 'Linux'
+        run: mise run check:node:minimum
+      - name: Node benchmark contract tests (smoke only, no performance gate)
+        if: runner.os == 'Linux'
+        run: mise run check:node:bench
 
   quality:
     runs-on: ubuntu-latest
@@ -44,9 +58,11 @@ jobs:
           persist-credentials: false
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
         with:
-          install_args: rust
+          install_args: rust node pnpm
           # Rust is installed through rustup; see jdx/mise-action#215.
           cache: false
+      - name: Install quality components
+        run: mise exec -- rustup component add rustfmt clippy
       - name: Format
         run: mise exec -- cargo fmt --all -- --check
       - name: Clippy

@@ -1,0 +1,22 @@
+{
+  "name": "ziweijs-workspace",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "@rstest/core": "catalog:",
+    "@types/node": "catalog:",
+    "typescript": "catalog:"
+  },
+  "devEngines": {
+    "packageManager": {
+      "name": "pnpm",
+      "version": "12.3.4",
+      "onFail": "error"
+    },
+    "runtime": {
+      "name": "node",
+      "version": ">=24.15.0",
+      "onFail": "error"
+    }
+  }
+}

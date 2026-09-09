@@ -142,10 +142,14 @@ pub(crate) fn compute_natal_palace_names(ming_palace_branch: Branch) -> [PalaceN
 /// 本命、大限和流年都从各自命宫逆布宫职，只在结果类型上不同。
 /// `ming_index` 使用寅起坐标，可为尚未环绕的大限命宫；各调用的坐标差在 -22..=22。
 fn compute_palace_layout<T>(ming_index: i8, make: impl Fn(PalaceName) -> T) -> [T; 12] {
-    from_fn(|palace_index| {
-        let name_index = (ming_index - palace_index as i8).rem_euclid(12) as usize;
-        make(PalaceName::ALL[name_index])
-    })
+    from_fn(|palace_index| make(compute_palace_name(ming_index, palace_index as i8)))
+}
+
+/// 从各自命宫逆布宫职；两个参数均使用寅起坐标，差值在 -22..=22。
+fn compute_palace_name(ming_index: i8, palace_index: i8) -> PalaceName {
+    let name_index = (ming_index - palace_index).rem_euclid(12) as usize;
+
+    PalaceName::ALL[name_index]
 }
 
 /// 按寅至丑的固定顺序返回生年天干对应的十二宫干。
@@ -331,6 +335,23 @@ pub(crate) const fn compute_transformation_stars(stem: Stem) -> [StarName; 4] {
     TRANSFORMATION_STARS_BY_STEM[stem.index() as usize]
 }
 
+/// 直接查找指定化象的目标星曜，仅生成一条宫干四化关系。
+#[must_use]
+pub(crate) fn compute_palace_transformation(
+    natal: &Natal,
+    source_branch: Branch,
+    kind: Transformation,
+) -> PalaceTransformation {
+    let stem = natal.palace(source_branch).stem();
+    let star = TRANSFORMATION_STARS_BY_STEM[stem.index() as usize][kind.index()];
+    PalaceTransformation::new(
+        source_branch,
+        natal.palace_by_star(star).branch(),
+        kind,
+        star,
+    )
+}
+
 /// 从已建本命盘按需生成源宫的四条宫干四化关系。
 /// 按禄、权、科、忌通过本命盘的持久星曜位置索引定位目标；不重新安星或缓存。
 #[must_use]
@@ -444,15 +465,40 @@ pub(crate) fn compute_decade_age_ranges(
 /// 仅借用本命事实，不重新排盘、不生成年龄区间，也不缓存结果。
 #[must_use]
 pub(crate) fn compute_decade(natal: &Natal, index: DecadeIndex) -> [Decade; 12] {
+    compute_palace_layout(compute_decade_ming_index(natal, index), Decade::new)
+}
+
+/// 按实际地支直接返回指定大限宫职，不生成十二宫职布局。
+#[must_use]
+pub(crate) fn compute_decade_by_branch(
+    natal: &Natal,
+    decade: DecadeIndex,
+    branch: Branch,
+) -> Decade {
+    Decade::new(compute_palace_name(
+        compute_decade_ming_index(natal, decade),
+        branch.index_from_yin() as i8,
+    ))
+}
+
+/// 按指定大限宫职直接定位实际地支，不生成十二宫职布局。
+#[must_use]
+pub(crate) fn compute_decade_palace_branch(
+    natal: &Natal,
+    index: DecadeIndex,
+    name: PalaceName,
+) -> Branch {
+    compute_palace_branch(compute_decade_ming_index(natal, index), name)
+}
+
+/// 大命的寅起坐标保留顺逆移动后的值，由布局或单宫定位统一环绕。
+fn compute_decade_ming_index(natal: &Natal, index: DecadeIndex) -> i8 {
     let profile = natal.profile();
     let direction = match compute_decade_direction(profile.gender(), profile.birth_stem()) {
         DecadeDirection::Forward => 1,
         DecadeDirection::Reverse => -1,
     };
-    let ming_index =
-        natal.ming_palace().branch().index_from_yin() as i8 + direction * index.get() as i8;
-
-    compute_palace_layout(ming_index, Decade::new)
+    natal.ming_palace().branch().index_from_yin() as i8 + direction * index.get() as i8
 }
 
 /// 按需返回指定大限内按时间递增的十项虚岁与数字年份摘要。
@@ -473,6 +519,24 @@ pub(crate) fn compute_decade_years(natal: &Natal, decade: DecadeIndex) -> [Decad
     })
 }
 
+/// 将有效覆盖区间内的虚岁映射为大限与流年序号；不读取数字年份或生成年度摘要。
+#[must_use]
+pub(crate) fn compute_period_indices_at_age(
+    natal: &Natal,
+    age: u8,
+) -> Option<(DecadeIndex, YearlyIndex)> {
+    let offset = age.checked_sub(natal.five_element_bureau() as u8)?;
+    if offset >= 120 {
+        return None;
+    }
+
+    // 十二大限各十年：商在 0..=11，余数在 0..=9，沿用值类型的校验入口。
+    Some((
+        DecadeIndex::try_from(offset / 10).ok()?,
+        YearlyIndex::try_from(offset % 10).ok()?,
+    ))
+}
+
 /// 按需返回指定流年的十二宫职，顺序固定为寅至丑。
 ///
 /// 流命为生年支加虚岁减一，再从流命逆布宫职。
@@ -483,12 +547,46 @@ pub(crate) fn compute_yearly(
     decade: DecadeIndex,
     index: YearlyIndex,
 ) -> [Yearly; 12] {
+    compute_palace_layout(compute_yearly_ming_index(natal, decade, index), Yearly::new)
+}
+
+/// 按实际地支直接返回指定流年宫职，不生成十二宫职布局。
+#[must_use]
+pub(crate) fn compute_yearly_by_branch(
+    natal: &Natal,
+    decade: DecadeIndex,
+    yearly: YearlyIndex,
+    branch: Branch,
+) -> Yearly {
+    Yearly::new(compute_palace_name(
+        compute_yearly_ming_index(natal, decade, yearly),
+        branch.index_from_yin() as i8,
+    ))
+}
+
+/// 按指定流年宫职直接定位实际地支，不生成十二宫职布局。
+#[must_use]
+pub(crate) fn compute_yearly_palace_branch(
+    natal: &Natal,
+    decade: DecadeIndex,
+    index: YearlyIndex,
+    name: PalaceName,
+) -> Branch {
+    compute_palace_branch(compute_yearly_ming_index(natal, decade, index), name)
+}
+
+fn compute_yearly_ming_index(natal: &Natal, decade: DecadeIndex, index: YearlyIndex) -> i8 {
     let age = natal.five_element_bureau() as u8 + 10 * decade.get() + index.get();
     // 虚岁为 2..=125，生年支索引为 0..=11，相加至多 136，u8 足以容纳。
     let branch_index = (natal.profile().birth_branch().index() + age - 1) % 12;
-    let ming_index = Branch::ALL[usize::from(branch_index)].index_from_yin() as i8;
+    Branch::ALL[usize::from(branch_index)].index_from_yin() as i8
+}
 
-    compute_palace_layout(ming_index, Yearly::new)
+/// 宫职从命宫逆布；将寅起宫位坐标转为 `Branch::ALL` 的子起坐标。
+fn compute_palace_branch(ming_index: i8, name: PalaceName) -> Branch {
+    let branch_index = ming_index + Branch::Yin.index() as i8 - name.index() as i8;
+
+    Branch::ALL[branch_index.rem_euclid(12) as usize]
 }
 
 // 星曜与宫位组装
