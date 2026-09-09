@@ -2,19 +2,32 @@
 
 ## 状态与目的
 
-本文记录紫微斗数排盘引擎的 Rust 包设计，核心结构已于 **2026-09-07** 按工作区源码同步。当前核心已实现两条建盘入口、本命查询、宫干四化和按需大限／流年，以及 D-237、D-238 的紧凑 Star、ArrayVec 与私有位置索引。2026-09-09 的 D-253～D-256 已完成已确认的完整 Node API；Wasm 尚未实现，跨平台验收与发布未完成。
+本文说明当前 Rust 核心与 Node 适配层的模块职责、数据归属和调用路径。核心与已确认的 Node API 均已实现；功能范围与待交付内容集中见 [README](../../README.md#范围)。
 
-本文描述当前 implementation 与已确认的架构约束，不替代领域术语表 [`CONTEXT.md`](../../CONTEXT.md) 或 [决策记录](v1-decision-map.md)。历史候选单独标注，不能当作当前实现；源码若与已确认规则冲突，仍须核对决策，不能仅以源码覆盖规格。[架构图](ziwei-architecture.html) 是本文的简化视图。
+领域术语与不变量见 [`CONTEXT.md`](../../CONTEXT.md)，设计依据与修订关系见 [决策记录](v1-decision-map.md)。本文中的历史候选单独标注；源码若与已确认规则冲突，仍须核对决策，不能仅以源码覆盖规格。[架构图](ziwei-architecture.html) 是本文的简化视图。
 
 目标是让 Rust 使用者得到一个小而深的核心模块：调用方只需提供已经归一化的出生资料，并从 crate 根调用 `Ziwei::from_birth` 或 `Ziwei::from_parameters`，即可得到不可变 `Natal`。`Ziwei` 是只承载这两条关联构造方法的公开入口；`Natal` 是命盘结果对象。
 
 调用方再在同一个内核中取得本命、大限、流年的只读结果。Node.js/TypeScript 与 WebAssembly 只在各自运行时把这一能力适配出去，不能复制或改变排盘规则。
 
+## 阅读路径
+
+初次读源码，可按下表顺序跟踪一张命盘；查阅某个职责时直接进入对应文件。领域术语不熟悉时，先读 [`CONTEXT.md`](../../CONTEXT.md)。
+
+| 步骤 | 阅读位置 | 要理解的内容 |
+| --- | --- | --- |
+| 1. 公开入口 | [lib.rs](../../crates/ziwei/src/lib.rs)、[ziwei.rs](../../crates/ziwei/src/ziwei.rs) | crate 根导出；两类输入如何进入建盘流程 |
+| 2. 输入与校验 | [domain/profile.rs](../../crates/ziwei/src/domain/profile.rs)、[error.rs](../../crates/ziwei/src/error.rs) | 值域、干支配对、出生档案与错误；调用方负责的历法归一化 |
+| 3. 建盘规则 | [rules.rs](../../crates/ziwei/src/rules.rs) 中的 `compute_natal` | 命身宫、五行局、安星、四化与十二宫组装；公式及表随调用继续读 |
+| 4. 命盘与查询 | [domain/natal.rs](../../crates/ziwei/src/domain/natal.rs)，再按返回类型阅读 [domain 模块](../../crates/ziwei/src/domain.rs) | 本命事实的所有权、借用查询与按需限运 |
+| 5. Node 适配 | [Node 设计阅读路径](node-api-design.md#阅读路径)、[Rust 绑定入口](../../bindings/node/src/lib.rs)、[TS 入口](../../packages/ziwei/src/index.ts) | 宿主校验、数据转换、错误与生命周期；领域计算仍调用核心 |
+| 6. 验证依据 | [固定命例说明](../../crates/ziwei/tests/fixtures/README.md)、[测试与验证布局](#测试与验证布局) | 独立预期、公开合同测试及各类检查的覆盖范围 |
+
+运行开发检查见[工程验证](../agents/engineering.md)；追溯替代方案时再读[决策表](v1-decision-map.md)及本文标记为历史的章节。
+
 ## 决策摘要
 
-2026-09-09 补充：Node.js/TypeScript 的完整使用合同见 [适配设计](node-api-design.md)，docs/architecture/node-api 为独立设计声明与编译型用例。D-256 已使实际生成声明与完整设计匹配，补齐本命／四化／限运查询、身份辅助及 JSON 输出。
-
-D-260（2026-09-10）将 Rust 绑定按宿主组织到 `bindings/node`，Cargo 包改为 `ziwei-node`（Rust 标识符 `ziwei_node`）；保留 D-257 的 Rust／TS 分离，TypeScript 按 D-262 迁至 `packages/ziwei/src`，npm 包名按 D-261 改为 `@matharts/ziwei`。两者均禁止发布，不新增第二个领域实现。
+以下为当前架构约束的摘要。Node 的类型与行为合同见 [适配设计](node-api-design.md)；目录与包名的修订依据为 D-260～D-262。
 
 1. 根 workspace 包含 `crates/ziwei` 与 `bindings/node`，Cargo 包分别为 `ziwei` 与 `ziwei-node`；`default-members` 仍只选择核心 `ziwei`，开发工具保留独立 workspace。
 
@@ -22,7 +35,7 @@ D-260（2026-09-10）将 Rust 绑定按宿主组织到 `bindings/node`，Cargo �
 
 3. `PalaceName` 是本命、大限与流年共用的唯一十二宫职领域类型；`Palace`、`Decade`、`Yearly` 各自管理自己的宫职及对应简、繁名称，不保留 `PalaceRole` 或 `PalaceScope`。
 
-4. Node.js/TypeScript 与 WebAssembly 在接口稳定后各自成为一个 adapter 包，单向依赖 `ziwei`。
+4. Node.js/TypeScript 由 `bindings/node` 与 `packages/ziwei` 共同实现一个 adapter；未来 Wasm 单独实现。两者均单向依赖 `ziwei`；当前 Rust 绑定与 npm 分发包均禁止发布。
 
 5. 历法换算和解释/断语不属于 V1，不创建对应包。
 
@@ -38,13 +51,13 @@ D-260（2026-09-10）将 Rust 绑定按宿主组织到 `bindings/node`，Cargo �
 
 ### 一个深核心模块
 
-`ziwei` 的 interface 面向三类调用者：项目自身的上层应用、其他 Rust 开发者，以及未来 adapter。它隐藏五行局、安星、生年四化、自化、宫干四化查询和期间计算的具体实现，让调用者通过少量稳定入口取得结果。连续飞化暂缓，不属于当前实现。
+`ziwei` 的 interface 面向三类调用者：项目自身的上层应用、其他 Rust 开发者，以及宿主 adapter。它隐藏五行局、安星、生年四化、自化、宫干四化查询和期间计算的具体实现，让调用者通过少量稳定入口取得结果。连续飞化暂缓，不属于当前实现。
 
 因此，领域计算不能分散到绑定层、调用方或多个相互转发的包中。删除 `ziwei` 后，排盘复杂度应该重新出现在所有调用方；这证明它承担了应有的深度与 leverage。
 
 ### 只在真实 seam 处拆包
 
-Node-API 与 `wasm-bindgen` 的编译目标、错误模型、对象生命周期和序列化方式不同，因此是两个真实 adapter，分别拆包有价值。
+Node-API 与 `wasm-bindgen` 的编译目标、错误模型、对象生命周期和序列化方式不同，适合在各自实施时拆为独立 adapter；当前仅 Node 已实现。
 
 相反，当前的本命计算、查询和期间计算共享同一个不可变 `Natal`，没有第二个实现，也没有独立运行时；把它们拆为 `core`、`query`、门面三层只会扩大 interface，降低 locality。
 
@@ -55,7 +68,7 @@ Node-API 与 `wasm-bindgen` 的编译目标、错误模型、对象生命周期�
 ```text
 上层 Rust 应用 ───────────────────────────► ziwei
 ziwei-node ────────────────────────────────► ziwei
-ziwei-wasm ────────────────────────────────► ziwei
+ziwei-wasm（后续） ────────────────────────► ziwei
 ```
 
 `ziwei-node` 与未来的 `ziwei-wasm` 之间也没有依赖关系。
@@ -127,7 +140,7 @@ ziwei-wasm ───────────────────────
 
 ### 工具链与开发任务
 
-`mise.toml` 固定 Rust `1.98.1`、Lefthook `2.1.12`、Node `24.21.0` 与 pnpm `12.3.4`。pre-commit 检查格式与暂存区空白，pre-push 执行 Rust 测试和 Clippy；Node 构建与验收另由 build:node/check:node 承担，不加入本地钩子。
+工具链版本与开发任务以 [mise.toml](../../mise.toml) 为准，钩子范围以 [lefthook.yml](../../lefthook.yml) 为准。pre-commit 检查 Rust 格式、Node lint／格式和暂存区空白；pre-push 执行 Rust 测试与 Clippy。Node 构建与功能验收通过 `build:node`／`check:node` 执行；任务顺序与检查范围见[工程验证](../agents/engineering.md)。
 
 按 D-259，开发任务统一在 mise 定义，根与 TS 包的 package.json 不再提供重复 scripts；工程合同测试位于 `tools/tests`。基准记录与 Rust 打包校验仍由 `tools/xtask` 完成，不依赖 Node；该目录通过自己的 workspace、publish = false 和 lockfile 隔离开发依赖，绑定与工具均不改变核心运行依赖或公开 API。
 
@@ -159,7 +172,7 @@ Wasm 仍是独立 adapter，实施时可放入 `bindings/wasm`，其 JS 分发�
 
 - 返回可匹配的领域错误，且不依赖绑定层错误类型。
 
-- 按 D-239，V1 错误合同为 `ZiweiError` 变体与载荷；跨语言稳定错误码由绑定实现阶段确定。计算追踪延期到 V1 之后，当前不提供追踪 API 或过程记录；具体边界见[适配合同](adapter-contract.md)。
+- 按 D-239，V1 Rust 错误合同为 `ZiweiError` 变体与载荷；Node 稳定错误码已按 D-251 在[宿主错误合同](node-api-design.md#8-错误合同)中确定，Wasm 合同仍由其实施阶段确定。计算追踪延期到 V1 之后，当前不提供追踪 API 或过程记录；具体边界见[适配合同](adapter-contract.md)。
 
 它不负责：
 
@@ -496,7 +509,7 @@ D-237 因而先落地紧凑 Star、保留 `Box<[Star]>`。补齐读取负载后�
 
 根 workspace 的检查不覆盖嵌套工具，后者通过 `check:tools` 单独执行格式、Clippy 和快速测试；真实负载测试默认忽略，通过 `check:tools:e2e` 显式串行执行。`check:msrv` 也显式执行一次端到端测试，两套工具链各覆盖一次真实冒烟，CI 不额外重复同一工具链的 smoke。
 
-负载构建遵循 Cargo 目标目录配置，未指定时使用根 `target/`。Node 的远端矩阵尚待实际运行，不代表完整 Node/Wasm 支持已验证。Actions 继续固定完整提交 SHA；mise 的 Rust 缓存按其[官方已知问题](https://github.com/jdx/mise-action/issues/215)关闭。本地 Lefthook 不加入 Node 测试。
+负载构建遵循 Cargo 目标目录配置，未指定时使用根 `target/`。上表说明工作流配置的检查范围；远端验收须核对对应提交的实际运行结果，不由本页推断通过。Actions 继续固定完整提交 SHA；mise 的 Rust 缓存按其[官方已知问题](https://github.com/jdx/mise-action/issues/215)关闭。本地 Lefthook 不加入 Node 功能测试。
 
 基准工具在现有模块内将统计值、命令留证和执行收尾分开：统计采用明确类型，输出时转换为既有 JSON 字段；构建和测量输出先保存后解析，失败写入独立 `failure.json`，不会冒充有效基线。合同指纹排除独立打包检查源码，同时保留完整工具追溯指纹；详细规则见[基准说明](../engineering/benchmarks.md)。
 
@@ -605,6 +618,8 @@ crates/ziwei/
 归档结构是交叉参考，不是权威。新代码以本仓库已确认的领域规则、public interface 测试和本文件的依赖约束为准。
 
 ## 实施顺序
+
+以下保留核心建立初期的实施顺序，供理解演进过程。核心与 Node API 已完成的范围及剩余交付工作见 [README](../../README.md#范围)，不按此清单重新启动开发。
 
 1. 完成 workspace 与 `ziwei` 工具链校验。
 

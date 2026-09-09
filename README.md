@@ -20,12 +20,16 @@
 <p align="center">
   <a href="#安装">安装</a> &nbsp; / &nbsp;
   <a href="#使用">使用</a> &nbsp; / &nbsp;
+  <a href="#调用约定">调用约定</a> &nbsp; / &nbsp;
   <a href="#进阶用法">进阶用法</a> &nbsp; / &nbsp;
-  <a href="#范围">范围</a>
+  <a href="#范围">范围</a> &nbsp; / &nbsp;
+  <a href="#阅读指南">阅读指南</a>
 </p>
 
 > [!NOTE]
 > **开发中** · 当前通过 Git 接入开发版本，接口与功能仍可能调整。
+
+Rust 接入从下方安装与示例开始；Node.js / TypeScript 接入见 [Node 包说明](packages/ziwei/README.md)。当前实现与待交付内容见[范围](#范围)，领域、架构与开发文档见[阅读指南](#阅读指南)。
 
 ## 安装
 
@@ -111,6 +115,17 @@ cargo run --quiet -p ziwei --example inspect
 
 </details>
 
+## 调用约定
+
+接入时先确认以下约定，再选择所需查询：
+
+| 约定 | 调用方需要知道的内容 |
+| --- | --- |
+| 输入归一化 | 历法换算、闰月处理、时区、真太阳时与真实日期校验由调用方在建盘前完成；月份与日期类型只校验数值范围。完整边界见 [领域规则](CONTEXT.md)。 |
+| 数组顺序 | 命盘与期间宫职数组按寅至丑排列，`Branch::ALL` 按子至亥排列，不能直接混用下标；定位时优先使用按地支、宫职或星曜查询的方法。 |
+| 本命事实与期间宫职 | 按期间宫职定位得到的 `Palace` 仍保存本命宫职、宫干与星曜。读取整盘期间宫职用 `decade()` / `yearly()`；`decade_by_branch()` / `yearly_by_branch()` 返回单宫的独立 `Decade` / `Yearly` 值及对应期间名称。 |
+| 所有权与计算 | Rust 本命盘保持不可变，宫位与星曜查询借用当前命盘；大限与流年按需计算。Node 输出为独立只读数据，属性复用与查询结果的引用约定见 [Node 所有权合同](docs/architecture/node-api-design.md#6-所有权只读与快照复用)。 |
+
 ## 进阶用法
 
 本命盘建立后保持不可变，大限与流年按需计算。
@@ -190,12 +205,9 @@ fn main() -> Result<(), ziwei::ZiweiError> {
 | 三方／可包含本宫 | `Natal::sanfang_palaces(branch, include_self)` |
 | 四正 | `Natal::sizheng_palaces(branch)` |
 
-- **数组顺序**：命盘与期间宫职数组按寅至丑排列，`Branch::ALL` 按子至亥排列，不能直接混用下标。
 - **三方四正顺序**：三方按相对本宫顺移四宫、八宫、六宫（对宫）排列；`include_self = true` 时先返回本宫，组成四正。四正方法固定返回同序的四项借用。
 - **期间索引**：大限序号为 `0..=11`，大限内流年序号为 `0..=9`。
 - **虚岁查询**：五行局数为 `b` 时支持 `b..=b + 119`，返回 `(大限序号, 流年序号)`；其余 `u8` 输入返回 `None`，不进行周岁或日期换算。
-- **单宫宫职**：按地支查询返回独立的 `Decade` / `Yearly` 值及对应期间名称；读取整盘时使用 `decade()` / `yearly()`。
-- **期间定位**：按期间宫职返回本命实际宫位的借用；该 `Palace::name()` 仍为本命宫职，星曜和宫干也仍为本命事实。
 - **四化反查**：按源宫寅至丑、各源宫 A/B/C/D 顺序返回命中关系；保留同宫关系，无命中时迭代器为空。
 - **干支建盘**：通过 `Parameters::new` 与 `Ziwei::from_parameters` 指定生年干支和紫微落宫，无需提供数字出生年份或出生日。此时年度摘要包含虚岁，数字年份为 `None`。
 
@@ -211,11 +223,22 @@ fn main() -> Result<(), ziwei::ZiweiError> {
 <details>
 <summary>排盘规则与集成边界</summary>
 
-排盘采用统一的项目规则，其中壬干化科取左辅。历法换算、闰月处理、时区、真太阳时与真实日期校验由调用方完成，具体约定见 [领域规则](CONTEXT.md)。
+排盘采用统一的项目规则，其中壬干化科取左辅。接入边界见上方[调用约定](#调用约定)，完整术语与不变量见 [领域规则](CONTEXT.md)。
 
 核心使用 `std`，唯一第三方运行依赖为关闭默认特性的 `arrayvec`。自有源码禁止 `unsafe`；ArrayVec 内部封装了 `unsafe`。
 
 </details>
+
+## 阅读指南
+
+| 你要做什么 | 从哪里开始 |
+| --- | --- |
+| 接入 Rust 或 Node | 本页[使用示例](#使用)；[Node 包说明](packages/ziwei/README.md) |
+| 理解领域术语与规则 | [CONTEXT.md](CONTEXT.md)：输入、本命事实、限运与核心不变量 |
+| 阅读核心与绑定源码 | [架构阅读路径](docs/architecture/rust-package-design.md#阅读路径)：从公开入口跟到计算与查询 |
+| 核对 Node 的类型、查询与对象行为 | [Node 适配设计](docs/architecture/node-api-design.md#阅读路径) |
+| 修改项目并验证 | [仓库指南](AGENTS.md)与[工程验证](docs/agents/engineering.md)；性能任务另见[基准规范](docs/engineering/benchmarks.md) |
+| 追溯设计原因与修订 | [V1 决策表](docs/architecture/v1-decision-map.md)：按修订关系阅读历史条目 |
 
 ## License
 
