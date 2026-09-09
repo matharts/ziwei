@@ -5,6 +5,11 @@ import { platform, arch, release, cpus, totalmem, freemem, loadavg } from 'node:
 import { fileURLToPath } from 'node:url';
 import { relative, resolve } from 'node:path';
 import { setImmediate } from 'node:timers/promises';
+import type { Birth, Parameters, Branch } from '@ziweijs/core';
+
+declare global { var __ziweiBenchSink: unknown; }
+export type Protocol = ReturnType<typeof protocol>;
+export type Sample = ReturnType<typeof sampleOrder>[number];
 
 export const suite = { id: 'ziwei-node-public-512', version: 1 };
 export const corpusHash = '2cbeaeef0fc8b448d4f4dc89e7f10012bb9c2a88fcfd1ede763bd08afdae9f92';
@@ -15,7 +20,7 @@ const counts = {
   selfTransformations: 1024, palaceTransformations: 16384, decade: 4096, yearly: 4096,
 };
 
-export function protocol(smoke) {
+export function protocol(smoke: boolean) {
   return {
     suite, mode: smoke ? 'smoke' : 'full', corpusHash,
     rounds: smoke ? 1 : 3, batches: smoke ? 1 : 7, warmup: smoke ? 512 : 2560,
@@ -24,7 +29,7 @@ export function protocol(smoke) {
   };
 }
 
-export function sampleOrder(plan) {
+export function sampleOrder(plan: Protocol) {
   return Array.from({ length: plan.rounds }, (_, round) =>
     Array.from({ length: plan.cases.length }, (_, offset) => {
       const item = plan.cases[(offset + round) % plan.cases.length];
@@ -39,21 +44,21 @@ function corpus() {
     gender: next() % 2,
     birthYear: i < 4 ? [-2147483648, 2147483647, 0, -1000][i] : 1984 + next() % 120,
     birthMonth: 1 + next() % 12, birthDay: 1 + next() % 30, birthHour: next() % 12,
-  }));
+  } as Birth));
   const parameters = Array.from({ length: 512 }, () => {
     const year = next() % 60;
     return { gender: 1 - next() % 2, birthStem: year % 10, birthBranch: year % 12,
-      birthMonth: 1 + next() % 12, ziweiBranch: next() % 12, birthHour: next() % 12 };
+      birthMonth: 1 + next() % 12, ziweiBranch: next() % 12, birthHour: next() % 12 } as Parameters;
   });
   return { births, parameters };
 }
 
-function hash(value) { return createHash('sha256').update(JSON.stringify(value)).digest('hex'); }
-function emit(value) { process.stdout.write(`${JSON.stringify(value)}\n`); }
+function hash(value: unknown) { return createHash('sha256').update(JSON.stringify(value)).digest('hex'); }
+function emit(value: unknown) { process.stdout.write(`${JSON.stringify(value)}\n`); }
 function resourceState() { return { memory: process.memoryUsage(), freeMemory: freemem(), loadAverage: loadavg() }; }
 
-async function measure(smoke) {
-  assert.equal(typeof global.gc, 'function', '基准必须以 --expose-gc 运行');
+async function measure(smoke: boolean) {
+  assert.ok(global.gc, '基准必须以 --expose-gc 运行');
   const { Ziwei, StarName } = await import('@ziweijs/core');
   const inputs = corpus();
   assert.equal(hash(inputs), corpusHash, '固定输入语料发生变化');
@@ -66,7 +71,7 @@ async function measure(smoke) {
     assert.ok(Object.isFrozen(chart.palaces));
   }
   assert.equal(Ziwei.fromBirth({ gender: 1, birthYear: 1984, birthMonth: 1, birthDay: 6, birthHour: 0 }).star('WuQu').birthTransformation, 'C');
-  const operations = {
+  const operations: Record<string, (index: number) => unknown> = {
     fromBirth: i => Ziwei.fromBirth(births[i & 511]),
     fromParameters: i => Ziwei.fromParameters(parameters[i & 511]),
     birthAndFirstPalaces: i => Ziwei.fromBirth(births[i & 511]).palaces,
@@ -76,7 +81,7 @@ async function measure(smoke) {
     star: i => charts[i & 1023].star(StarName.ALL[i % 18]),
     birthTransformations: i => charts[i & 1023].birthTransformations(),
     selfTransformations: i => charts[i & 1023].selfTransformations(),
-    palaceTransformations: i => charts[i & 1023].palaceTransformations(i % 12),
+    palaceTransformations: i => charts[i & 1023].palaceTransformations(i % 12 as Branch),
     decade: i => charts[i & 1023].decade(i % 12),
     yearly: i => charts[i & 1023].yearly(i % 12, i % 10),
   };
@@ -117,7 +122,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     assert.ok(process.argv.length === 2 || (process.argv.length === 3 && process.argv[2] === '--smoke'));
     await measure(process.argv[2] === '--smoke');
   } catch (error) {
-    process.stderr.write(`${error.stack}\n`);
+    process.stderr.write(`${error instanceof Error ? error.stack : String(error)}\n`);
     process.exitCode = 1;
   }
 }

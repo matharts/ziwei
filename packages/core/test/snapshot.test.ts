@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
+import { test } from '@rstest/core';
 import { Ziwei } from '@ziweijs/core';
 
 test('toJSON returns a frozen, detached snapshot with explicit missing fields and no behavior', () => {
@@ -17,7 +17,7 @@ test('toJSON returns a frozen, detached snapshot with explicit missing fields an
     assert.deepEqual(decoded, snapshot);
     assert.deepEqual(structuredClone(snapshot), snapshot);
     assert.equal(Object.isFrozen(decoded), false);
-    assert.equal(decoded.palace, undefined);
+    assert.equal(Reflect.get(decoded, 'palace'), undefined);
   }
   assert.equal(fromBirth.toJSON().profile.birthYear, 1984);
   assert.equal(fromParameters.toJSON().profile.birthYear, null);

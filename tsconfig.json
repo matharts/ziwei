@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
+    "types": ["node"]
+  },
+  "include": ["rstest.config.ts", "tools/tests/**/*.ts", "packages/core/rslib.config.ts", "packages/core/bench/**/*.ts", "packages/core/test/**/*.ts"],
+  "exclude": ["packages/core/test/contract.test.ts"]
+}

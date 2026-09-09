@@ -23,6 +23,8 @@
 
 ## 已确认决策
 
+### 领域与 Rust 核心
+
 | ID | 决策 | 状态 |
 | --- | --- | --- |
 | D-000 | 保留历史业务规则为候选事实；现有代码、模块布局与公开 interface 不继承。每项候选事实须在 V1 设计中重新确认、获得来源或明确废弃。 | 已确认 |
@@ -283,6 +285,13 @@
 | D-255 | 实现已确认 Node 合同中的 zodiac、fiveElementBureau、palaces 及配套身份常量、Palace/Star/SelfTransformations/DecadeAgeRange 类型。宿主身份以穷尽枚举转换确定，名称读取核心；宫位和宫内星序保持不变。palaces 与 profile 独立，分别首次成功读取后深层冻结并按实例保存；失败不缓存，子数据不持有原生句柄。不新增查询、限运、ALL/派生方法、toJSON、Wasm 或发布流程，不修改核心规则与存储。 | 2026-09-09 用户确认本命只读数据切片；按测试先行完成，甲子与壬申固定命例、16 项 Node 测试、21 个类型负例及 NodeNext/Bundler、Cargo 测试、fmt/Clippy、Rust 1.98.0 检查通过；未提交、推送、发布或验证其他平台/性能 |
 | D-256 | 按既定 D-248～D-251 合同完成剩余 Node API：本命定位与宫位关系、四化、按需大限／流年、ALL／身份派生方法及 toJSON。只调用核心公开方法，查询按请求范围转换并深层冻结，不新增查询缓存；两个属性的独立缓存合同不变。保持安全整数年份、缺失值与结构化错误，非法接收者及意外异常不伪装为领域错误；生成声明与完整目标一致。 | 2026-09-09 用户要求直接完成绑定包；28 项 Node 测试、30 个类型负例、NodeNext／Bundler、独立 ESM／CJS 打包消费端、Worker／GC、Rust debug／release、fmt／Clippy 和 1.98.0 检查通过。核心与依赖不变，文档同步；未提交、推送、发布，跨平台与性能未验证 |
 | D-257 | 取代 D-252 的 Node 同目录布局：Rust adapter 迁至 `crates/ziwei_napi`（Cargo 包保留 `ziwei-napi`），TypeScript 门面迁至 `packages/core/src`，npm 包改为 `@ziweijs/core`。根 pnpm workspace 管理 `packages/*` 和共享锁文件；JS 包通过显式 Rust manifest 构建自己的 native 产物。参考 Rolldown 的 Rust／TS 分离，保留 D-254 模块职责与 D-248～D-251 公开合同；不创建占位包、不升级依赖、不实施 Wasm 或发布。 | 2026-09-09 用户明确要求多包、改名及 Rust／TS 分离；迁移完成，离线冻结安装、28 项 Node 测试、NodeNext／Bundler、独立打包消费端、Rust debug／release、fmt／Clippy 与 1.98.0 检查通过。源码及生成声明保持一致；未提交、推送、发布，远端 CI 未运行 |
+
+#### 包工程与开发入口
+
+| ID | 决策 | 状态 |
+| --- | --- | --- |
+| D-258 | npm 默认单份 ESM，根 `exports` 同时服务 import 与 require(ESM)，不保留 CJS 双构建／桥接。最低 Node 统一 >=24.15.0，mise 开发仍固定 24.20.0；前者涵盖已稳定的 TS 类型擦除与 require(ESM)。手写 Node 源码、配置、测试、Worker 和工具全部使用 TypeScript，生成 JS／native 加载器继续作为分发产物。pnpm 默认 Catalog 集中直接依赖版本，各包使用 catalog:。不改变 Rust、公开导出和领域语义，不发布。 | 2026-09-09 用户要求 ESM、Node 对齐、Catalogs 和全量 TS；本次包工程实施范围，验证状态以实际检查为准 |
+| D-259 | 开发任务统一由 mise 定义和编排；移除 Node 自建任务调度器，根及 core 的 package.json 不保留重复 scripts。Node 单项任务直接启动已安装 CLI，并保留 pnpm 的 devEngines 校验；普通 mise 任务不承诺任意参数保真，复杂参数通过 mise exec 直接启动 CLI。基准复用同一构建任务并追溯 mise 配置，不改变排盘 API、语料、采样或统计。 | 2026-09-09 用户选择 mise 作为唯一任务入口；本地与跨平台验证分别报告 |
 
 ## 暂缓决策
 

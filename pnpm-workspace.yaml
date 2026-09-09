@@ -1,9 +1,17 @@
-# JavaScript packages share one lockfile; mise owns the toolchain versions.
+# TypeScript packages share one lockfile; mise selects tools, root devEngines validates them.
 packages:
   - packages/*
 
+catalog:
+  '@napi-rs/cli': 3.9.0
+  '@rslib/core': 1.0.0
+  '@rstest/core': 0.11.12
+  '@types/node': 24.13.3
+  typescript: 7.0.2
+
+catalogMode: strict
+
 allowBuilds: {}
-pmOnFail: error
 
 # Use the same script and argument semantics on Windows and POSIX hosts.
 shellEmulator: true

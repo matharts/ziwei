@@ -1,21 +1,23 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
+import { test } from '@rstest/core';
 import { execFileSync } from 'node:child_process';
+import type { ExecFileSyncOptionsWithStringEncoding } from 'node:child_process';
 import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 
 test('the packed package loads from an independent consumer without install scripts', t => {
-  const directory = mkdtempSync(join(tmpdir(), 'ziwei-node-consumer-'));
-  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  // Exercise paths containing a tilde, as in Windows runner short user names.
+  const directory = mkdtempSync(join(tmpdir(), 'ziwei-node~consumer-'));
+  t.onTestFinished(() => rmSync(directory, { recursive: true, force: true }));
   const packageRoot = fileURLToPath(new URL('..', import.meta.url));
   const tarball = join(directory, 'ziwei.tgz');
-  const options = { encoding: 'utf8', timeout: 30_000, stdio: ['ignore', 'pipe', 'pipe'] };
+  const options: ExecFileSyncOptionsWithStringEncoding = { encoding: 'utf8', timeout: 30_000, stdio: ['ignore', 'pipe', 'pipe'] };
   execFileSync('pnpm', ['pack', '--out', tarball], { ...options, cwd: packageRoot });
   writeFileSync(join(directory, 'package.json'), JSON.stringify({
     name: 'ziwei-local-consumer', private: true, type: 'module',
-    dependencies: { '@ziweijs/core': pathToFileURL(tarball).href },
+    dependencies: { '@ziweijs/core': 'file:./ziwei.tgz' },
   }));
   // No source build, registry dependency, or install lifecycle script is needed.
   execFileSync('pnpm', ['install', '--offline', '--ignore-scripts'], { ...options, cwd: directory });
@@ -25,8 +27,16 @@ test('the packed package loads from an independent consumer without install scri
   assert.deepEqual(Object.keys(manifest.exports), ['.']);
   assert.equal(manifest.dependencies, undefined);
   // Consumers receive only distribution assets, never Rust/TS sources or workspace tooling.
-  const allowedFiles = new Set(['dist', 'native', 'index.mjs', 'README.md', 'package.json', 'LICENSE']);
+  const allowedFiles = new Set(['dist', 'native', 'README.md', 'AGENTS.md', 'package.json', 'LICENSE']);
+  assert.equal(manifest.type, 'module');
+  assert.equal(manifest.engines.node, '>=24.15.0');
+  assert.deepEqual(manifest.exports['.'], { types: './dist/index.d.ts', default: './dist/index.js' });
   for (const entry of readdirSync(installedPackage)) assert.ok(allowedFiles.has(entry), entry);
+  // bundle: false emits one ESM module and declaration per source module.
+  const expectedDist = readdirSync(join(packageRoot, 'src'))
+    .filter(file => file.endsWith('.ts'))
+    .flatMap(file => [file.replace(/\.ts$/, '.js'), file.replace(/\.ts$/, '.d.ts')]);
+  assert.deepEqual(readdirSync(join(installedPackage, 'dist')).sort(), expectedDist.sort());
   const consumerSource = `
     import { Ziwei, Branch, StarName, type Natal, type NatalSnapshot, type DecadeYear } from '@ziweijs/core';
     const natal: Natal = Ziwei.fromBirth({ gender: 1, birthYear: 1984, birthMonth: 1, birthDay: 6, birthHour: Branch.Zi });
@@ -36,7 +46,7 @@ test('the packed package loads from an independent consumer without install scri
     if (star !== null) { const name: string = star.nameHant; void name; }
     void snapshot; void years;
   `;
-  const esmSource = join(directory, 'consumer.mts');
+  const esmSource = join(directory, 'consumer.ts');
   const cjsSource = join(directory, 'consumer.cts');
   writeFileSync(esmSource, consumerSource);
   writeFileSync(cjsSource, consumerSource);

@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
+import { test } from '@rstest/core';
 import { readFileSync } from 'node:fs';
 import { Ziwei } from '@ziweijs/core';
+import type { Birth, Natal, Star, Branch } from '@ziweijs/core';
 
 test('both entry points expose the confirmed zodiac and five-element bureau identities', () => {
   // First-month Zi-hour anchors: fixtures/README.md. Zodiac follows the explicit year branch.
@@ -12,7 +13,7 @@ test('both entry points expose the confirmed zodiac and five-element bureau iden
     [1990, 6, 6, 'Horse', 5], [1991, 7, 7, 'Goat', 3],
     [1992, 8, 8, 'Monkey', 4], [1993, 9, 9, 'Rooster', 2],
     [1994, 0, 10, 'Dog', 6], [1995, 1, 11, 'Pig', 5],
-  ];
+  ] as const;
   for (const [birthYear, birthStem, birthBranch, zodiac, bureau] of cases) {
     for (const natal of [
       Ziwei.fromBirth({ gender: 1, birthYear, birthMonth: 1, birthDay: 6, birthHour: 0 }),
@@ -20,7 +21,9 @@ test('both entry points expose the confirmed zodiac and five-element bureau iden
     ]) {
       assert.equal(natal.zodiac, zodiac);
       assert.equal(natal.fiveElementBureau, bureau);
+      // @ts-expect-error Deliberately test a frozen output write at runtime.
       assert.throws(() => { natal.zodiac = 'Dog'; }, TypeError);
+      // @ts-expect-error Deliberately test a frozen output write at runtime.
       assert.throws(() => { natal.fiveElementBureau = 2; }, TypeError);
     }
   }
@@ -42,7 +45,7 @@ test('both entry points expose the complete hand-derived Jia Zi palace and star 
     ['FuQi', '夫妻', '夫妻', 0, 2, [106, 115], ['PoJun']],
     ['XiongDi', '兄弟', '兄弟', 1, 3, [116, 125], ['TianJi']],
   ];
-  const metadata = {
+  const metadata: Record<string, readonly string[]> = {
     ZiWei: ['紫微', '紫微', '紫', '紫', 'Major', 'Central'],
     TianJi: ['天机', '天機', '机', '機', 'Major', 'North'],
     TaiYang: ['太阳', '太陽', '阳', '陽', 'Major', 'North'],
@@ -62,21 +65,23 @@ test('both entry points expose the complete hand-derived Jia Zi palace and star 
     WenChang: ['文昌', '文昌', '昌', '昌', 'Minor', 'Central'],
     WenQu: ['文曲', '文曲', '曲', '曲', 'Minor', 'Central'],
   };
-  const branches = { Zi: 0, Chou: 1, Yin: 2, Mao: 3, Chen: 4, Si: 5, Wu: 6, Wei: 7, Shen: 8, You: 9, Xu: 10, Hai: 11 };
+  const branches: Record<string, Branch> = { Zi: 0, Chou: 1, Yin: 2, Mao: 3, Chen: 4, Si: 5, Wu: 6, Wei: 7, Shen: 8, You: 9, Xu: 10, Hai: 11 };
   const fixture = readFileSync(new URL('../../../crates/ziwei/tests/fixtures/jia_zi_fire_six.csv', import.meta.url), 'utf8')
     .split(/\r?\n/).filter(line => line && !line.startsWith('#')).map(line => line.split(','));
   assert.equal(fixture.length, 18);
-  const optional = value => value === '-' ? null : value;
+  const optional = (value: string) => value === '-' ? null : value;
   for (const natal of [
     Ziwei.fromBirth({ gender: 1, birthYear: 1984, birthMonth: 1, birthDay: 6, birthHour: 0 }),
     Ziwei.fromParameters({ gender: 1, birthStem: 0, birthBranch: 0, birthMonth: 1, ziweiBranch: 2, birthHour: 0 }),
   ]) {
-    assert.ok(Array.isArray(natal.palaces));
+    assert.equal(Array.isArray(natal.palaces), true);
     assert.deepEqual(natal.palaces.map(p => [p.name, p.nameHans, p.nameHant, p.branch, p.stem, p.decadeAgeRange, p.stars.map(s => s.name)]), expectedPalaces);
-    const located = new Map(natal.palaces.flatMap(p => p.stars.map(s => [s.name, { branch: p.branch, star: s }])));
+    const located = new Map<string, { branch: Branch; star: Star }>(natal.palaces.flatMap(p => p.stars.map(s => [s.name, { branch: p.branch, star: s }] as const)));
     assert.equal(located.size, 18);
     for (const [name, branch, birth, inward, outward] of fixture) {
-      const { branch: actualBranch, star } = located.get(name);
+      const found = located.get(name);
+      assert.ok(found);
+      const { branch: actualBranch, star } = found;
       assert.equal(actualBranch, branches[branch]);
       assert.deepEqual(star, {
         name, nameHans: metadata[name][0], nameHant: metadata[name][1],
@@ -90,8 +95,8 @@ test('both entry points expose the complete hand-derived Jia Zi palace and star 
 });
 
 test('palace snapshots are deeply readonly, stable per chart and detached from chart and input', () => {
-  const birth = { gender: 1, birthYear: 1984, birthMonth: 1, birthDay: 6, birthHour: 0 };
-  let natal = Ziwei.fromBirth(birth);
+  const birth: { -readonly [K in keyof Birth]: Birth[K] } = { gender: 1, birthYear: 1984, birthMonth: 1, birthDay: 6, birthHour: 0 };
+  let natal: Natal | null = Ziwei.fromBirth(birth);
   const palaces = natal.palaces;
   const profile = natal.profile;
   assert.equal(natal.palaces, palaces);
@@ -106,13 +111,21 @@ test('palace snapshots are deeply readonly, stable per chart and detached from c
       assert.ok(Object.isFrozen(star.selfTransformations));
     }
   }
-  assert.throws(() => { natal.palaces = []; }, TypeError);
+  // @ts-expect-error Deliberately test a frozen output write at runtime.
+  assert.throws(() => { natal!.palaces = []; }, TypeError);
+  // @ts-expect-error Deliberately test a frozen output write at runtime.
   assert.throws(() => { palaces.push(palaces[0]); }, TypeError);
+  // @ts-expect-error Deliberately test a frozen output write at runtime.
   assert.throws(() => { palaces[0] = palaces[1]; }, TypeError);
+  // @ts-expect-error Deliberately test a frozen output write at runtime.
   assert.throws(() => { palaces[0].nameHans = 'changed'; }, TypeError);
+  // @ts-expect-error Deliberately test a frozen output write at runtime.
   assert.throws(() => { palaces[0].stars.pop(); }, TypeError);
+  // @ts-expect-error Deliberately test a frozen output write at runtime.
   assert.throws(() => { palaces[0].decadeAgeRange[0] = 99; }, TypeError);
+  // @ts-expect-error Deliberately test a frozen output write at runtime.
   assert.throws(() => { palaces[0].stars[0].birthTransformation = 'A'; }, TypeError);
+  // @ts-expect-error Deliberately test a frozen output write at runtime.
   assert.throws(() => { palaces[0].stars[0].selfTransformations.inward = null; }, TypeError);
   const other = Ziwei.fromBirth(birth).palaces;
   assert.deepEqual(other, palaces);
@@ -152,13 +165,13 @@ test('Ren Shen female charts preserve empty palaces, reverse decade ages and sim
     for (const [name, inward, outward] of [
       ['ZiWei', null, null], ['TianTong', 'D', null], ['TianJi', null, 'D'],
       ['TanLang', 'D', 'B'], ['TianLiang', null, 'A'],
-    ]) assert.deepEqual(stars.find(s => s.name === name).selfTransformations, { inward, outward });
+    ]) assert.deepEqual(stars.find(s => s.name === name)?.selfTransformations, { inward, outward });
     assert.ok(Object.isFrozen(natal.palaces[0].stars));
   }
 });
 
 test('profile and palace materialization are independent and a failed freeze can be retried', () => {
-  const birth = { gender: 1, birthYear: 1984, birthMonth: 1, birthDay: 6, birthHour: 0 };
+  const birth: { -readonly [K in keyof Birth]: Birth[K] } = { gender: 1, birthYear: 1984, birthMonth: 1, birthDay: 6, birthHour: 0 };
   const first = Ziwei.fromBirth(birth);
   const second = Ziwei.fromBirth(birth);
   const freeze = Object.freeze;
@@ -167,13 +180,13 @@ test('profile and palace materialization are independent and a failed freeze can
   let profile;
   // Inject a host failure through a built-in, without inspecting private fields or mocking native methods.
   try {
-    Object.freeze = value => {
-      if (value && 'gender' in value && 'birthYear' in value) throw failure;
+    Object.freeze = <T>(value: T): Readonly<T> => {
+      if (value && typeof value === 'object' && 'gender' in value && 'birthYear' in value) throw failure;
       return freeze(value);
     };
     palaces = first.palaces;
     assert.throws(() => first.profile, error => error === failure);
-    Object.freeze = value => {
+    Object.freeze = <T>(value: T): Readonly<T> => {
       if (Array.isArray(value) && value.length === 12) throw failure;
       return freeze(value);
     };
@@ -206,13 +219,14 @@ test('every star projection owns its nullable fields and exposes only frozen pla
       ...located.flatMap(value => [value.star, ...value.palace.stars]),
     ];
     for (const star of stars) {
+      assert.ok(star);
       assert.deepEqual(Reflect.ownKeys(star).sort(), fieldNames);
       assert.equal(Object.getPrototypeOf(star), Object.prototype);
       assert.deepEqual(Reflect.ownKeys(star.selfTransformations).sort(), ['inward', 'outward']);
       for (const [value, key] of [
         [star, 'birthTransformation'], [star.selfTransformations, 'inward'],
         [star.selfTransformations, 'outward'],
-      ]) {
+      ] as const) {
         const descriptor = Object.getOwnPropertyDescriptor(value, key);
         assert.ok(descriptor);
         assert.equal(descriptor.enumerable, true);
@@ -241,6 +255,7 @@ test('all palace projections retain named, frozen own data properties', () => {
     assert.deepEqual(Reflect.ownKeys(palace).sort(), fields);
     for (const key of fields) {
       const descriptor = Object.getOwnPropertyDescriptor(palace, key);
+      assert.ok(descriptor);
       assert.ok(Object.hasOwn(descriptor, 'value'));
       assert.equal(descriptor.enumerable, true);
       assert.equal(descriptor.writable, false);
@@ -264,8 +279,9 @@ test('missing transformations remain null with inherited numeric properties', ()
     actual = expected.map(star => natal.star(star.name));
   } finally {
     for (let i = 0; i < keys.length; i++) {
-      if (original[i]) Object.defineProperty(Array.prototype, keys[i], original[i]);
-      else delete Array.prototype[keys[i]];
+      const descriptor = original[i];
+      if (descriptor) Object.defineProperty(Array.prototype, keys[i], descriptor);
+      else Reflect.deleteProperty(Array.prototype, keys[i]);
     }
   }
   assert.deepEqual(actual, expected);
