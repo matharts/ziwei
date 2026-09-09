@@ -1,38 +1,28 @@
 {
   "name": "@ziweijs/core",
-  "version": "0.1.0",
+  "version": "1.0.0-dev.0",
   "private": true,
   "description": "Node.js and TypeScript bindings for the ziwei Rust engine",
   "license": "MIT",
   "files": [
     "dist",
     "native",
-    "index.mjs",
+    "AGENTS.md",
     "README.md"
   ],
-  "type": "commonjs",
+  "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./index.mjs",
-      "require": "./dist/index.js"
+      "default": "./dist/index.js"
     }
   },
-  "scripts": {
-    "build:native": "napi build --manifest-path ../../crates/ziwei_napi/Cargo.toml --package ziwei-napi --platform --release --output-dir native --js binding.cjs --dts binding.d.cts -- --locked",
-    "build:ts": "tsc --project tsconfig.json",
-    "build": "pnpm run build:native && pnpm run build:ts",
-    "bench": "node bench/run.mjs",
-    "bench:smoke": "node bench/run.mjs --smoke",
-    "test:bench": "node --test bench/bench.test.mjs",
-    "test": "node --test test/*.test.mjs",
-    "test:types": "tsc --project test/tsconfig.json"
-  },
   "devDependencies": {
-    "@napi-rs/cli": "3.9.0",
-    "typescript": "7.0.2"
+    "@napi-rs/cli": "catalog:",
+    "@rslib/core": "catalog:",
+    "typescript": "catalog:"
   },
   "napi": {
     "binaryName": "ziwei-native",
@@ -43,6 +33,6 @@
     ]
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=24.15.0"
   }
 }

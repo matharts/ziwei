@@ -1,25 +1,29 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
+import { test } from '@rstest/core';
 import { createRequire } from 'node:module';
 import { once } from 'node:events';
 import { Worker } from 'node:worker_threads';
 import * as esm from '@ziweijs/core';
+import { invoke } from './runtime.ts';
 
-const birth = { gender: 1, birthYear: 1984, birthMonth: 1, birthDay: 6, birthHour: 0 };
+const birth = { gender: 1, birthYear: 1984, birthMonth: 1, birthDay: 6, birthHour: 0 } as const;
 
 test('profile is immutable, stable by reference, detached from input and usable after chart release', () => {
-  const input = { ...birth };
-  let natal = esm.Ziwei.fromBirth(input);
+  const input: { -readonly [K in keyof esm.Birth]: esm.Birth[K] } = { ...birth };
+  let natal: esm.Natal | null = esm.Ziwei.fromBirth(input);
   input.birthYear = 2000;
   const profile = natal.profile;
   assert.equal(profile.birthYear, 1984);
   assert.equal(natal.profile, profile);
   assert.ok(Object.isFrozen(natal));
   assert.ok(Object.isFrozen(profile));
-  assert.throws(() => { natal.profile = {}; }, TypeError);
+  // @ts-expect-error Deliberately test a forbidden operation at runtime.
+  assert.throws(() => { natal!.profile = {}; }, TypeError);
+  // @ts-expect-error Deliberately test a forbidden operation at runtime.
   assert.throws(() => { profile.birthYear = 2000; }, TypeError);
   assert.equal(natal.constructor, undefined);
-  const getter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(natal), 'profile').get;
+  const getter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(natal), 'profile')?.get;
+  assert.ok(getter);
   assert.throws(() => getter.call({}), TypeError);
   natal = null;
   assert.equal(profile.birthYear, 1984);
@@ -39,24 +43,31 @@ test('ESM and CJS share entry points and error identity; only the root is public
   assert.deepEqual(Object.keys(esm.Ziwei).sort(), ['fromBirth', 'fromParameters']);
   const fromBirth = esm.Ziwei.fromBirth;
   assert.equal(fromBirth(birth).profile.birthYear, 1984);
-  assert.throws(() => fromBirth(null), error => {
-    assert.ok(error instanceof cjs.ZiweiError);
+  assert.throws(() => invoke(fromBirth, undefined, null), error => {
+    assert.ok(error instanceof esm.ZiweiError);
+    assert.ok(error.detail.code === 'INVALID_ARGUMENT');
+    const detail = error.detail;
+    // @ts-expect-error Deliberately test a forbidden operation at runtime.
     assert.throws(() => { error.code = 'changed'; }, TypeError);
-    assert.throws(() => { error.detail.reason = 'changed'; }, TypeError);
-    assert.throws(() => { error.detail.path.push('changed'); }, TypeError);
-    assert.throws(() => { error.detail.received.type = 'changed'; }, TypeError);
+    // @ts-expect-error Runtime mutation must fail as well as the type contract.
+    assert.throws(() => { detail.reason = 'changed'; }, TypeError);
+    assert.throws(() => { Array.prototype.push.call(detail.path, 'changed'); }, TypeError);
+    // @ts-expect-error Runtime mutation must fail as well as the type contract.
+    assert.throws(() => { detail.received.type = 'changed'; }, TypeError);
     return true;
   });
   for (const value of [
     esm.Ziwei, esm.Gender, esm.Stem, esm.Branch, esm.Zodiac, esm.FiveElementBureau,
     esm.PalaceName, esm.StarName, esm.StarCategory, esm.StarGalaxy, esm.Transformation,
   ]) assert.ok(Object.isFrozen(value));
+  // @ts-expect-error Deliberately test a forbidden operation at runtime.
   assert.throws(() => { esm.Ziwei.fromBirth = () => null; }, TypeError);
   for (const subpath of ['native/binding.cjs', 'dist/natal.js', 'src/natal.ts', 'natal']) {
     const specifier = `@ziweijs/core/${subpath}`;
     assert.throws(() => require(specifier), { code: 'ERR_PACKAGE_PATH_NOT_EXPORTED' });
     await assert.rejects(import(specifier), { code: 'ERR_PACKAGE_PATH_NOT_EXPORTED' });
   }
+  // @ts-expect-error Deliberately test a forbidden operation at runtime.
   assert.throws(() => new esm.ZiweiError(), TypeError);
 });
 
@@ -78,7 +89,7 @@ test('full i32 years and birth day boundaries preserve exact profile values', ()
 
 test('independent Worker environments construct charts and return detached plain profiles', async () => {
   await Promise.all(Array.from({ length: 4 }, async () => {
-    const worker = new Worker(new URL('./worker.mjs', import.meta.url), { workerData: birth });
+    const worker = new Worker(new URL('./worker.ts', import.meta.url), { workerData: birth });
     const exit = once(worker, 'exit');
     const [message] = await once(worker, 'message');
     const natal = esm.Ziwei.fromBirth(birth);

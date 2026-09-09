@@ -6,13 +6,13 @@
     "lib": ["ES2022"],
     "types": [],
     "strict": true,
+    "verbatimModuleSyntax": true,
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,
     "noImplicitReturns": true,
-    "declaration": true,
+    "noEmit": true,
     "noEmitOnError": true,
-    "rootDir": "src",
-    "outDir": "dist"
+    "rootDir": "src"
   },
   "include": ["src/**/*.ts"]
 }

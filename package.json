@@ -1,10 +1,22 @@
 {
   "name": "ziweijs-workspace",
   "private": true,
-  "scripts": {
-    "build": "mise exec -- node tools/node/run.mjs build",
-    "test": "mise exec -- node tools/node/run.mjs test",
-    "test:types": "mise exec -- node tools/node/run.mjs test:types"
+  "type": "module",
+  "devDependencies": {
+    "@rstest/core": "catalog:",
+    "@types/node": "catalog:",
+    "typescript": "catalog:"
   },
-  "packageManager": "pnpm@12.3.4"
+  "devEngines": {
+    "packageManager": {
+      "name": "pnpm",
+      "version": "12.3.4",
+      "onFail": "error"
+    },
+    "runtime": {
+      "name": "node",
+      "version": ">=24.15.0",
+      "onFail": "error"
+    }
+  }
 }

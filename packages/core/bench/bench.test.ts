@@ -1,21 +1,24 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
+import { describe, test } from '@rstest/core';
+import type { TestContext } from '@rstest/core';
+import type { SpawnSyncOptionsWithStringEncoding } from 'node:child_process';
+import type { RecordRow } from './record.ts';
 import { spawn, spawnSync } from 'node:child_process';
 import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseRecord } from './record.mjs';
-import { protocol, sampleOrder } from './suite.mjs';
+import { parseRecord } from './record.ts';
+import { protocol, sampleOrder } from './suite.ts';
 
-const runner = fileURLToPath(new URL('./run.mjs', import.meta.url));
+const runner = fileURLToPath(new URL('./run.ts', import.meta.url));
 const cwd = fileURLToPath(new URL('..', import.meta.url));
-function temp(t) {
+function temp(t: TestContext) {
   const directory = mkdtempSync(join(tmpdir(), 'ziwei-bench-test-'));
-  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  t.onTestFinished(() => rmSync(directory, { recursive: true, force: true }));
   return directory;
 }
-function cli(args, options = {}) {
+function cli(args: string[], options: Partial<SpawnSyncOptionsWithStringEncoding> = {}) {
   return spawnSync(process.execPath, [runner, ...args], {
     cwd, encoding: 'utf8', timeout: 120_000, ...options,
   });
@@ -62,14 +65,18 @@ test('public package smoke records complete samples and protects existing output
     assert.match(record.fingerprints[key].sha256, /^[a-f0-9]{64}$/);
     assert.ok(record.fingerprints[key].files.length > 0);
   }
+  assert.ok(record.fingerprints.source.files.some((file: { path: string }) => file.path === 'mise.toml'));
   assert.equal(record.runtime.node, process.version);
   assert.equal(record.runtime.v8, process.versions.v8);
   assert.match(record.runtime.nativeLibrary, /ziwei-native.*\.node$/);
   assert.equal(record.commands.build.status, 0);
+  assert.equal(record.commands.build.executable, 'mise');
+  assert.deepEqual(record.commands.build.args, ['run', '--tool', `node@${process.versions.node}`, 'build:node']);
   assert.equal(record.commands.measure.status, 0);
   assert.match(record.toolchain.pnpm, /^\d+\.\d+\.\d+$/);
+  assert.match(record.toolchain.mise, /^\d+\.\d+\.\d+/);
   assert.match(record.toolchain.rustc, /^rustc /);
-  const lines = readFileSync(join(output, 'run.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+  const lines = readFileSync(join(output, 'run.jsonl'), 'utf8').trim().split('\n').map(line => JSON.parse(line));
   assert.equal(lines.length, 14);
   assert.equal(lines[0].type, 'start');
   assert.equal(lines.at(-1).type, 'complete');
@@ -80,22 +87,25 @@ test('public package smoke records complete samples and protects existing output
   assert.match(duplicate.stderr, /已存在/);
   assert.equal(readFileSync(join(output, 'record.json'), 'utf8'), original);
 
-  const damaged = [
+  const sample = (rows: RecordRow[], index = 1) => { const row = rows[index]; assert.ok(row.type === 'sample'); return row; };
+  const start = (rows: RecordRow[]) => { const row = rows[0]; assert.ok(row.type === 'start'); return row; };
+  const complete = (rows: RecordRow[]) => { const row = rows.at(-1); assert.ok(row?.type === 'complete'); return row; };
+  const damaged: ((rows: RecordRow[]) => void)[] = [
     rows => rows.pop(),
     rows => rows.push(rows[1]),
-    rows => { rows[1].operations++; },
-    rows => { rows[1].elapsedNs = 0; },
-    rows => { rows[1].elapsedNs = 1.5; },
-    rows => { rows[1].elapsedNs = Number.MAX_SAFE_INTEGER + 1; },
-    rows => { rows[2].name = rows[1].name; },
-    rows => { rows[0].protocol.warmup++; },
-    rows => { rows.at(-1).corpusHash = 'different'; },
-    rows => { rows[0].runtime.v8 = 'different'; },
+    rows => { sample(rows).operations++; },
+    rows => { sample(rows).elapsedNs = 0; },
+    rows => { sample(rows).elapsedNs = 1.5; },
+    rows => { sample(rows).elapsedNs = Number.MAX_SAFE_INTEGER + 1; },
+    rows => { sample(rows, 2).name = sample(rows).name; },
+    rows => { start(rows).protocol.warmup++; },
+    rows => { complete(rows).corpusHash = 'different'; },
+    rows => { start(rows).runtime.v8 = 'different'; },
   ];
   for (const corrupt of damaged) {
     const rows = structuredClone(lines);
     corrupt(rows);
-    assert.throws(() => parseRecord(rows.map(JSON.stringify).join('\n'), protocol(true)));
+    assert.throws(() => parseRecord(rows.map(row => JSON.stringify(row)).join('\n'), protocol(true)));
   }
   assert.throws(() => parseRecord('{truncated', protocol(true)));
 });
@@ -108,7 +118,7 @@ test('full record statistics use all 21 batch means per operation', () => {
       elapsedNs: 1000 * (sample.round + 1) * (sample.batch + 1) * sample.operations })),
     { type: 'complete', samples: 252, corpusHash: plan.corpusHash },
   ];
-  const record = parseRecord(rows.map(JSON.stringify).join('\n'), plan);
+  const record = parseRecord(rows.map(row => JSON.stringify(row)).join('\n'), plan);
   assert.equal(record.samples.length, 252);
   for (const metric of Object.values(record.metrics)) {
     assert.deepEqual(metric, { medianNsPerOp: 6000, p95BatchMeanNsPerOp: 18000, batchCount: 21 });
@@ -116,7 +126,7 @@ test('full record statistics use all 21 batch means per operation', () => {
 });
 
 // Isolated package fixture: controlled process failures cannot mutate the real checkout.
-function fixture(t) {
+function fixture(t: TestContext) {
   const directory = temp(t);
   const root = join(directory, 'repo');
   const actualRoot = resolve(cwd, '../..');
@@ -124,21 +134,26 @@ function fixture(t) {
     'crates/ziwei/src', 'crates/ziwei_napi/src', 'packages/core/src', 'packages/core/bench',
     'Cargo.toml', 'Cargo.lock', 'crates/ziwei/Cargo.toml', 'crates/ziwei_napi/Cargo.toml',
     'crates/ziwei_napi/build.rs', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml',
-    'packages/core/package.json', 'packages/core/tsconfig.json', 'mise.toml',
+    'packages/core/package.json', 'packages/core/tsconfig.json', 'packages/core/rslib.config.ts', 'mise.toml',
   ]) {
     const destination = join(root, path);
     mkdirSync(dirname(destination), { recursive: true });
     cpSync(join(actualRoot, path), destination, { recursive: true });
   }
   const pkg = join(root, 'packages/core');
-  const manifest = JSON.parse(readFileSync(join(pkg, 'package.json'), 'utf8'));
-  manifest.scripts.build = 'node -e "process.stdout.write(\'build stdout\\n\'); process.stderr.write(\'build stderr\\n\'); process.exit(13)"';
-  writeFileSync(join(pkg, 'package.json'), JSON.stringify(manifest));
+  const configPath = join(root, 'mise.toml');
+  const config = readFileSync(configPath, 'utf8');
+  const buildTask = /\[tasks\."build:node"\][\s\S]*?(?=\n\[)/;
+  assert.match(config, buildTask);
+  writeFileSync(configPath, config.replace(buildTask, '[tasks."build:node"]\ndir = "packages/core"\nrun = "node build-fixture.cjs"\n'));
+  const build = join(pkg, 'build-fixture.cjs');
+  writeFileSync(build, "process.stdout.write('build stdout\\n'); process.stderr.write('build stderr\\n'); process.exit(13);\n");
+  const env = { ...process.env, MISE_TRUSTED_CONFIG_PATHS: root };
   const output = join(directory, 'result');
-  const run = (options = {}) => spawnSync(process.execPath, [join(pkg, 'bench/run.mjs'), '--smoke', '--output', output], {
-    cwd: pkg, encoding: 'utf8', timeout: 120_000, ...options,
+  const run = (options: Partial<SpawnSyncOptionsWithStringEncoding> = {}) => spawnSync(process.execPath, [join(pkg, 'bench/run.ts'), '--smoke', '--output', output], {
+    cwd: pkg, encoding: 'utf8', timeout: 120_000, ...options, env: { ...env, ...options.env },
   });
-  return { root, pkg, output, run, manifest };
+  return { root, pkg, output, run, build, env };
 }
 
 test('build failure keeps both raw logs and never produces a success record', t => {
@@ -165,14 +180,13 @@ test('external native override is rejected before build', t => {
   assert.equal(existsSync(join(output, 'record.json')), false);
 });
 
-function builtFixture(t, childBody) {
+function builtFixture(t: TestContext, childBody: string) {
   const instance = fixture(t);
-  for (const path of ['dist', 'native', 'index.mjs']) {
+  for (const path of ['dist', 'native']) {
     cpSync(join(cwd, path), join(instance.pkg, path), { recursive: true });
   }
-  instance.manifest.scripts.build = 'node -e "process.exit(0)"';
-  writeFileSync(join(instance.pkg, 'package.json'), JSON.stringify(instance.manifest));
-  const child = join(instance.pkg, 'bench/suite.mjs');
+  writeFileSync(instance.build, 'process.exit(0);\n');
+  const child = join(instance.pkg, 'bench/suite.ts');
   const original = readFileSync(child, 'utf8');
   const call = "await measure(process.argv[2] === '--smoke');";
   assert.ok(original.includes(call));
@@ -180,14 +194,16 @@ function builtFixture(t, childBody) {
   return instance;
 }
 
-test('child failures, malformed output and changed files cannot become valid records', async t => {
+describe('child failures, malformed output and changed files cannot become valid records', () => {
   for (const { name, body, stage, raw } of [
     { name: 'child error', body: "process.stdout.write('partial raw\\n'); throw new Error('fixture child failure');", stage: 'measure', raw: /partial raw/ },
     { name: 'malformed record', body: "process.stdout.write('{broken\\n');", stage: 'validate', raw: /broken/ },
     { name: 'source mutation', body: "$MEASURE (await import('node:fs')).appendFileSync(new URL('../src/index.ts', import.meta.url), '\\n// fixture mutation\\n');", stage: 'validate', raw: /complete/ },
+    { name: 'build config mutation', body: "$MEASURE (await import('node:fs')).appendFileSync(new URL('../rslib.config.ts', import.meta.url), '\\n// fixture mutation\\n');", stage: 'validate', raw: /complete/ },
+    { name: 'task definition mutation', body: "$MEASURE (await import('node:fs')).appendFileSync(new URL('../../../mise.toml', import.meta.url), '\\n# fixture mutation\\n');", stage: 'validate', raw: /complete/ },
     { name: 'artifact mutation', body: "$MEASURE (await import('node:fs')).appendFileSync(new URL('../dist/index.js', import.meta.url), '\\n// fixture mutation\\n');", stage: 'validate', raw: /complete/ },
   ]) {
-    await t.test(name, t => {
+    test(name, t => {
       const { output, run } = builtFixture(t, body);
       const result = run();
       assert.equal(result.status, 1);
@@ -201,10 +217,10 @@ test('child failures, malformed output and changed files cannot become valid rec
   }
 });
 
-test('closed stdout does not leave a success record', { skip: process.platform === 'win32' }, async t => {
-  const { output, pkg } = builtFixture(t, '$MEASURE');
-  const child = spawn(process.execPath, [join(pkg, 'bench/run.mjs'), '--smoke', '--output', output], {
-    cwd: pkg, stdio: ['ignore', 'pipe', 'pipe'], timeout: 120_000,
+test.skipIf(process.platform === 'win32')('closed stdout does not leave a success record', async t => {
+  const { output, pkg, env } = builtFixture(t, '$MEASURE');
+  const child = spawn(process.execPath, [join(pkg, 'bench/run.ts'), '--smoke', '--output', output], {
+    cwd: pkg, env, stdio: ['ignore', 'pipe', 'pipe'], timeout: 120_000,
   });
   child.stdout.destroy();
   child.stderr.resume();
@@ -218,13 +234,12 @@ test('closed stdout does not leave a success record', { skip: process.platform =
   assert.equal(existsSync(join(output, 'record.json')), false);
 });
 
-test('build and measurement preserve the selected Node runtime despite PATH shadowing', { skip: process.platform === 'win32' }, t => {
-  const { output, pkg, run, manifest } = builtFixture(t, '$MEASURE');
+test.skipIf(process.platform === 'win32')('build and measurement preserve the selected Node runtime despite PATH shadowing', t => {
+  const { output, run, build } = builtFixture(t, '$MEASURE');
   const shadow = join(temp(t), 'node');
   writeFileSync(shadow, '#!/bin/sh\nexit 19\n');
   chmodSync(shadow, 0o755);
-  manifest.scripts.build = 'node -p process.version';
-  writeFileSync(join(pkg, 'package.json'), JSON.stringify(manifest));
+  writeFileSync(build, 'console.log(process.version);\n');
   const result = run({ env: { ...process.env, PATH: `${dirname(shadow)}:${process.env.PATH}` } });
   assert.equal(result.status, 0, result.stderr);
   const record = JSON.parse(readFileSync(join(output, 'record.json'), 'utf8'));

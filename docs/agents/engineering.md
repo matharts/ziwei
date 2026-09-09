@@ -2,13 +2,89 @@
 
 ## 工具链与检查入口
 
+### Rust 与检查范围
+
 Rust 命令通过 `mise` 执行：直接调用使用 `rtk mise exec -- <command>`，仓库任务使用 `rtk mise run <task>`。工具链版本和任务以 [mise.toml](../../mise.toml) 为准，MSRV 以适用的 Cargo manifest 为准；验证 MSRV 使用仓库对应任务。
 
 开始验证前，按变更范围读取 [CI 配置](../../.github/workflows/ci.yml)、[Git 钩子](../../lefthook.yml) 和相关 Cargo manifest，确定适用检查及参数。本地钩子只覆盖部分检查，钩子通过不能代替完整 CI 结果。
 
-Node 开发从仓库根使用 `mise run build:node`、`mise run check:node`，或根目录的 `pnpm run build`／`test`／`test:types`。这些入口均先通过 `mise exec -- node` 选择项目版本，再调用 [Node 任务执行器](../../tools/node/run.mjs)；执行器只转发 `packages/core/package.json` 中的既有任务，在子进程 PATH 首位放置当前 Node 的目录，并保留 pnpm 的参数与退出码。项目 `mise.toml` 启用 `activate_aggressive`，确保工具目录即使已在 CI 的 PATH 中，也会重新置顶；不依赖交互式 shell 的激活记录。版本只由 mise 管理，不另设 pnpm 运行时版本，也不改全局 PATH。包内／`--filter @ziweijs/core` 脚本是底层入口，直接调用时仍由调用者管理运行环境。
+### Node 版本与职责
 
-根 `pnpm-workspace.yaml` 启用 `shellEmulator`，让脚本在 Windows 与 POSIX 使用同一套解析和参数转义规则；不能仅凭执行器未启用 `shell` 就推断 pnpm 的下一层不会解释参数。`mise run check:node:tools` 单独验证这些入口、PATH 遮蔽、有／无激活记录、嵌套子进程、含引号及元字符的参数转发和失败传播；Windows 路径比较使用原生 realpath 处理长短文件名。CI 在各平台的包测试前运行它，不触发性能测量。工具测试只信任自行创建的临时 mise 配置，不修改用户全局信任列表。[mise 的 PATH 优先级设置](https://mise.jdx.dev/configuration/settings.html#activate_aggressive)与 [pnpm 的 shellEmulator](https://pnpm.io/cli/run#shellemulator)是本实现采用的工具边界。
+Node 开发统一从仓库根使用 mise 任务，完整命令、工作目录和执行顺序只定义在 [mise.toml](../../mise.toml)；根及 `packages/core/package.json` 不再包含开发 scripts。mise 安装并选择工具链；根 [package.json](../../package.json) 的 `devEngines` 校验 Node `>=24.15.0` 与 pnpm `12.3.4`，两者均为 `onFail: "error"`。
+
+Node 任务通过 `pnpm exec` 执行，因此仍先经过开发版本校验；不配置自动下载，也不使用 workspace 的 `runtimeOnFail`／`pmOnFail` 覆盖 manifest。子包 `engines.node` 保留消费端最低版本约束，不重复 `devEngines`；根私有 workspace 不使用 `engines` 或旧 `packageManager` 字段。
+
+字段职责见 [pnpm devEngines](https://pnpm.io/package_json#devenginesruntime) 与 [npm engines](https://docs.npmjs.com/cli/v11/configuring-npm/package-json#engines)。
+
+### 任务顺序
+
+`build:node` 顺序调用 `build:node:native`、`build:node:ts`；`check:node` 等待构建成功，再顺序运行 `test:node`、`check:node:types`。使用有序的 `run` 任务步骤表达顺序，不依赖 `depends` 数组的排列。
+
+聚合任务用于固定流程，工具选项传给对应单项任务，不再通过聚合 build 将参数隐式传给最后一步。Node 单项任务执行 `pnpm exec -- node <已安装 CLI 路径> ...`，不调用自建调度器、pnpm scripts 或工具的 `.cmd` shim；不隐式触发 pre/post 生命周期。CLI 路径由依赖 manifest 的 `bin` 核验，升级依赖时由入口测试发现路径变更。
+
+### 运行时选择
+
+项目 `mise.toml` 启用 `activate_aggressive`，确保工具目录即使已在 CI 的 PATH 中，也会重新置顶；不依赖交互式 shell 的激活记录，不改全局 PATH。无需在普通任务内部再次调用 mise。最低版本检查显式用 `mise run --tool node@24.15.0` 复用单项任务，不复制构建或测试命令。入口测试核对 mise、开发约束和消费端门槛一致，并验证错误 Node／pnpm 版本会阻止安装和命令执行。
+
+### 参数传递
+
+普通选项可用 `mise run test:node -- -t palace`。mise 的普通内联任务仍经过平台 shell，不承诺任意参数保真。包含换行、尾随反斜杠、变量字面量等复杂参数时，从仓库根使用 `mise exec -- pnpm exec -- node node_modules/@rstest/core/bin/rstest.js --project core <参数...>`；其他工具同样直接启动其 CLI，并使用对应任务的工作目录。
+
+调用 shell 本身仍需正确引用参数。pnpm 12.3.4 的 Windows `run` 即使启用 `shellEmulator` 也可能改写这些参数，不能重新包一层 `pnpm run`。[pnpm 脚本拼接](https://github.com/pnpm/pnpm/blob/v12.3.4/pnpm/crates/executor/src/run_script.rs#L238)、[mise 直接执行](https://mise.jdx.dev/cli/exec.html)与 [mise 任务执行](https://mise.jdx.dev/tasks/architecture.html)说明了各层的区别。
+
+### 工具回归
+
+`mise run check:node:tools` 验证真实 mise 任务的 PATH 遮蔽、有／无激活记录、嵌套 Node、工作目录、执行顺序和每一阶段的失败传播。复杂参数统一通过文档规定的直接 CLI 入口验证，覆盖空白、中文、引号、换行、尾随反斜杠、变量、通配符及 pnpm 同名选项；不重复遍历各工具，也不要求第三方工具的已知错误持续存在。
+
+路径使用原生 realpath 比较。CI 在各平台包测试前执行，不触发性能测量；本机通过不能替代 Windows 实机验收。工具测试只信任自己创建的临时 mise 配置，不修改全局信任列表。Rslib 隔离夹具显式提供 TypeScript 依赖，不依赖工具 bin shim 注入的 `NODE_PATH`。
+
+## Node 构建与类型检查
+
+### 产物与模块模式
+
+`build:node:ts` 使用 Catalog 锁定的 Rslib，配置位于 [rslib.config.ts](../../packages/core/rslib.config.ts)。采用 `bundle: false`、单份 ESM 与 ES2022 输出，保持 `dist/*.js` 和 `dist/*.d.ts` 路径；根包和 core 均为 `type: module`。
+
+`import` 与 `require(ESM)` 解析到同一入口，不再维护 CJS 实现或桥接文件。公开模块图不允许 top-level await。`native/binding.cjs` 与 `.node` 由 napi 生成，外置并交给 Node 加载。
+
+### 运行时与 TypeScript
+
+最低版本统一为 Node `>=24.15.0`：内置 TypeScript 类型擦除在 24.12.0 稳定，`require(ESM)` 在 24.15.0 稳定，见 [Node TypeScript](https://nodejs.org/docs/latest-v24.x/api/typescript.html) 与 [require(ESM)](https://nodejs.org/docs/latest-v24.x/api/modules.html#loading-ecmascript-modules-using-require)。
+
+这是项目支持门槛，不表示更早版本无法执行生成的 JS。mise 开发版本仍固定 24.20.0；`check:node:minimum` 额外运行 24.15.0，CI 只在 Linux 执行此版本检查。
+
+手写源码、测试、Worker、配置和工具全部使用 `.ts`；Node 直接执行工具的可擦除 TS 语法，保留 `.ts` 导入扩展名，不依赖 tsx。根 `tsconfig.json` 严格检查这些文件，并启用 `erasableSyntaxOnly`、`verbatimModuleSyntax`；`mise run check:typescript` 需在产品构建后运行。
+
+库源码仍通过 Rslib 分发生成的 JS，不在 node_modules 内直接执行 TS。负例通过 `invoke` 或有说明的 `@ts-expect-error` 测试运行时拒绝，不放宽公开类型。
+
+### 依赖版本管理
+
+根 [pnpm-workspace.yaml](../../pnpm-workspace.yaml) 的默认 Catalog 是直接 npm 开发依赖版本的唯一来源，各 manifest 使用 `catalog:`；`catalogMode: strict` 约束后续依赖添加，CI 继续冻结安装。Rust 依赖与 mise 工具链版本不进入 Catalog。
+
+### 类型检查与失败处理
+
+Rslib 负责 JS 与声明输出；`tsconfig.json` 保留严格类型规则并设置 `noEmit`，独立 `tsc` 不再生成产品文件。声明生成启用 `abortOnError`，类型错误必须让构建退出非零；失败构建的任何残留文件都不可作为成功产物。`check:node:types` 继续使用 tsc 检查正负类型合同，Rslib 不代替该独立检查。
+
+`tools/tests/build.test.ts` 先确认有效源码可构建，再验证未引用源码的类型错误会阻止构建。输出布局、ESM／require 加载、声明与原生绑定由 `packages/core/test/package.test.ts` 在真实 tarball 的独立消费端统一验证；Node 基准源码指纹包含 Rslib 配置。
+
+## Node 测试框架
+
+Node 侧统一使用锁定版本的 `@rstest/core`（JavaScript 框架，不是 Rust 的 rstest crate），由根 [rstest.config.ts](../../rstest.config.ts) 聚合三个互不重叠的项目。配置不导入产品源码；`node:assert/strict` 断言保持不变。
+
+| 项目 | 范围 | 根目录命令 |
+| --- | --- | --- |
+| `core` | 包 API、原生边界、Worker、GC 与独立打包消费端 | `mise run check:node`：先构建，再运行测试与 TypeScript 合同 |
+| `node-tools` | 开发命令、运行时选择、参数、退出码与 Rslib 构建合同 | `mise run check:node:tools` |
+| `node-bench` | 基准记录器与 CLI 合同；只有 smoke，不设性能门禁 | `mise run check:node:bench` |
+
+### 选择测试
+
+已经构建时，可用 `mise run test:node -- -t palace` 筛选测试，或 `mise run test:node -- --watch` 持续运行；复杂参数使用上文直接 CLI 入口。`mise exec -- pnpm exec -- node node_modules/@rstest/core/bin/rstest.js list --filesOnly` 核验三个项目的发现范围，TypeScript 负例仍由独立 `tsc` 任务编译，不作为运行时测试。
+
+### 隔离与串行执行
+
+基准工具会重新构建同一份 `dist`，常规验证应按上述分组命令串行执行，不要同时运行 `core` 消费端测试与 `node-bench` 构建冒烟。
+
+测试使用独立 Node 子进程池。`core` 的包入口与内部 native seam 显式交给 Node 加载，保留 ESM/CJS 单例身份与真实 `.node` 加载；关闭 Rspack 对 Worker 的打包改写，Worker 从原始夹具路径运行。配置仅用于测试，不进入 npm 分发包。安装与迁移依据 [Rstest 官方指引](https://rstest.rs/guide/start/agent-install.md)，字段以项目安装版本的类型和 CLI 为准。
 
 ## 按变更选择验证
 

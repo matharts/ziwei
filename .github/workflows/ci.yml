@@ -39,6 +39,11 @@ jobs:
         run: mise run check:node:tools
       - name: Node adapter integration and type contracts
         run: mise run check:node
+      - name: TypeScript tooling and test contracts
+        run: mise run check:typescript
+      - name: Minimum supported Node runtime
+        if: runner.os == 'Linux'
+        run: mise run check:node:minimum
       - name: Node benchmark contract tests (smoke only, no performance gate)
         if: runner.os == 'Linux'
         run: mise run check:node:bench

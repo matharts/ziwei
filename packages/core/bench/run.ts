@@ -2,19 +2,23 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
+import type { SpawnSyncOptions } from 'node:child_process';
 import { closeSync, mkdirSync, mkdtempSync, openSync, readFileSync, writeFileSync } from 'node:fs';
 import { delimiter, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { fingerprint, parseRecord } from './record.mjs';
-import { protocol } from './suite.mjs';
+import { fingerprint, parseRecord } from './record.ts';
+import { protocol } from './suite.ts';
 
-const usage = 'Usage: node bench/run.mjs [--smoke] [--output <new-directory>]\n';
+const usage = 'Usage: node bench/run.ts [--smoke] [--output <new-directory>]\n';
 const packageRoot = fileURLToPath(new URL('..', import.meta.url));
 const root = resolve(packageRoot, '../..');
 
-function options(args) {
+type Options = { help?: false; smoke: boolean; output?: string };
+type Commands = Record<string, { executable: string; args: string[]; status: number | null; signal: string | null; error: string | null }>;
+
+function options(args: string[]): Options | { help: true } {
   if (args.length === 1 && args[0] === '--help') return { help: true };
-  const result = { smoke: false };
+  const result: Options = { smoke: false };
   const seen = new Set();
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -31,26 +35,27 @@ function options(args) {
   return result;
 }
 
-function writeJSON(path, value) { writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`, { flag: 'wx' }); }
+function writeJSON(path: string, value: unknown) { writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`, { flag: 'wx' }); }
 function sourceFingerprint() {
   return fingerprint(root, [
     ...['crates/ziwei/src', 'crates/ziwei_napi/src', 'packages/core/src'].map(path => ({ path, directory: true })),
     ...['Cargo.toml', 'Cargo.lock', 'crates/ziwei/Cargo.toml', 'crates/ziwei_napi/Cargo.toml',
       'crates/ziwei_napi/build.rs', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml',
-      'packages/core/package.json', 'packages/core/tsconfig.json', 'mise.toml'].map(path => ({ path })),
+      'packages/core/package.json', 'packages/core/tsconfig.json', 'packages/core/rslib.config.ts',
+      'mise.toml'].map(path => ({ path })),
     { path: '.cargo', directory: true, optional: true },
   ]);
 }
 function artifactFingerprint() {
   return fingerprint(root, [
     { path: 'packages/core/dist', directory: true }, { path: 'packages/core/native', directory: true },
-    { path: 'packages/core/index.mjs' }, { path: 'packages/core/package.json' },
+    { path: 'packages/core/package.json' },
   ]);
 }
 function contractFingerprint() {
-  return fingerprint(packageRoot, ['run.mjs', 'suite.mjs', 'record.mjs'].map(name => ({ path: `bench/${name}` })));
+  return fingerprint(packageRoot, ['run.ts', 'suite.ts', 'record.ts'].map(name => ({ path: `bench/${name}` })));
 }
-function git(args) {
+function git(args: string[]) {
   const result = spawnSync('git', args, { cwd: root, encoding: 'utf8', timeout: 10_000 });
   return result.status === 0 ? result.stdout.trim() : null;
 }
@@ -58,7 +63,7 @@ function environmentOverrides() {
   // Record provenance without copying potentially sensitive environment values.
   return Object.fromEntries(Object.entries(process.env)
     .filter(([key]) => /^(NODE_OPTIONS|RUST.*|CARGO_.*|CC|CXX|CFLAGS|CXXFLAGS|NAPI_RS_.*)$/.test(key))
-    .map(([key, value]) => [key, createHash('sha256').update(value).digest('hex')])
+    .map(([key, value]) => { assert.ok(value !== undefined); return [key, createHash('sha256').update(value).digest('hex')]; })
     .sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0));
 }
 function childEnvironment() {
@@ -67,7 +72,7 @@ function childEnvironment() {
   env[key] = `${dirname(process.execPath)}${delimiter}${env[key] ?? ''}`;
   return env;
 }
-function command(output, label, executable, args, commands, extra = {}) {
+function command(output: string, label: string, executable: string, args: string[], commands: Commands, extra: SpawnSyncOptions = {}) {
   const stdout = openSync(join(output, `${label}.${label === 'run' ? 'jsonl' : 'stdout.log'}`), 'wx');
   const stderr = openSync(join(output, `${label}.stderr.log`), 'wx');
   let result;
@@ -82,19 +87,19 @@ function command(output, label, executable, args, commands, extra = {}) {
   assert.ok(result.status === 0 && !result.error, `${label} 失败，请查看 ${output} 中的原始日志`);
 }
 
-async function main(config) {
+async function main(config: Options) {
   let output;
   if (config.output) {
     output = resolve(config.output);
     mkdirSync(dirname(output), { recursive: true });
     try { mkdirSync(output); }
-    catch (error) { if (error.code === 'EEXIST') throw new Error(`输出目录已存在：${output}`); throw error; }
+    catch (error) { if (error instanceof Error && 'code' in error && error.code === 'EEXIST') throw new Error(`输出目录已存在：${output}`); throw error; }
   } else {
     const parent = join(root, 'target/benchmarks/node');
     mkdirSync(parent, { recursive: true });
     output = mkdtempSync(join(parent, 'public-'));
   }
-  const commands = {};
+  const commands: Commands = {};
   const startedAt = new Date().toISOString();
   let stage = 'fingerprint';
   try {
@@ -104,22 +109,24 @@ async function main(config) {
     const revision = git(['rev-parse', 'HEAD']);
     const gitStatus = git(['status', '--porcelain=v1', '--untracked-files=normal']);
     stage = 'toolchain';
+    command(output, 'mise-version', 'mise', ['--version'], commands);
     command(output, 'pnpm-version', 'pnpm', ['--version'], commands, { shell: process.platform === 'win32' });
     command(output, 'rustc-version', 'rustc', ['--version', '--verbose'], commands);
     const toolchain = {
+      mise: readFileSync(join(output, 'mise-version.stdout.log'), 'utf8').trim(),
       pnpm: readFileSync(join(output, 'pnpm-version.stdout.log'), 'utf8').trim(),
       rustc: readFileSync(join(output, 'rustc-version.stdout.log'), 'utf8').trim(),
       environmentOverrides: environmentOverrides(),
     };
     stage = 'build';
-    // Only constant arguments enter the Windows command shell (pnpm.cmd requires it).
-    command(output, 'build', 'pnpm', ['run', 'build'], commands, { shell: process.platform === 'win32' });
+    // Reuse the repository task, with the same Node as the measurement process.
+    command(output, 'build', 'mise', ['run', '--tool', `node@${process.versions.node}`, 'build:node'], commands, { cwd: root });
     assert.equal(sourceFingerprint().sha256, source.sha256, '构建期间源码发生变化');
     const artifact = artifactFingerprint();
     stage = 'measure';
     const plan = protocol(config.smoke);
     command(output, 'run', process.execPath, [
-      '--expose-gc', join(packageRoot, 'bench/suite.mjs'), ...(config.smoke ? ['--smoke'] : []),
+      '--expose-gc', join(packageRoot, 'bench/suite.ts'), ...(config.smoke ? ['--smoke'] : []),
     ], commands);
     stage = 'validate';
     const parsed = parseRecord(readFileSync(join(output, 'run.jsonl'), 'utf8'), plan);
@@ -135,16 +142,17 @@ async function main(config) {
       toolchain,
     };
     stage = 'output';
-    await new Promise((done, fail) => {
+    await new Promise<void>((done, fail) => {
       process.stdout.once('error', fail);
       process.stdout.write(`${join(output, 'record.json')}\n`, error => error ? fail(error) : done());
     });
     // Publish the summary only after the complete run, validation and stdout flush.
     writeJSON(join(output, 'record.json'), record);
   } catch (error) {
+    const failure = error instanceof Error ? error : new Error(String(error));
     writeJSON(join(output, 'failure.json'), { schemaVersion: 1, status: 'failed', startedAt,
-      failedAt: new Date().toISOString(), stage, error: error.stack, commands });
-    throw new Error(`${error.message}\n失败记录：${join(output, 'failure.json')}`);
+      failedAt: new Date().toISOString(), stage, error: failure.stack, commands });
+    throw new Error(`${failure.message}\n失败记录：${join(output, 'failure.json')}`);
   }
 }
 
@@ -153,6 +161,6 @@ try {
   if (config.help) process.stdout.write(usage);
   else await main(config);
 } catch (error) {
-  process.stderr.write(`${error.message}\n`);
+  process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
   process.exitCode = 1;
 }

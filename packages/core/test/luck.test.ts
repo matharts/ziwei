@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
+import { test } from '@rstest/core';
 import { Ziwei } from '@ziweijs/core';
 
-const birth = { gender: 1, birthYear: 1984, birthMonth: 1, birthDay: 6, birthHour: 0 };
-const parameters = { gender: 1, birthStem: 0, birthBranch: 0, birthMonth: 1, ziweiBranch: 2, birthHour: 0 };
+const birth = { gender: 1, birthYear: 1984, birthMonth: 1, birthDay: 6, birthHour: 0 } as const;
+const parameters = { gender: 1, birthStem: 0, birthBranch: 0, birthMonth: 1, ziweiBranch: 2, birthHour: 0 } as const;
 
 test('luck queries preserve natal roles and expose selected periods without requiring a numeric year', () => {
   // Jia Zi fire-six: second decade starts at Mao, ages 16..25; last year is 2008 Zi.
@@ -25,7 +25,7 @@ test('luck queries preserve natal roles and expose selected periods without requ
     assert.equal(natal.yearlyPalaceByName(1, 9, 'Ming').name, 'FuQi');
     assert.deepEqual(natal.decadeYears(1).map(v => v.age), [16, 17, 18, 19, 20, 21, 22, 23, 24, 25]);
     for (const [age, expected] of [[0, null], [5, null], [6, { decade: 0, yearly: 0 }],
-      [35, { decade: 2, yearly: 9 }], [125, { decade: 11, yearly: 9 }], [126, null], [255, null]]) {
+      [35, { decade: 2, yearly: 9 }], [125, { decade: 11, yearly: 9 }], [126, null], [255, null]] as const) {
       assert.deepEqual(natal.periodIndicesAtAge(age), expected);
     }
   }
@@ -66,7 +66,7 @@ test('age lookup covers both ends of all five bureaux without wrapping', () => {
   for (const [birthYear, birthStem, birthBranch, first, last] of [
     [1984, 0, 0, 6, 125], [1985, 1, 1, 5, 124], [1986, 2, 2, 3, 122],
     [1987, 3, 3, 4, 123], [1988, 4, 4, 2, 121],
-  ]) {
+  ] as const) {
     for (const natal of [
       Ziwei.fromBirth({ ...birth, birthYear }),
       Ziwei.fromParameters({ ...parameters, birthStem, birthBranch }),

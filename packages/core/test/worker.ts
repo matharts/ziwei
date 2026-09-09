@@ -1,5 +1,6 @@
 import { parentPort, workerData } from 'node:worker_threads';
 import { Ziwei } from '@ziweijs/core';
+import assert from 'node:assert/strict';
 
 let profile;
 let palaces;
@@ -14,6 +15,7 @@ for (let i = 0; i < 500; i++) {
   query = natal.birthTransformations();
   period = natal.yearly(11, 9);
 }
+assert.ok(parentPort && query);
 parentPort.postMessage({ profile, palaces, snapshot, query, period,
   frozen: Object.isFrozen(profile), palacesFrozen: Object.isFrozen(palaces),
   queryFrozen: Object.isFrozen(query[0].star.selfTransformations),

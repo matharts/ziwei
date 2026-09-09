@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
+import { test } from '@rstest/core';
+import { invoke } from './runtime.ts';
 import * as api from '@ziweijs/core';
 
 test('identity helpers are frozen, receiver-independent and preserve the core protocol order', () => {
@@ -15,18 +16,19 @@ test('identity helpers are frozen, receiver-independent and preserve the core pr
   const { yinYang: stem } = api.Stem;
   const { yinYang: branch, zodiac } = api.Branch;
   assert.deepEqual([gender(0), gender(1)], [0, 1]);
-  assert.deepEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(stem), [1, 0, 1, 0, 1, 0, 1, 0, 1, 0]);
-  assert.deepEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map(branch), [1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0]);
-  assert.deepEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map(zodiac), ['Rat', 'Ox', 'Tiger', 'Rabbit', 'Dragon', 'Snake', 'Horse', 'Goat', 'Monkey', 'Rooster', 'Dog', 'Pig']);
+  assert.deepEqual(([0, 1, 2, 3, 4, 5, 6, 7, 8, 9] as const).map(stem), [1, 0, 1, 0, 1, 0, 1, 0, 1, 0]);
+  assert.deepEqual(([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] as const).map(branch), [1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0]);
+  assert.deepEqual(([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] as const).map(zodiac), ['Rat', 'Ox', 'Tiger', 'Rabbit', 'Dragon', 'Snake', 'Horse', 'Goat', 'Monkey', 'Rooster', 'Dog', 'Pig']);
 });
 
 test('identity helpers reject malformed numbers without coercion and distinguish omission', () => {
-  for (const [fn, maximum] of [[api.Gender.yinYang, 1], [api.Stem.yinYang, 9], [api.Branch.yinYang, 11], [api.Branch.zodiac, 11]]) {
-    assert.throws(() => fn(), error => error instanceof api.ZiweiError && error.detail.reason === 'missing');
+  for (const [fn, maximum] of [[api.Gender.yinYang, 1], [api.Stem.yinYang, 9], [api.Branch.yinYang, 11], [api.Branch.zodiac, 11]] as const) {
+    assert.throws(() => invoke(fn, undefined), error => error instanceof api.ZiweiError && error.detail.code === 'INVALID_ARGUMENT' && error.detail.reason === 'missing');
     for (const [value, reason] of [[undefined, 'type'], [null, 'type'], ['0', 'type'], [{}, 'type'], [NaN, 'non_finite'], [Infinity, 'non_finite'], [0.5, 'non_integer'], [-1, 'out_of_range'], [maximum + 1, 'out_of_range']]) {
-      assert.throws(() => fn(value), error => {
+      assert.throws(() => invoke(fn, undefined, value), error => {
         assert.ok(error instanceof api.ZiweiError);
         assert.equal(error.code, 'INVALID_ARGUMENT');
+        assert.ok(error.detail.code === 'INVALID_ARGUMENT');
         assert.deepEqual(error.detail.path, ['value']);
         assert.equal(error.detail.reason, reason);
         return true;
