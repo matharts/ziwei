@@ -5,10 +5,11 @@ import type { ExecFileSyncOptionsWithStringEncoding } from 'node:child_process';
 import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 
 test('the packed package loads from an independent consumer without install scripts', t => {
-  const directory = mkdtempSync(join(tmpdir(), 'ziwei-node-consumer-'));
+  // Exercise paths containing a tilde, as in Windows runner short user names.
+  const directory = mkdtempSync(join(tmpdir(), 'ziwei-node~consumer-'));
   t.onTestFinished(() => rmSync(directory, { recursive: true, force: true }));
   const packageRoot = fileURLToPath(new URL('..', import.meta.url));
   const tarball = join(directory, 'ziwei.tgz');
@@ -16,7 +17,7 @@ test('the packed package loads from an independent consumer without install scri
   execFileSync('pnpm', ['pack', '--out', tarball], { ...options, cwd: packageRoot });
   writeFileSync(join(directory, 'package.json'), JSON.stringify({
     name: 'ziwei-local-consumer', private: true, type: 'module',
-    dependencies: { '@ziweijs/core': pathToFileURL(tarball).href },
+    dependencies: { '@ziweijs/core': 'file:./ziwei.tgz' },
   }));
   // No source build, registry dependency, or install lifecycle script is needed.
   execFileSync('pnpm', ['install', '--offline', '--ignore-scripts'], { ...options, cwd: directory });
