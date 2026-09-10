@@ -43,7 +43,10 @@ function readCohort(directory: string) {
     assert.equal(bytes.length, receipt.bytes);
     assert.equal(hash(bytes), receipt.sha256);
     const manifest = JSON.parse(
-      execFileSync("tar", ["-xOzf", path, "package/package.json"], {
+      // Git Bash's GNU tar treats a Windows drive prefix as a remote archive.
+      // stdin works with GNU, BSD and BusyBox tar and consumes the verified bytes.
+      execFileSync("tar", ["-xOzf", "-", "package/package.json"], {
+        input: bytes,
         encoding: "utf8",
         timeout: 30_000,
       }),
