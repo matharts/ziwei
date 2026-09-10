@@ -1,0 +1,3 @@
+[tool_alias]
+# Aqua's pnpm entry excludes macOS x64; the npm release includes that binary.
+pnpm = "npm:pnpm"

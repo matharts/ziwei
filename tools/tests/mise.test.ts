@@ -174,6 +174,8 @@ function fixture(t: TestContext, { activated = true } = {}) {
     "package.json",
     "pnpm-workspace.yaml",
     "mise.toml",
+    ".miserc.toml",
+    "mise.macos-x64.toml",
     "packages/ziwei/package.json",
   ]) {
     cpSync(join(root, file), join(directory, file));
@@ -273,6 +275,19 @@ for (const activated of [true, false]) {
     }
   });
 }
+
+test("mise limits the npm pnpm backend override to macOS x64", (t) => {
+  const { run } = fixture(t);
+  const current = run(["tool", "pnpm", "--backend"]);
+  assert.equal(current.status, 0, current.stderr);
+  assert.equal(
+    current.stdout.trim(),
+    process.platform === "darwin" && process.arch === "x64" ? "npm:pnpm" : "aqua:pnpm/pnpm",
+  );
+  const intelMac = run(["--env", "macos-x64", "tool", "pnpm", "--backend"]);
+  assert.equal(intelMac.status, 0, intelMac.stderr);
+  assert.equal(intelMac.stdout.trim(), "npm:pnpm");
+});
 
 test("native cross compilation passes the flag to napi, not Cargo", (t) => {
   const { run } = fixture(t, { activated: true });

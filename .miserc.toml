@@ -1,0 +1,2 @@
+# Load host-specific tool overrides before mise resolves project tools.
+auto_env = true

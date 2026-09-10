@@ -12,7 +12,9 @@ Rust 命令通过 `mise` 执行：直接调用使用 `rtk mise exec -- <command>
 
 Node 开发统一从仓库根使用 mise 任务，完整命令、工作目录和执行顺序只定义在 [mise.toml](../../mise.toml)；根及 `packages/ziwei/package.json` 不再包含开发 scripts。mise 安装并选择工具链；根 [package.json](../../package.json) 的 `devEngines` 校验 Node `>=24.15.0` 与 pnpm `12.3.4`，两者均为 `onFail: "error"`。
 
-pnpm 通过 mise 的 `npm:pnpm` 后端安装：当前 Aqua 后端排除 macOS x64，而同版本 npm 包提供该平台二进制。仅允许 pnpm 自身的安装脚本将占位入口替换为平台二进制，不全局放开依赖脚本。工具别名仍为 `pnpm`，不改变 workspace 包管理器或开发版本约束。
+pnpm 由 mise 安装，只有 macOS x64 使用 `npm:pnpm` 后端，因为当前 Aqua 后端排除该平台。npm 安装仅允许 pnpm 自身的脚本将占位入口替换为平台二进制。其余平台使用 Aqua 原生可执行入口；Windows 的 npm `.cmd` shim 无法保留复杂参数。工具别名仍为 `pnpm`，不改变 workspace 包管理器或开发版本约束。
+
+[.miserc.toml](../../.miserc.toml) 启用平台配置自动选择；[macOS x64 配置](../../mise.macos-x64.toml) 只覆盖后端，工具版本仍只定义在主配置。隔离工程夹具需一并复制这两个文件，才能验证真实的平台选择。
 
 Node 任务通过 `pnpm exec` 执行，因此仍先经过开发版本校验；不配置自动下载，也不使用 workspace 的 `runtimeOnFail`／`pmOnFail` 覆盖 manifest。子包 `engines.node` 保留消费端最低版本约束，不重复 `devEngines`；根私有 workspace 不使用 `engines` 或旧 `packageManager` 字段。
 

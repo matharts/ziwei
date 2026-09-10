@@ -2,12 +2,8 @@
 lefthook = "2.1.12"
 rust = "1.98.1"
 node = "24.21.0"
-# pnpm's reviewed install script replaces its placeholder with the native binary.
+# Only the macOS x64 npm backend needs pnpm's reviewed native-binary setup script.
 pnpm = { version = "12.3.4", allow_builds = ["pnpm"] }
-
-[tool_alias]
-# Aqua's pnpm entry excludes macOS x64; the npm release includes that binary.
-pnpm = "npm:pnpm"
 
 [settings]
 # CI may already have tool directories on PATH without a mise activation record.
