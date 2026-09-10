@@ -1,8 +1,10 @@
 # Node 原生二进制分发提案
 
-状态：2026-09-10 首批分发结构（D-263）、八目标独立分发验收、同批完整汇总（D-264）与无需 overrides 的隔离注册表安装验收（D-265）均已通过 CI，另七个仍为候选。D-266 已确定 GNU 的 glibc 2.28 验收目标，构建与门禁已接入，新的 Linux 运行结果待 CI 验证。主包与平台包均未发布；运行验收不等于最低系统版本或公共注册表分发已经验证。
+状态：2026-09-10 首批分发结构（D-263）、八目标独立分发验收、同批完整汇总（D-264）与无需 overrides 的隔离注册表安装验收（D-265）均已通过 CI，另七个仍为候选。D-266 的 GNU 构建、符号门禁与双架构 glibc 2.28／最低 Node 用户态验收也已通过。主包与平台包均未发布；该用户态实测不覆盖最低内核、全部旧系统或公共注册表分发。
 
 ## 当前事实
+
+- 提交 `7e6ecc2e9021e12c340f74f8eb4a6006e184dbc9` 的 [CI 全部通过](https://github.com/matharts/ziwei/actions/runs/34490975361)（attempt 1，19 个任务）：GNU 双架构通过新交叉构建；完整交付 tarball 的必需 GLIBC 符号最高版本分别为 x64 的 2.14、arm64 的 2.17，均通过 2.28 上限检查。同一完整批次在实际 glibc 2.28／Node 24.15.0 的 x64、arm64 容器中，各通过 npm／pnpm 的正常、禁用 optional、缺失与损坏共八个场景；原有八目标注册表验收及最终门禁也通过。较低的符号版本不降低项目的 glibc 2.28 验收目标。
 
 - 提交 `2074662ca55bd891ab7941589bbf598e2b259643` 的 [CI 全部通过](https://github.com/matharts/ziwei/actions/runs/34453935225)（attempt 1）：八个平台分别通过 npm／pnpm 的正常安装、禁用 optional、平台包缺失及 integrity 不符，共 64 个消费端场景；完整汇总、原有检查和最终 `verify` 均通过。Windows 首次验收发现 Git Bash 的 GNU tar 将盘符误当远程地址，已改为从 stdin 读取已校验的归档字节，未改变测试环境或放宽断言。
 - 后续文档提交 `4bc46bce71db2f5f5fe5481b06f267978f661c94` 的 [CI 也全部通过](https://github.com/matharts/ziwei/actions/runs/34454666959)。对其完整交付包完成了[八目标静态兼容性审计](../engineering/node-binary-compatibility.md)：GNU 两目标均有必需的 `GLIBC_2.34` 引用；musl 动态依赖 libc，Windows 动态依赖 VC Runtime／UCRT。没有据此新增最低系统承诺或调整构建配置。
@@ -154,8 +156,8 @@ mise run check:node:glibc -- <包含 batch.json 的完整交付目录>
 
 GNU 构建要求 Linux x64／arm64；指定目标沿用 `CARGO_BUILD_TARGET`。符号检查要求 GNU binutils 的 `readelf`，由完整汇总的 Ubuntu runner 提供。两个跨构建选项互斥，错误组合由 napi-rs 拒绝；不使用当前 CLI 尚不支持的 `.2.28` target 后缀。
 
-本地仅验证工具合同和现有本机包；新的 GNU 构建、符号门禁与 glibc 2.28 容器尚无本次提交的远端通过证据。CI 全部通过后再更新支持结论；容器共享宿主内核，不能据此承诺最低 Linux 内核或全部旧发行版。
+上述提交已完成 GNU 构建、实际产物符号检查，以及双架构 glibc 2.28／Node 24.15.0 的同批运行验收。该结论仅对应列明的提交、批次和环境；后续改动须重新经过同样门禁。容器共享宿主内核，不能据此承诺最低 Linux 内核或全部旧发行版。
 
 ## 发布前剩余门槛
 
-依据[静态审计](../engineering/node-binary-compatibility.md)确定的 GNU glibc 2.28 目标，先完成新构建和对应环境的 CI 验收；其他平台同样需要边界实测。之后核验 npm scope 权限和正式发布流程并取得发布授权。其余七项逐一落实运行环境，WASI 另议。
+GNU glibc 2.28 的同批验收已完成；[静态审计](../engineering/node-binary-compatibility.md)中其他平台的最低环境、内核与运行时依赖边界仍需实测。之后核验 npm scope 权限和正式发布流程并取得发布授权。其余七项逐一落实运行环境，WASI 另议。
