@@ -105,6 +105,17 @@ test("npm and pnpm select the platform from a complete registry without override
     { ...options, timeout: 180_000 },
   );
   assert.equal(result.match(/registry-consumer-ok/g)?.length, 8);
+  assert.match(result, /registry-runtime-success-ok/);
+}, 200_000);
+
+test("registry diagnostics survive a failing native import without converting it to success", () => {
+  const result = execFileSync(
+    process.execPath,
+    [fileURLToPath(new URL("./fixtures/registry-contract.ts", import.meta.url)), "--broken-native"],
+    { ...options, timeout: 180_000 },
+  );
+  assert.match(result, /registry-runtime-failure-ok/);
+  assert.doesNotMatch(result, /registry-consumer-ok/);
 }, 200_000);
 
 test("staging validates all eight target manifests and refuses incomplete or unknown sets", (t) => {

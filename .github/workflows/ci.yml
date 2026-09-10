@@ -278,6 +278,39 @@ jobs:
               done
             '
 
+  windows-clean-consumer:
+    name: Windows x64 clean container experiment
+    needs: node-distribution
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: node-distribution-${{ github.run_attempt }}
+          path: target/node-registry
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
+        with:
+          install_args: node pnpm
+          cache: false
+      - name: Consume the sealed cohort without host development tools or CRT installation
+        shell: pwsh
+        run: |
+          $cohorts = @(Get-ChildItem target/node-registry -Directory)
+          if ($cohorts.Count -ne 1) { throw 'Expected exactly one complete cohort' }
+          mise run check:node:windows -- $cohorts[0].FullName "$PWD/target/windows-clean-consumer"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Preserve Windows experiment evidence, including failures
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: windows-clean-consumer-${{ github.run_attempt }}
+          path: target/windows-clean-consumer/
+          if-no-files-found: error
+          retention-days: 7
+
   quality:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -321,7 +354,7 @@ jobs:
 
   # Keep a single stable check that cannot pass when a required job fails or skips.
   verify:
-    needs: [native-tests, musl-distribution, quality, node-distribution, registry-consumers]
+    needs: [native-tests, musl-distribution, quality, node-distribution, registry-consumers, windows-clean-consumer]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 1
@@ -333,9 +366,11 @@ jobs:
           QUALITY_RESULT: ${{ needs.quality.result }}
           DISTRIBUTION_RESULT: ${{ needs.node-distribution.result }}
           REGISTRY_RESULT: ${{ needs.registry-consumers.result }}
+          WINDOWS_CLEAN_RESULT: ${{ needs.windows-clean-consumer.result }}
         run: |
           test "$NATIVE_RESULT" = success
           test "$MUSL_RESULT" = success
           test "$QUALITY_RESULT" = success
           test "$DISTRIBUTION_RESULT" = success
           test "$REGISTRY_RESULT" = success
+          test "$WINDOWS_CLEAN_RESULT" = success

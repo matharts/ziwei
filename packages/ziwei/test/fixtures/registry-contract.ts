@@ -14,6 +14,7 @@ const packageRoot = fileURLToPath(new URL("../..", import.meta.url));
 const temporary = mkdtempSync(join(tmpdir(), "ziwei-registry-contract-"));
 const fixture = join(temporary, "packages/ziwei");
 const source = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8"));
+const brokenNative = process.argv.includes("--broken-native");
 const digest = (path: string) => {
   const bytes = readFileSync(path);
   return { bytes: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex") };
@@ -42,6 +43,7 @@ try {
       (process.platform !== "linux" || suffix.endsWith(`-${libc}`))
     ) {
       cpSync(join(packageRoot, "native", file), join(fixture, "native", file));
+      if (brokenNative) writeFileSync(join(fixture, "native", file), "not-a-native-binary");
       realBinaries++;
     } else {
       // Metadata selection regression only; remote CI supplies eight real binaries.
@@ -70,7 +72,22 @@ try {
   // Synthetic transport fixtures are not a GitHub artifact cohort.
   for (const variable of ["GITHUB_SHA", "GITHUB_RUN_ID", "GITHUB_RUN_ATTEMPT"])
     delete process.env[variable];
-  await verifyRegistry(staged.directory);
+  const observations: { manager: string; node: string; arch: string; sharedObjects: string[] }[] =
+    [];
+  const consume = () => verifyRegistry(staged.directory, (runtime) => observations.push(runtime));
+  if (brokenNative) await assert.rejects(consume(), /Cannot find native binding/);
+  else await consume();
+  assert.deepEqual(
+    observations.map(({ manager }) => manager),
+    brokenNative ? ["npm"] : ["npm", "pnpm"],
+  );
+  for (const runtime of observations) {
+    assert.equal(runtime.node, process.version);
+    assert.equal(runtime.arch, process.arch);
+    assert.ok(Array.isArray(runtime.sharedObjects));
+    if (!brokenNative) assert.ok(runtime.sharedObjects.some((path) => path.endsWith(".node")));
+  }
+  console.log(brokenNative ? "registry-runtime-failure-ok" : "registry-runtime-success-ok");
 } finally {
   rmSync(temporary, { recursive: true, force: true });
 }

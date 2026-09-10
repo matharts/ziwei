@@ -16,6 +16,12 @@ const hash = (bytes: Buffer, algorithm = "sha256", encoding: "hex" | "base64" = 
 type Scenario = "normal" | "omit-optional" | "missing" | "corrupted";
 type Receipt = { tarball: string; bytes: number; sha256: string };
 type Platform = Receipt & { target: string; name: string; binaryDigest: Omit<Receipt, "tarball"> };
+type RuntimeObservation = {
+  manager: "npm" | "pnpm";
+  node: string;
+  arch: string;
+  sharedObjects: string[];
+};
 
 function readCohort(directory: string) {
   const source = readJson(fileURLToPath(new URL("../../package.json", import.meta.url)));
@@ -79,7 +85,10 @@ function readCohort(directory: string) {
 }
 
 /** Serve the immutable cohort locally; real clients resolve all optional dependencies. */
-export async function verifyRegistry(directory: string) {
+export async function verifyRegistry(
+  directory: string,
+  onRuntime?: (runtime: RuntimeObservation) => void,
+) {
   const { packages, main, matching, platforms } = readCohort(directory);
   const temporary = mkdtempSync(join(tmpdir(), "ziwei-registry-consumer-"));
   const env = { ...process.env };
@@ -263,6 +272,7 @@ export async function verifyRegistry(directory: string) {
           const names = ${JSON.stringify(platforms.map(({ name }) => name))};
           const installed = names.filter(name => { try { nativeRequire.resolve(name); return true; } catch { return false; } });
           const mode = ${JSON.stringify(mode)};
+          try {
           if (mode !== 'normal') {
             await assert.rejects(import('@matharts/ziwei'), /Cannot find native binding/);
             assert.deepEqual(installed, []);
@@ -287,10 +297,21 @@ export async function verifyRegistry(directory: string) {
             const queried = Ziwei.fromParameters({gender:1,birthStem:0,birthBranch:0,birthMonth:1,ziweiBranch:2,birthHour:0});
             assert.equal(queried.decadeYears(0)[0].year, null);
           }
+          } finally {
+            if (${Boolean(onRuntime)} && mode === 'normal') console.log(JSON.stringify({
+              manager: ${JSON.stringify(manager)}, node: process.version, arch: process.arch,
+              sharedObjects: process.report.getReport().sharedObjects,
+            }));
+          }
         `,
           ],
           { ...options, cwd: consumer, env: { ...env, NAPI_RS_ENFORCE_VERSION_CHECK: "1" } },
-        );
+        ).catch((error: { stdout?: string }) => {
+          // Preserve the loaded-module observation even when the native import fails.
+          if (onRuntime && error.stdout?.trim()) onRuntime(JSON.parse(error.stdout));
+          throw error;
+        });
+        if (onRuntime && probe.stdout.trim()) onRuntime(JSON.parse(probe.stdout));
         assert.equal(probe.stderr, "");
         assert.deepEqual(
           unexpected,

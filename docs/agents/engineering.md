@@ -90,6 +90,8 @@ GNU CI 使用 `build:node:gnu`，在 Linux x64／arm64 上经 `--use-napi-cross`
 
 `check:node:registry -- <完整交付目录>` 让 npm／pnpm 从仅监听本机的只读注册表冻结安装全部目标依赖，无 overrides 或架构覆盖。CI 在八种实际运行环境消费同一批已汇总 tarball；本地回归仅验证本机真实二进制与其他平台的筛选。冷缓存、失败路径及 Alpine 测试客户端启动方式见[隔离注册表安装验收](../architecture/node-distribution-proposal.md#隔离注册表安装验收)。它不执行公共 npm 发布。
 
+`check:node:windows -- <完整交付目录> <新的结果目录>` 是 Windows x64 Server Core 消费实验，要求 Windows Docker daemon。固定镜像与 Node ZIP，复用同批注册表夹具，不安装 CRT 或挂载宿主开发软件；结果目录保留环境清单和失败日志。CI 任务纳入 `verify`，实现不等于远端已经通过，也不替代 arm64／Windows 11 验收；详见 [Windows x64 容器实验](../architecture/node-distribution-proposal.md#windows-x64-干净容器实验待远端验收)。
+
 ### 依赖版本管理
 
 根 [pnpm-workspace.yaml](../../pnpm-workspace.yaml) 的默认 Catalog 是直接 npm 开发依赖版本的唯一来源，各 manifest 使用 `catalog:`；`catalogMode: strict` 约束后续依赖添加，CI 继续冻结安装。Rust 依赖与 mise 工具链版本不进入 Catalog。

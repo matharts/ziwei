@@ -65,6 +65,10 @@ run = "pnpm exec -- node packages/ziwei/test/fixtures/registry-consumer.ts"
 description = "检查完整批次中 GNU 二进制的架构、摘要与 glibc 2.28 符号上限；需要 readelf"
 run = "pnpm exec -- node packages/ziwei/tools/compatibility.ts"
 
+[tasks."check:node:windows"]
+description = "在 Windows x64 Server Core 容器中消费同批 tarball；需要 Windows Docker，保留失败报告"
+run = "pnpm exec -- node packages/ziwei/tools/windows-container.ts"
+
 [tasks."check:node:types"]
 description = "验证已构建 Node 包的 TypeScript 消费端合同"
 dir = "packages/ziwei"

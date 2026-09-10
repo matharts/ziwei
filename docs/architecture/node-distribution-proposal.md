@@ -158,6 +158,23 @@ GNU 构建要求 Linux x64／arm64；指定目标沿用 `CARGO_BUILD_TARGET`。�
 
 上述提交已完成 GNU 构建、实际产物符号检查，以及双架构 glibc 2.28／Node 24.15.0 的同批运行验收。该结论仅对应列明的提交、批次和环境；后续改动须重新经过同样门禁。容器共享宿主内核，不能据此承诺最低 Linux 内核或全部旧发行版。
 
+## Windows x64 干净容器实验（待远端验收）
+
+现有 Windows 双架构 runner 继续验证实际包消费；新增的 `Windows x64 clean container experiment` 专门检查不继承宿主开发软件的消费环境。本节描述已接入的实验代码，不表示 Windows 干净环境已通过，也不增加最低 Windows 版本承诺。
+
+- **输入与环境**：[实验工具](../../packages/ziwei/tools/windows-container.ts)在 Windows x64 Docker 宿主运行，固定 Microsoft Server Core LTSC 2025 的 manifest digest，使用 process isolation。仅复制两个 manifest、必要的 TypeScript 测试文件及完整批次到临时只读挂载，结果目录单独可写；不挂载宿主 Node、运行库、Rust、MSVC 或 workspace 依赖。
+- **Node 与运行库**：下载官方 Node 24.15.0 x64 ZIP，同时核对固定 SHA-256 与官方 `SHASUMS256.txt`，容器解压后拒绝 ZIP 内出现 DLL。容器先记录系统运行库路径、文件版本与摘要，再用 Node 自带 npm 安装和根 `devEngines` 一致的官方 pnpm 可执行包，禁用安装脚本。不安装 VC Redistributable，不调整 CRT 链接方式；存在系统自带运行库时如实记录，不删除 DLL 制造负例。
+- **消费与证据**：传入当前 commit／run／attempt，由原有注册表夹具核对完整 tarball 集合与摘要，然后执行 npm／pnpm 的正常、禁用 optional、缺失、损坏八个场景。正常加载探针额外记录 Node 版本、CPU 和实际加载模块路径；即使原生导入失败也尽量保存该观察，不改变原有断言或失败退出码。仅提取报告必要字段，不上传完整 Node diagnostic report 中的环境变量。
+- **失败传播**：Docker 不可用、镜像不兼容、材料校验失败或真实消费失败都使任务失败；失败也上传阶段报告和容器 stdout／stderr。任务纳入最终 `verify`，不使用 `continue-on-error`。独立结果目录不可覆盖；容器退出或超时后尝试清理本轮容器并记录状态，清理临时输入，保留结果。工作流被取消时不保证报告上传。
+
+在具备 Windows x64 Docker daemon 的宿主运行：
+
+```sh
+mise run check:node:windows -- <包含 batch.json 的完整交付目录> <新的结果目录>
+```
+
+该实验仍待推送后验证 Docker daemon、镜像拉取与真实加载。Server Core 结果不能替代 Windows 11、arm64 或最低系统验收；双架构完整路径与官方依据见 [Windows 干净环境研究](../engineering/windows-clean-environment-research.md)。没有新增发布流程。
+
 ## 发布前剩余门槛
 
 GNU glibc 2.28 的同批验收已完成；[静态审计](../engineering/node-binary-compatibility.md)中其他平台的最低环境、内核与运行时依赖边界仍需实测。之后核验 npm scope 权限和正式发布流程并取得发布授权。其余七项逐一落实运行环境，WASI 另议。
