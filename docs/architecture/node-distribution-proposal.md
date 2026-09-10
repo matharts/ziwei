@@ -1,10 +1,10 @@
 # Node 原生二进制分发提案
 
-状态：2026-09-10 已确认并实施首批分发结构（D-263）。首批八个目标进入构建与验收配置，另七个仍为候选；配置完成不等于所有平台已实测。本轮只做本地打包和 CI 配置，不发布。
+状态：2026-09-10 首批分发结构（D-263）及八目标分发验收已完成，另七个仍为候选。主包与平台包均未发布；运行验收不等于最低系统版本或注册表分发已经验证。
 
 ## 当前事实
 
-- 提交 `e2ed1b32d492cb8a142f7fd6d6a5686ec1f8131a` 的 [CI 已通过](https://github.com/matharts/ziwei/actions/runs/34405852384)，覆盖当前三个 runner 的构建、Node 工具及包合同检查；这不等于发布产物已验收，也不证明最低 OS、glibc 或 SDK 版本兼容。
+- 提交 `3d22b4b20503eed3df8857341e6acc007be2ed84` 的 [CI 已通过](https://github.com/matharts/ziwei/actions/runs/34419861484)（attempt 2）：六个原生 runner 通过完整测试与分发消费端合同，两个 musl 目标在对应架构的 Alpine 容器中通过分发消费端合同，质量检查与汇总门禁通过。Linux arm64 首次因 GitHub 证明校验接口 `502` 失败，同一提交重试通过；未关闭证明校验。
 - [主包配置](../../packages/ziwei/package.json)声明八个首批目标，仍为 `private: true`。源码 manifest 不引用尚未发布的平台依赖；`optionalDependencies` 仅在暂存区生成，保持 workspace 冻结安装可用。当前仅有[检查工作流](../../.github/workflows/ci.yml)，没有发布工作流。
 - 保留[自包含本地包测试](../../packages/ziwei/test/package.test.ts)，另增[分发测试](../../packages/ziwei/test/distribution.test.ts)：真正打包和离线安装无二进制主包与本机平台包，检查加载、公开 API、声明和失败路径。
 - 平台包元数据由锁定的 napi-rs `NapiCli.createNpmDirs` 生成；不是手写第二套 CPU／OS／libc 映射。八项目标的元数据夹具不作为八个平台的运行证据。
@@ -17,14 +17,14 @@
 
 | 平台 | Rust target | 拟用平台包名 | 本项目状态／推进批次 |
 | --- | --- | --- | --- |
-| macOS arm64 | `aarch64-apple-darwin` | `@matharts/ziwei-darwin-arm64` | 已完成本机平台包分发验收；本次 CI 待运行 |
-| macOS x64 | `x86_64-apple-darwin` | `@matharts/ziwei-darwin-x64` | 第一批新增 |
-| Windows x64 MSVC | `x86_64-pc-windows-msvc` | `@matharts/ziwei-win32-x64-msvc` | 现有目标，已完成当前 CI；平台包分发待验收 |
-| Windows arm64 MSVC | `aarch64-pc-windows-msvc` | `@matharts/ziwei-win32-arm64-msvc` | 第一批新增 |
-| Linux x64 glibc | `x86_64-unknown-linux-gnu` | `@matharts/ziwei-linux-x64-gnu` | 现有目标，已完成当前 CI；平台包分发待验收 |
-| Linux arm64 glibc | `aarch64-unknown-linux-gnu` | `@matharts/ziwei-linux-arm64-gnu` | 第一批新增 |
-| Linux x64 musl | `x86_64-unknown-linux-musl` | `@matharts/ziwei-linux-x64-musl` | 第一批新增，独立 libc 运行验收 |
-| Linux arm64 musl | `aarch64-unknown-linux-musl` | `@matharts/ziwei-linux-arm64-musl` | 第一批新增，独立 libc 运行验收 |
+| macOS arm64 | `aarch64-apple-darwin` | `@matharts/ziwei-darwin-arm64` | 第一批，真实分发验收通过 |
+| macOS x64 | `x86_64-apple-darwin` | `@matharts/ziwei-darwin-x64` | 第一批，真实分发验收通过 |
+| Windows x64 MSVC | `x86_64-pc-windows-msvc` | `@matharts/ziwei-win32-x64-msvc` | 第一批，真实分发验收通过 |
+| Windows arm64 MSVC | `aarch64-pc-windows-msvc` | `@matharts/ziwei-win32-arm64-msvc` | 第一批，真实分发验收通过 |
+| Linux x64 glibc | `x86_64-unknown-linux-gnu` | `@matharts/ziwei-linux-x64-gnu` | 第一批，真实分发验收通过 |
+| Linux arm64 glibc | `aarch64-unknown-linux-gnu` | `@matharts/ziwei-linux-arm64-gnu` | 第一批，真实分发验收通过 |
+| Linux x64 musl | `x86_64-unknown-linux-musl` | `@matharts/ziwei-linux-x64-musl` | 第一批，Alpine 实际运行通过 |
+| Linux arm64 musl | `aarch64-unknown-linux-musl` | `@matharts/ziwei-linux-arm64-musl` | 第一批，Alpine 实际运行通过 |
 | Linux armv7 glibc | `armv7-unknown-linux-gnueabihf` | `@matharts/ziwei-linux-arm-gnueabihf` | 第二批候选，先落实运行环境 |
 | Linux ppc64le glibc | `powerpc64le-unknown-linux-gnu` | `@matharts/ziwei-linux-ppc64-gnu` | 第二批候选，先落实运行环境 |
 | Linux s390x glibc | `s390x-unknown-linux-gnu` | `@matharts/ziwei-linux-s390x-gnu` | 第二批候选，先落实运行环境 |
@@ -92,10 +92,10 @@ mise run pack:node -- --target aarch64-apple-darwin
 
 musl 构建使用 `build:node:musl`，以 napi-rs 支持的 `CARGO_BUILD_TARGET` 选择目标，复用原生与 TS 构建任务。mise 在该任务内锁定 Zig／cargo-zigbuild；原生任务的 `--cross-compile` 交给 napi-rs，后者为 musl 加入动态 CRT 参数。首轮 CI 已证明 Ubuntu 的 `musl-gcc` 路径缺少 `libgcc_s.so.1`，因此改用官方推荐的 Zig 路径，不链接宿主 glibc 的运行库。Alpine 仅包含运行时，声明在构建机检查，不复制 workspace 开发依赖。[napi-rs 交叉构建](https://napi.rs/docs/cross-build)
 
-本机已验证 macOS arm64 的真实分发路径、八目标元数据及 CI 静态检查；本机无 Docker，其他目标、Alpine 运行及本次远端 CI 尚未验证。不存在发布工作流、产物上传或 npm 发布。
+首批八目标均已通过上述 CI 的真实分发验收，运行时为 Node 24.21.0；Linux x64 glibc 另通过最低 Node 24.15.0 检查。每个任务独立构建并安装本目标的主包／平台包，未汇总成全矩阵发布产物；musl 消费端不运行依赖 glibc 的 TypeScript 编译器，声明在构建机检查。本机另完成 macOS arm64 分发验收和 Linux x64 musl 交叉构建，但没有本机 Docker 运行证据。不存在发布工作流、产物上传或 npm 发布。
 
 全部产物验收后，才讨论发布身份、npm scope 权限、支持底线和人工发布审批。未来发布应使用已验收的同一批产物，先完成平台包再发布主包；部分失败先对账，不能把不同二进制覆盖到同一版本。[napi-rs 发布与恢复](https://napi.rs/docs/deep-dive/release#recover-from-a-partial-release)
 
 ## 发布前剩余门槛
 
-取得本次八目标 CI 的真实运行证据、验证完整可选依赖的平台筛选及注册表安装、确定最低系统要求、核验 npm scope 权限并取得发布授权。其余七项逐一落实运行环境，WASI 另议。
+汇总并验收同批多平台产物、验证完整可选依赖的平台筛选及注册表安装、确定最低系统要求、核验 npm scope 权限并取得发布授权。其余七项逐一落实运行环境，WASI 另议。

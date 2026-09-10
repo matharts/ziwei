@@ -189,7 +189,7 @@ Cargo 包名与 Rust import 名均为 `ziwei`。不能通过新增纯重导出�
 
 ### `ziwei-node` 与 `@matharts/ziwei`（完整 Node API 已实现）
 
-实际进展见 [Node 包说明](../../packages/ziwei/README.md)。以下完整职责中的两类建盘、读取、查询、限运、身份辅助、错误、JSON 与加载均已实现；跨平台验收和发布流程不在此次实现范围。
+实际进展见 [Node 包说明](../../packages/ziwei/README.md)。以下完整职责中的两类建盘、读取、查询、限运、身份辅助、错误、JSON 与加载均已实现；首批八目标的分发验收已按 [D-263 分发设计](node-distribution-proposal.md)完成，发布流程仍未实施。
 
 保留 D-254 的模块职责与 D-257 的 Rust／TS 分离，按 D-260 更新 Rust 绑定位置：`bindings/node/src/lib.rs` 与 `packages/ziwei/src/index.ts` 保留各自的构造入口，命盘对象实现分别集中在各自私有的 `natal.rs` 和 `natal.ts`。
 

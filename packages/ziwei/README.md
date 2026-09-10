@@ -212,8 +212,9 @@ try {
 
 模块只从包根导出，默认使用 ESM，也可通过 Node 的 `require('@matharts/ziwei')` 读取同一组命名导出；不提供默认导出、单独 CJS 构建、公开命盘构造器或内部子路径。
 
-当前已验证的运行环境为 macOS arm64／Node 24，尚未提供跨平台预编译包。Node 22 不在支持范围，Node 26 与其他平台尚未验证；本包不能直接在浏览器中运行。
+当前已在 Node 24.21.0 下验证 macOS、Windows 的 x64／arm64，以及 Linux 的 x64／arm64 × glibc／musl，共八种环境；Linux x64 glibc 另验证了最低 Node 24.15.0。Linux musl 仍受 Node 运行时实验性支持的限制，最低操作系统版本尚未承诺。
 
+尚未发布跨平台预编译包。Node 22 不在支持范围，Node 26 与其他平台尚未验证；本包不能直接在浏览器中运行。
 
 ## License
 
