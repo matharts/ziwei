@@ -303,6 +303,30 @@ test("native cross compilation passes the flag to napi, not Cargo", (t) => {
   ]);
 });
 
+test("GNU builds pass use-napi-cross before Cargo arguments and then build TypeScript", (t) => {
+  const { run } = fixture(t);
+  const result = run(["run", "build:node:gnu"]);
+  assert.equal(result.status, 0, result.stderr);
+  const output = rows(result.stdout);
+  assert.equal(output.length, 2);
+  for (const row of output) assertRuntime(row);
+  assert.deepEqual(
+    output.map((row) => row.args),
+    [
+      ["build", "--use-napi-cross", ...tasks["build:node:native"].args.slice(1)],
+      tasks["build:node:ts"].args,
+    ],
+  );
+});
+
+test("a failed GNU native build prevents TypeScript output", (t) => {
+  const { run, cliPaths } = fixture(t);
+  writeFileSync(cliPaths["build:node:native"], "process.exit(23);\n");
+  const result = run(["run", "build:node:gnu"]);
+  assert.equal(result.status, 23);
+  assert.deepEqual(rows(result.stdout), []);
+});
+
 test("mise owns task definitions and CLI paths match installed dependency manifests", () => {
   for (const path of ["package.json", "packages/ziwei/package.json"]) {
     assert.equal(JSON.parse(readFileSync(join(root, path), "utf8")).scripts, undefined);

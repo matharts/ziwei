@@ -116,7 +116,7 @@ ziwei-wasm（后续） ───────────────────
 │       │   ├── error.ts
 │       │   └── types.ts
 │       ├── test/                  # Node、Worker、类型与独立打包消费端
-│       ├── tools/pack.ts          # 私有分发暂存与 tarball 组装；不发布
+│       ├── tools/                 # 私有分发组装、同批校验与 GNU 二进制兼容性检查
 │       ├── native/                # 生成产物；不提交
 │       └── dist/                  # 生成产物；不提交
 ├── tools/

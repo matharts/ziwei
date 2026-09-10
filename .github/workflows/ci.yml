@@ -55,9 +55,18 @@ jobs:
       - name: Node development runtime contracts
         run: mise run check:node:tools
       - name: Node adapter integration and type contracts
+        if: runner.os != 'Linux'
         env:
           ZIWEI_NODE_ARTIFACTS: target/node-artifacts
         run: mise run check:node
+      - name: GNU adapter integration using the compatibility toolchain
+        if: runner.os == 'Linux'
+        env:
+          ZIWEI_NODE_ARTIFACTS: target/node-artifacts
+        run: |
+          mise run build:node:gnu
+          mise run test:node
+          mise run check:node:types
       - name: TypeScript tooling and test contracts
         run: mise run check:typescript
       - name: Minimum supported Node runtime
@@ -156,6 +165,11 @@ jobs:
           merge-multiple: false
       - name: Validate and assemble without rebuilding
         run: mise run assemble:node -- --input target/node-artifacts
+      - name: Require GNU artifacts to stay within glibc 2.28
+        run: |
+          for artifacts in target/node-distribution-complete/ziwei-*; do
+            mise run check:node:glibc -- "$artifacts"
+          done
       - name: Upload the complete private distribution
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -215,6 +229,36 @@ jobs:
           for artifacts in target/node-registry/ziwei-*; do
             mise run check:node:registry -- "$artifacts"
           done
+      - name: Clean glibc 2.28 consumers with the minimum Node on the target CPU
+        if: endsWith(matrix.target, '-linux-gnu')
+        shell: bash
+        run: |
+          mise install node@24.15.0
+          node_root=$(mise exec node@24.15.0 -- node -p 'require("node:path").dirname(require("node:path").dirname(process.execPath))')
+          node_arch=$(mise exec node@24.15.0 -- node -p 'process.arch')
+          case "$node_arch" in
+            x64) docker_platform=linux/amd64 ;;
+            arm64) docker_platform=linux/arm64 ;;
+            *) exit 1 ;;
+          esac
+          docker run --rm --platform "$docker_platform" \
+            --mount "type=bind,src=$PWD,dst=/work,readonly" \
+            --mount "type=bind,src=$node_root,dst=/opt/node,readonly" \
+            -e EXPECTED_NODE_ARCH="$node_arch" \
+            -e GITHUB_SHA -e GITHUB_RUN_ID -e GITHUB_RUN_ATTEMPT \
+            almalinux:8.10-20260902 bash -eu -c '
+              dnf install -y --setopt=install_weak_deps=False ca-certificates tar gzip libstdc++
+              export PATH=/opt/node/bin:$PATH
+              node -e "const a=require(\"node:assert/strict\"); a.equal(process.platform,\"linux\"); a.equal(process.arch,process.env.EXPECTED_NODE_ARCH); a.equal(process.version,\"v24.15.0\"); a.equal(process.report.getReport().header.glibcVersionRuntime,\"2.28\"); console.log({node:process.version,arch:process.arch,glibc:process.report.getReport().header.glibcVersionRuntime})"
+              pnpm_version=$(node -p "require(\"/work/package.json\").devEngines.packageManager.version")
+              node_arch=$(node -p "process.arch")
+              npm install --prefix /tmp/pnpm-tool --ignore-scripts --no-audit --no-fund \
+                "@pnpm/exe.linux-${node_arch}@${pnpm_version}"
+              export ZIWEI_PNPM_BIN="/tmp/pnpm-tool/node_modules/@pnpm/exe.linux-${node_arch}/pnpm"
+              for artifacts in /work/target/node-registry/ziwei-*; do
+                node /work/packages/ziwei/test/fixtures/registry-consumer.ts "$artifacts"
+              done
+            '
       - name: Clean Alpine registry consumers on the target CPU
         if: matrix.docker-platform
         env:

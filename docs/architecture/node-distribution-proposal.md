@@ -1,10 +1,11 @@
 # Node 原生二进制分发提案
 
-状态：2026-09-10 首批分发结构（D-263）、八目标独立分发验收、同批完整汇总（D-264）与无需 overrides 的隔离注册表安装验收（D-265）均已通过 CI，另七个仍为候选。主包与平台包均未发布；运行验收不等于最低系统版本或公共注册表分发已经验证。
+状态：2026-09-10 首批分发结构（D-263）、八目标独立分发验收、同批完整汇总（D-264）与无需 overrides 的隔离注册表安装验收（D-265）均已通过 CI，另七个仍为候选。D-266 已确定 GNU 的 glibc 2.28 验收目标，构建与门禁已接入，新的 Linux 运行结果待 CI 验证。主包与平台包均未发布；运行验收不等于最低系统版本或公共注册表分发已经验证。
 
 ## 当前事实
 
 - 提交 `2074662ca55bd891ab7941589bbf598e2b259643` 的 [CI 全部通过](https://github.com/matharts/ziwei/actions/runs/34453935225)（attempt 1）：八个平台分别通过 npm／pnpm 的正常安装、禁用 optional、平台包缺失及 integrity 不符，共 64 个消费端场景；完整汇总、原有检查和最终 `verify` 均通过。Windows 首次验收发现 Git Bash 的 GNU tar 将盘符误当远程地址，已改为从 stdin 读取已校验的归档字节，未改变测试环境或放宽断言。
+- 后续文档提交 `4bc46bce71db2f5f5fe5481b06f267978f661c94` 的 [CI 也全部通过](https://github.com/matharts/ziwei/actions/runs/34454666959)。对其完整交付包完成了[八目标静态兼容性审计](../engineering/node-binary-compatibility.md)：GNU 两目标均有必需的 `GLIBC_2.34` 引用；musl 动态依赖 libc，Windows 动态依赖 VC Runtime／UCRT。没有据此新增最低系统承诺或调整构建配置。
 - 提交 `b9266dc33f246cc18092bb50a3eb8f8100b8478b` 的 [CI 全部通过](https://github.com/matharts/ziwei/actions/runs/34451527198)（attempt 1）：八目标产物封存、完整汇总和最终门禁通过。下载最终交付物后，九个 tarball 的大小与 SHA-256 均匹配 `batch.json`。
 - 提交 `3d22b4b20503eed3df8857341e6acc007be2ed84` 的 [CI 已通过](https://github.com/matharts/ziwei/actions/runs/34419861484)（attempt 2）：六个原生 runner 通过完整测试与分发消费端合同，两个 musl 目标在对应架构的 Alpine 容器中通过分发消费端合同，质量检查与汇总门禁通过。Linux arm64 首次因 GitHub 证明校验接口 `502` 失败，同一提交重试通过；未关闭证明校验。
 - [主包配置](../../packages/ziwei/package.json)声明八个首批目标，仍为 `private: true`。源码 manifest 不引用尚未发布的平台依赖；`optionalDependencies` 仅在暂存区生成，保持 workspace 冻结安装可用。当前仅有[检查工作流](../../.github/workflows/ci.yml)，没有发布工作流。
@@ -138,6 +139,23 @@ musl 构建使用 `build:node:musl`，以 napi-rs 支持的 `CARGO_BUILD_TARGET`
 
 全部产物验收后，才讨论发布身份、npm scope 权限、支持底线和人工发布审批。未来发布应使用已验收的同一批产物，先完成平台包再发布主包；部分失败先对账，不能把不同二进制覆盖到同一版本。[napi-rs 发布与恢复](https://napi.rs/docs/deep-dive/release#recover-from-a-partial-release)
 
+## GNU glibc 2.28 验收目标
+
+D-266 选择 glibc 2.28 作为 Linux x64／arm64 GNU 包的验收目标，与 Node 24 的用户态基线对齐；不是把先前 `GLIBC_2.34` 产物直接标成兼容。Rust 工具链、Node 最低版本、八目标范围、包名及公开 API 均保持不变。
+
+- **构建**：GNU runner 通过 `build:node:gnu` 调用 napi-rs 的 `--use-napi-cross`，再构建 TypeScript 并运行原有合同测试。CLI 及依赖由 pnpm 锁文件确定；GNU 交叉工具链使用较旧的 glibc sysroot，不继承 Ubuntu runner 的链接下限。实际符号需求仍须检查，不能仅凭编译选项承诺兼容。普通本机构建与 musl 的 Zig 路径不变。[官方 GNU 构建方式](https://napi.rs/docs/cross-build)
+- **产物门禁**：完整批次汇总后、上传前，`check:node:glibc` 检查两个 GNU tarball。先核对批次、目标集、tarball／二进制摘要及 ELF64 架构，再用 GNU `readelf` 检查版本需求；高于 2.28、未知的 GLIBC 需求或缺失版本信息均失败。它保守检查全部版本需求，包括弱需求，不把版本定义或文件中的字符串当成依赖。平台包字节不改写，失败不上传完整交付包。
+- **运行验收**：两个 GNU 注册表任务保留当前 runner 验收，再用同架构 `almalinux:8.10-20260902` 容器消费同一批完整 tarball。容器只挂载 mise 安装的 Node 24.15.0 运行时和只读仓库，不复制宿主系统库或 workspace 开发依赖；启动时断言实际 glibc 恰为 2.28、Node 版本和 CPU 匹配。安装运行所需系统包和同版本 pnpm 官方原生测试客户端，复用 npm／pnpm 的正常、禁用 optional、缺失及损坏四类合同，不重新打包或编译。[AlmaLinux 官方镜像清单](https://github.com/docker-library/official-images/blob/master/library/almalinux)
+
+```sh
+mise run build:node:gnu
+mise run check:node:glibc -- <包含 batch.json 的完整交付目录>
+```
+
+GNU 构建要求 Linux x64／arm64；指定目标沿用 `CARGO_BUILD_TARGET`。符号检查要求 GNU binutils 的 `readelf`，由完整汇总的 Ubuntu runner 提供。两个跨构建选项互斥，错误组合由 napi-rs 拒绝；不使用当前 CLI 尚不支持的 `.2.28` target 后缀。
+
+本地仅验证工具合同和现有本机包；新的 GNU 构建、符号门禁与 glibc 2.28 容器尚无本次提交的远端通过证据。CI 全部通过后再更新支持结论；容器共享宿主内核，不能据此承诺最低 Linux 内核或全部旧发行版。
+
 ## 发布前剩余门槛
 
-确定最低系统要求、核验 npm scope 权限和正式发布流程并取得发布授权。其余七项逐一落实运行环境，WASI 另议。
+依据[静态审计](../engineering/node-binary-compatibility.md)确定的 GNU glibc 2.28 目标，先完成新构建和对应环境的 CI 验收；其他平台同样需要边界实测。之后核验 npm scope 权限和正式发布流程并取得发布授权。其余七项逐一落实运行环境，WASI 另议。
