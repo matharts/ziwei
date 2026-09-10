@@ -168,6 +168,72 @@ jobs:
           retention-days: 7
           compression-level: 0
 
+  registry-consumers:
+    name: Registry (${{ matrix.target }})
+    needs: node-distribution
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+          - os: macos-15
+            target: aarch64-apple-darwin
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+          - os: windows-2025
+            target: x86_64-pc-windows-msvc
+          - os: windows-11-arm
+            target: aarch64-pc-windows-msvc
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-musl
+            docker-platform: linux/amd64
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
+            docker-platform: linux/arm64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: node-distribution-${{ github.run_attempt }}
+          path: target/node-registry
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
+        if: ${{ !matrix.docker-platform }}
+        with:
+          install_args: node pnpm
+          cache: false
+      - name: Clean npm and pnpm consumers of the same complete cohort
+        if: ${{ !matrix.docker-platform }}
+        shell: bash
+        run: |
+          for artifacts in target/node-registry/ziwei-*; do
+            mise run check:node:registry -- "$artifacts"
+          done
+      - name: Clean Alpine registry consumers on the target CPU
+        if: matrix.docker-platform
+        env:
+          DOCKER_PLATFORM: ${{ matrix.docker-platform }}
+        run: |
+          docker run --rm --platform "$DOCKER_PLATFORM" \
+            --mount "type=bind,src=$PWD,dst=/work,readonly" \
+            -e GITHUB_SHA -e GITHUB_RUN_ID -e GITHUB_RUN_ATTEMPT \
+            node:24.21.0-alpine3.23 sh -eu -c '
+              pnpm_version=$(node -p "require(\"/work/package.json\").devEngines.packageManager.version")
+              node_arch=$(node -p "process.arch")
+              npm install --prefix /tmp/pnpm-tool --ignore-scripts --no-audit --no-fund \
+                "@pnpm/exe.linux-${node_arch}-musl@${pnpm_version}"
+              export ZIWEI_PNPM_BIN="/tmp/pnpm-tool/node_modules/@pnpm/exe.linux-${node_arch}-musl/pnpm"
+              for artifacts in /work/target/node-registry/ziwei-*; do
+                node /work/packages/ziwei/test/fixtures/registry-consumer.ts "$artifacts"
+              done
+            '
+
   quality:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -211,7 +277,7 @@ jobs:
 
   # Keep a single stable check that cannot pass when a required job fails or skips.
   verify:
-    needs: [native-tests, musl-distribution, quality, node-distribution]
+    needs: [native-tests, musl-distribution, quality, node-distribution, registry-consumers]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 1
@@ -222,8 +288,10 @@ jobs:
           MUSL_RESULT: ${{ needs.musl-distribution.result }}
           QUALITY_RESULT: ${{ needs.quality.result }}
           DISTRIBUTION_RESULT: ${{ needs.node-distribution.result }}
+          REGISTRY_RESULT: ${{ needs.registry-consumers.result }}
         run: |
           test "$NATIVE_RESULT" = success
           test "$MUSL_RESULT" = success
           test "$QUALITY_RESULT" = success
           test "$DISTRIBUTION_RESULT" = success
+          test "$REGISTRY_RESULT" = success

@@ -47,6 +47,10 @@ run = "pnpm exec -- node packages/ziwei/tools/artifacts.ts capture"
 description = "严格汇总同一 CI attempt 的全部平台产物；不重新构建或发布"
 run = "pnpm exec -- node packages/ziwei/tools/artifacts.ts assemble"
 
+[tasks."check:node:registry"]
+description = "用 npm 和 pnpm 验证完整 tarball 批次的自动平台安装；仅本机只读注册表"
+run = "pnpm exec -- node packages/ziwei/test/fixtures/registry-consumer.ts"
+
 [tasks."check:node:types"]
 description = "验证已构建 Node 包的 TypeScript 消费端合同"
 dir = "packages/ziwei"

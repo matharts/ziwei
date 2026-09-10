@@ -98,6 +98,15 @@ test("complete artifact cohorts preserve tested bytes and reject mixed or damage
   assert.match(result, /artifact-contract-ok/);
 }, 120_000);
 
+test("npm and pnpm select the platform from a complete registry without overrides", () => {
+  const result = execFileSync(
+    process.execPath,
+    [fileURLToPath(new URL("./fixtures/registry-contract.ts", import.meta.url))],
+    { ...options, timeout: 180_000 },
+  );
+  assert.equal(result.match(/registry-consumer-ok/g)?.length, 8);
+}, 200_000);
+
 test("staging validates all eight target manifests and refuses incomplete or unknown sets", (t) => {
   const directory = mkdtempSync(join(tmpdir(), "ziwei-metadata-test-"));
   t.onTestFinished(() => rmSync(directory, { recursive: true, force: true }));

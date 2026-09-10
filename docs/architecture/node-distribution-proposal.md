@@ -1,9 +1,10 @@
 # Node 原生二进制分发提案
 
-状态：2026-09-10 首批分发结构（D-263）及八目标独立分发验收已完成，另七个仍为候选。同批产物汇总已接入 CI，完整八目标汇总仍待本次提交的远端验收。主包与平台包均未发布；运行验收不等于最低系统版本或注册表分发已经验证。
+状态：2026-09-10 首批分发结构（D-263）、八目标独立分发验收与同批完整汇总（D-264）已通过 CI，另七个仍为候选。无需 overrides 的隔离注册表安装验收（D-265）已实现，本机通过，八平台结果待本次提交的远端验收。主包与平台包均未发布；运行验收不等于最低系统版本或公共注册表分发已经验证。
 
 ## 当前事实
 
+- 提交 `b9266dc33f246cc18092bb50a3eb8f8100b8478b` 的 [CI 全部通过](https://github.com/matharts/ziwei/actions/runs/34451527198)（attempt 1）：八目标产物封存、完整汇总和最终门禁通过。下载最终交付物后，九个 tarball 的大小与 SHA-256 均匹配 `batch.json`。
 - 提交 `3d22b4b20503eed3df8857341e6acc007be2ed84` 的 [CI 已通过](https://github.com/matharts/ziwei/actions/runs/34419861484)（attempt 2）：六个原生 runner 通过完整测试与分发消费端合同，两个 musl 目标在对应架构的 Alpine 容器中通过分发消费端合同，质量检查与汇总门禁通过。Linux arm64 首次因 GitHub 证明校验接口 `502` 失败，同一提交重试通过；未关闭证明校验。
 - [主包配置](../../packages/ziwei/package.json)声明八个首批目标，仍为 `private: true`。源码 manifest 不引用尚未发布的平台依赖；`optionalDependencies` 仅在暂存区生成，保持 workspace 冻结安装可用。当前仅有[检查工作流](../../.github/workflows/ci.yml)，没有发布工作流。
 - 保留[自包含本地包测试](../../packages/ziwei/test/package.test.ts)，另增[分发测试](../../packages/ziwei/test/distribution.test.ts)：真正打包和离线安装无二进制主包与本机平台包，检查加载、公开 API、声明和失败路径。
@@ -106,7 +107,23 @@ mise run assemble:node -- --input target/node-artifacts
 
 批次严格包含 attempt。只重跑失败 job 不会复用上一次 attempt 的产物；需要完整交付时，使用 **Re-run all jobs** 重建同一批次。输入与完整交付的 Actions 产物均短期保留，具体期限见工作流；过期后重新构建，不拼接其他 run。SHA-256 用于完整性核验与字节追溯，不等于签名、发布 provenance 或最低系统要求证明。
 
-本地回归用八目标夹具验证完整汇总、拒绝混批／缺失／篡改及原样复制，不宣称八种本机运行能力。真实八平台批次须在本次代码对应的 CI 中完成；之后还需验证完整主包在隔离注册表中无需 overrides 的自动平台选择。
+本地回归用八目标夹具验证完整汇总、拒绝混批／缺失／篡改及原样复制，不宣称八种本机运行能力。真实八平台汇总已在上述 CI 中完成；注册表自动选择是下一层独立验收。
+
+## 隔离注册表安装验收
+
+[注册表消费端夹具](../../packages/ziwei/test/fixtures/registry-consumer.ts)先核对完整批次、目标集和九个 tarball 的摘要，再启动仅监听 `127.0.0.1` 的只读 HTTP 服务。它按 npm 的[包元数据协议](https://github.com/npm/registry/blob/main/docs/responses/package-metadata.md)提供固定的 metadata 与原始 tarball，不开放发布接口或转发外部注册表；不修改任何包的 `private` 或归档字节。仅损坏测试的 HTTP 响应故意偏离原始 integrity。
+
+```sh
+mise run check:node:registry -- <包含 batch.json 的完整交付目录>
+```
+
+每个 npm／pnpm 消费端只声明主包的精确版本，不使用 `file:`、overrides、平台参数或 `supportedArchitectures`。先生成真实 lockfile，再从独立冷缓存冻结安装，禁用生命周期脚本；临时配置隔离用户注册表配置、认证与内容存储。测试按实际 Node 的 CPU／OS／libc 断言仅下载并安装匹配的平台包，校验实际 `.node` 字节，并检查 ESM／require 单例、建盘、查询、错误与冻结。
+
+同一夹具还验证禁用 optional dependencies、匹配平台 tarball 返回 404、tarball 与元数据 integrity 不符三类失败路径。optional 安装失败可能被包管理器忽略，因此不能只看安装退出码；缺失／损坏平台包不得通过导入，也不能由主包内二进制或用户环境覆盖救回。
+
+本地回归只提供一个真实本机二进制，其余目标使用明确的假数据验证平台筛选；CI 的八平台注册表任务则下载同一完整交付包，不重新编译或重新打包。两个 musl 任务在对应 CPU 的 Alpine 中运行，先用容器随附 npm 安装与根 `devEngines` 相同版本的 pnpm 官方 musl 可执行包，禁用安装脚本，再执行只读注册表验收。该启动步骤只为提供兼容 Alpine 的测试客户端，不替换仓库的 mise／pnpm 管理方式。
+
+这里验证真实包管理器的解析、平台筛选、完整性检查与加载，不模拟公共 npm 的账号权限、发布、访问控制、provenance 或完整 registry 服务行为，不构成发布授权。
 
 ## CI 配置与验证边界
 
@@ -116,10 +133,10 @@ musl 构建使用 `build:node:musl`，以 napi-rs 支持的 `CARGO_BUILD_TARGET`
 
 首批八目标均已通过上述 CI 的真实独立分发验收，运行时为 Node 24.21.0；Linux x64 glibc 另通过最低 Node 24.15.0 检查。musl 消费端不运行依赖 glibc 的 TypeScript 编译器，声明在构建机检查。本机另完成 macOS arm64 分发验收和 Linux x64 musl 交叉构建，但没有本机 Docker 运行证据。
 
-当前工作流新增同批产物上传／下载及 `Complete Node distribution` 汇总任务，并将其纳入最终 `verify` 门禁。它不替代上述单平台验收；失败或跳过的汇总不能让最终门禁通过。历史八目标通过的 CI 不证明新增汇总已运行，完整批次以本次提交的远端结果为准。不存在发布工作流或 npm 发布。
+当前工作流包含同批产物上传／下载、`Complete Node distribution` 汇总和八平台 `Registry` 消费端任务，均纳入最终 `verify` 门禁。它们不替代单平台验收；失败或跳过均不能让最终门禁通过。新增注册表任务以本次提交的远端结果为准，不能引用旧汇总任务的通过状态。不存在发布工作流或 npm 发布。
 
 全部产物验收后，才讨论发布身份、npm scope 权限、支持底线和人工发布审批。未来发布应使用已验收的同一批产物，先完成平台包再发布主包；部分失败先对账，不能把不同二进制覆盖到同一版本。[napi-rs 发布与恢复](https://napi.rs/docs/deep-dive/release#recover-from-a-partial-release)
 
 ## 发布前剩余门槛
 
-完成本次代码的真实八目标汇总验收、验证完整可选依赖的平台筛选及注册表安装、确定最低系统要求、核验 npm scope 权限并取得发布授权。其余七项逐一落实运行环境，WASI 另议。
+完成本次代码的八平台隔离注册表验收、确定最低系统要求、核验 npm scope 权限和正式发布流程并取得发布授权。其余七项逐一落实运行环境，WASI 另议。

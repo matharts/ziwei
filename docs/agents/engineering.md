@@ -84,7 +84,9 @@ CI 的 `capture:node` 在目标消费端通过后封存实际测试的 tarball�
 
 musl 使用 `CARGO_BUILD_TARGET` 指定目标，运行 `mise run build:node:musl`。此任务锁定 Zig／cargo-zigbuild 并复用原生与 TS 构建；`build:node:native --cross-compile` 将选项传给 napi，不传入 `--` 后的 Cargo 参数。普通 `build:node` 不需要交叉链接工具链。
 
-`check:node` 同时覆盖原有自包含包和新的无二进制主包／平台包。后者用 Node 随附 npm 离线安装本地 tarball，override 仅存在于临时消费端；仓库依赖管理继续使用 pnpm。正常 runner 从已安装包检查声明，musl 在对应 CPU 的 Alpine 运行同一消费端夹具、在构建机检查声明。注册表安装和八目标可选依赖的自动筛选须另行验收。
+`check:node` 同时覆盖原有自包含包和新的无二进制主包／平台包。后者用 Node 随附 npm 离线安装本地 tarball，override 仅存在于临时消费端；仓库依赖管理继续使用 pnpm。正常 runner 从已安装包检查声明，musl 在对应 CPU 的 Alpine 运行同一消费端夹具、在构建机检查声明。
+
+`check:node:registry -- <完整交付目录>` 让 npm／pnpm 从仅监听本机的只读注册表冻结安装全部目标依赖，无 overrides 或架构覆盖。CI 在八种实际运行环境消费同一批已汇总 tarball；本地回归仅验证本机真实二进制与其他平台的筛选。冷缓存、失败路径及 Alpine 测试客户端启动方式见[隔离注册表安装验收](../architecture/node-distribution-proposal.md#隔离注册表安装验收)。它不执行公共 npm 发布。
 
 ### 依赖版本管理
 
