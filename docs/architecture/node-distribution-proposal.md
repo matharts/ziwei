@@ -1,9 +1,10 @@
 # Node 原生二进制分发提案
 
-状态：2026-09-10 首批分发结构（D-263）、八目标独立分发验收与同批完整汇总（D-264）已通过 CI，另七个仍为候选。无需 overrides 的隔离注册表安装验收（D-265）已实现，本机通过，八平台结果待本次提交的远端验收。主包与平台包均未发布；运行验收不等于最低系统版本或公共注册表分发已经验证。
+状态：2026-09-10 首批分发结构（D-263）、八目标独立分发验收、同批完整汇总（D-264）与无需 overrides 的隔离注册表安装验收（D-265）均已通过 CI，另七个仍为候选。主包与平台包均未发布；运行验收不等于最低系统版本或公共注册表分发已经验证。
 
 ## 当前事实
 
+- 提交 `2074662ca55bd891ab7941589bbf598e2b259643` 的 [CI 全部通过](https://github.com/matharts/ziwei/actions/runs/34453935225)（attempt 1）：八个平台分别通过 npm／pnpm 的正常安装、禁用 optional、平台包缺失及 integrity 不符，共 64 个消费端场景；完整汇总、原有检查和最终 `verify` 均通过。Windows 首次验收发现 Git Bash 的 GNU tar 将盘符误当远程地址，已改为从 stdin 读取已校验的归档字节，未改变测试环境或放宽断言。
 - 提交 `b9266dc33f246cc18092bb50a3eb8f8100b8478b` 的 [CI 全部通过](https://github.com/matharts/ziwei/actions/runs/34451527198)（attempt 1）：八目标产物封存、完整汇总和最终门禁通过。下载最终交付物后，九个 tarball 的大小与 SHA-256 均匹配 `batch.json`。
 - 提交 `3d22b4b20503eed3df8857341e6acc007be2ed84` 的 [CI 已通过](https://github.com/matharts/ziwei/actions/runs/34419861484)（attempt 2）：六个原生 runner 通过完整测试与分发消费端合同，两个 musl 目标在对应架构的 Alpine 容器中通过分发消费端合同，质量检查与汇总门禁通过。Linux arm64 首次因 GitHub 证明校验接口 `502` 失败，同一提交重试通过；未关闭证明校验。
 - [主包配置](../../packages/ziwei/package.json)声明八个首批目标，仍为 `private: true`。源码 manifest 不引用尚未发布的平台依赖；`optionalDependencies` 仅在暂存区生成，保持 workspace 冻结安装可用。当前仅有[检查工作流](../../.github/workflows/ci.yml)，没有发布工作流。
@@ -133,10 +134,10 @@ musl 构建使用 `build:node:musl`，以 napi-rs 支持的 `CARGO_BUILD_TARGET`
 
 首批八目标均已通过上述 CI 的真实独立分发验收，运行时为 Node 24.21.0；Linux x64 glibc 另通过最低 Node 24.15.0 检查。musl 消费端不运行依赖 glibc 的 TypeScript 编译器，声明在构建机检查。本机另完成 macOS arm64 分发验收和 Linux x64 musl 交叉构建，但没有本机 Docker 运行证据。
 
-当前工作流包含同批产物上传／下载、`Complete Node distribution` 汇总和八平台 `Registry` 消费端任务，均纳入最终 `verify` 门禁。它们不替代单平台验收；失败或跳过均不能让最终门禁通过。新增注册表任务以本次提交的远端结果为准，不能引用旧汇总任务的通过状态。不存在发布工作流或 npm 发布。
+当前工作流包含同批产物上传／下载、`Complete Node distribution` 汇总和八平台 `Registry` 消费端任务，均纳入最终 `verify` 门禁。它们不替代单平台验收；失败或跳过均不能让最终门禁通过。上述通过状态对应当前事实中列明的提交与 CI 运行，不自动外推至后续改动。不存在发布工作流或 npm 发布。
 
 全部产物验收后，才讨论发布身份、npm scope 权限、支持底线和人工发布审批。未来发布应使用已验收的同一批产物，先完成平台包再发布主包；部分失败先对账，不能把不同二进制覆盖到同一版本。[napi-rs 发布与恢复](https://napi.rs/docs/deep-dive/release#recover-from-a-partial-release)
 
 ## 发布前剩余门槛
 
-完成本次代码的八平台隔离注册表验收、确定最低系统要求、核验 npm scope 权限和正式发布流程并取得发布授权。其余七项逐一落实运行环境，WASI 另议。
+确定最低系统要求、核验 npm scope 权限和正式发布流程并取得发布授权。其余七项逐一落实运行环境，WASI 另议。
