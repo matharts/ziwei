@@ -32,6 +32,26 @@ const readJson = (path: string) => JSON.parse(readFileSync(path, "utf8"));
 const writeJson = (path: string, value: unknown) =>
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
 
+/** Shared file contract for local packing and cross-runner artifact verification. */
+export function distributionFiles(packageRoot: string) {
+  // Rslib's bundle:false contract emits one JS module and declaration per source.
+  // Derive the required set from source, never from potentially incomplete output.
+  const distFiles = readdirSync(join(packageRoot, "src"))
+    .filter((file) => file.endsWith(".ts"))
+    .flatMap((file) => [file.replace(/\.ts$/, ".js"), file.replace(/\.ts$/, ".d.ts")]);
+  if (!distFiles.includes("index.js") || !distFiles.includes("index.d.ts")) {
+    throw new Error("缺少构建入口，请先运行 mise run build:node");
+  }
+  return [
+    ...distFiles.map((file) => `dist/${file}`),
+    "native/binding.cjs",
+    "native/binding.d.cts",
+    "README.md",
+    "AGENTS.md",
+    "LICENSE",
+  ];
+}
+
 /** Stage only explicitly selected, already-built targets; never mutate source manifests. */
 export async function stageDistribution(
   packageRoot: string,
@@ -47,24 +67,10 @@ export async function stageDistribution(
     const { platformArchABI: suffix } = parseTriple(target);
     return { target, suffix, binary: `${source.napi.binaryName}.${suffix}.node` };
   });
-  // Rslib's bundle:false contract emits one JS module and declaration per source.
-  // Derive the required set from source, never from potentially incomplete output.
-  const distFiles = readdirSync(join(packageRoot, "src"))
-    .filter((file) => file.endsWith(".ts"))
-    .flatMap((file) => [file.replace(/\.ts$/, ".js"), file.replace(/\.ts$/, ".d.ts")]);
-  if (!distFiles.includes("index.js") || !distFiles.includes("index.d.ts")) {
-    throw new Error("缺少构建入口，请先运行 mise run build:node");
-  }
-  if (readdirSync(join(packageRoot, "dist")).some((file) => !distFiles.includes(file))) {
+  const files = distributionFiles(packageRoot).filter((file) => file !== "LICENSE");
+  if (readdirSync(join(packageRoot, "dist")).some((file) => !files.includes(`dist/${file}`))) {
     throw new Error("dist 含有非预期文件，请重新构建");
   }
-  const files = [
-    ...distFiles.map((file) => `dist/${file}`),
-    "native/binding.cjs",
-    "native/binding.d.cts",
-    "README.md",
-    "AGENTS.md",
-  ];
   // Preflight before creating any output. Do not silently omit missing targets.
   for (const file of [
     ...files,

@@ -68,7 +68,34 @@ test("distributed tarballs load through an optional platform package, including 
     },
   );
   assert.match(result, /distribution-consumer-ok/);
+  // CI uploads only these exact tested tarballs, even if a later task rebuilds dist.
+  if (process.env.ZIWEI_NODE_ARTIFACTS) {
+    execFileSync(
+      "mise",
+      [
+        "run",
+        "capture:node",
+        "--",
+        "--input",
+        staged,
+        "--target",
+        target,
+        "--output",
+        process.env.ZIWEI_NODE_ARTIFACTS,
+      ],
+      { ...options, cwd: root },
+    );
+  }
 });
+
+test("complete artifact cohorts preserve tested bytes and reject mixed or damaged inputs", () => {
+  const result = execFileSync(
+    process.execPath,
+    [fileURLToPath(new URL("./fixtures/artifact-contract.ts", import.meta.url))],
+    { ...options, timeout: 90_000 },
+  );
+  assert.match(result, /artifact-contract-ok/);
+}, 120_000);
 
 test("staging validates all eight target manifests and refuses incomplete or unknown sets", (t) => {
   const directory = mkdtempSync(join(tmpdir(), "ziwei-metadata-test-"));

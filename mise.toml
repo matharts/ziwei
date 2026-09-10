@@ -39,6 +39,14 @@ run = "pnpm exec -- node node_modules/@rstest/core/bin/rstest.js --project ziwei
 description = "将已构建的指定目标打包到独立暂存区；不发布"
 run = "pnpm exec -- node packages/ziwei/tools/pack.ts"
 
+[tasks."capture:node"]
+description = "封存已通过消费端验收的单目标 tarball 与 CI 批次校验清单"
+run = "pnpm exec -- node packages/ziwei/tools/artifacts.ts capture"
+
+[tasks."assemble:node"]
+description = "严格汇总同一 CI attempt 的全部平台产物；不重新构建或发布"
+run = "pnpm exec -- node packages/ziwei/tools/artifacts.ts assemble"
+
 [tasks."check:node:types"]
 description = "验证已构建 Node 包的 TypeScript 消费端合同"
 dir = "packages/ziwei"

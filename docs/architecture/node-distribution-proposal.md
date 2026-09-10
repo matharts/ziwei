@@ -1,6 +1,6 @@
 # Node 原生二进制分发提案
 
-状态：2026-09-10 首批分发结构（D-263）及八目标分发验收已完成，另七个仍为候选。主包与平台包均未发布；运行验收不等于最低系统版本或注册表分发已经验证。
+状态：2026-09-10 首批分发结构（D-263）及八目标独立分发验收已完成，另七个仍为候选。同批产物汇总已接入 CI，完整八目标汇总仍待本次提交的远端验收。主包与平台包均未发布；运行验收不等于最低系统版本或注册表分发已经验证。
 
 ## 当前事实
 
@@ -63,7 +63,7 @@
 - 保留[现有包装合同](node-api-design.md#9-包装与兼容性目标)：不通过安装脚本下载二进制，不自动从源码编译，不新增 Wasm 分发或回退产物。napi 生成加载器本身包含通用 WASI 探测分支，不据此声明支持。
 - `bindings/node`、`crates/ziwei` 与 `packages/ziwei/src` 的职责不变。平台包目录是分发产物，不据此增加 Cargo crate 或含开发源码的 workspace 包。
 - 平台元数据从调用方明确选择的首批目标列表生成，开发任务继续由 mise 编排。[生成平台目录](https://napi.rs/docs/cli/create-npm-dirs)、[程序接口](https://napi.rs/docs/cli/programmatic-api)
-- 本步保留 `private: true`、Rust 禁止发布设置及现有版本；不注册 npm 包名、不创建 tag、不上传产物。
+- 保留 `private: true`、Rust 禁止发布设置及现有版本。CI 可上传本批验收所需的产物，不注册 npm 包名、创建 tag 或发布 npm／GitHub Release。`private` 是 npm 发布保护，不是 GitHub Actions 下载权限控制；Actions 产物的可见性由仓库权限决定。
 
 ## 本地打包与验收
 
@@ -80,11 +80,33 @@ mise run pack:node -- --target aarch64-apple-darwin
 - `ziwei.tgz` 与 `<Rust target>.tgz`：真实打包产物；所有包均保留 `private: true`。
 - `artifacts.json`：所有 tarball 成功打包后写出的相对路径清单；没有该文件的目录不视为打包完成。
 
-一次本机打包只引用本次选中的平台包，不伪装成八平台交付；未来完整交付必须收齐并逐项验收同批产物，再组成完整主包。
+一次本机打包只引用本次选中的平台包，不伪装成八平台交付；完整交付使用下文的同批产物汇总，不通过手工补齐二进制目录冒充已验收批次。
 
 [分发消费端夹具](../../packages/ziwei/test/fixtures/distribution-consumer.ts)用 Node 自带 npm 离线安装本地 tarball，禁用安装脚本，以临时 consumer 的 overrides 将精确依赖指向平台 tarball。它验证主包无二进制、平台包内容、实际 CPU／libc、ESM／require 身份、建盘与查询，以及缺包、损坏二进制的失败；错误版本使用生成加载器的显式 `NAPI_RS_ENFORCE_VERSION_CHECK=1`。该版本检查默认不是强制保证。
 
 正常 CI runner 还从已安装 tarball 验证 ESM／CJS 消费端声明；原有自包含包合同继续使用 pnpm。这里的 npm 是消费端兼容性测试，不替换仓库的 pnpm／mise。离线 overrides 验证不证明公共注册表安装或全矩阵可选依赖的自动筛选。
+
+## 同批产物封存与汇总
+
+[产物工具](../../packages/ziwei/tools/artifacts.ts)把单目标消费端验收与完整分发分开。目标清单仍来自主包的 `napi.targets`；公共文件集合与本地打包共用契约，不另维护平台列表。
+
+1. 单目标消费端通过后，`capture:node` 封存刚才测试的主包／平台包 tarball，不重新打包或编译。封存目录 `node-distribution-<attempt>-<target>/` 含两个 tarball 和最后写入的 `manifest.json`，记录提交、run ID、attempt、包名、版本、目标及文件大小／SHA-256。同一封存目录不可覆盖。
+2. CI 只上传已通过该任务全部检查的封存目录。汇总任务等待八个目标及质量门禁成功，仅下载当前运行、当前 attempt 的输入，并保留各目标独立目录。
+3. `assemble:node` 要求目标齐全且无额外目录，逐个核对批次、版本、摘要、归档文件集合和包元数据。八份公共 JS、声明、加载器及说明必须字节一致。读取归档时仅把已知条目送到 stdout，不把下载文件中的路径直接解压到工作区。
+4. 校验通过后，在新目录内组装一份主包，写入完整的精确同版本 `optionalDependencies`。八个平台 tarball 原样复制；主包重新打包后，再核对公共文件未变。`artifacts.json` 提供兼容现有工具的路径清单；最后写入的 `batch.json` 记录完整交付包、二进制与公共文件摘要及输入清单摘要，是完整汇总的完成标记。
+
+CI 环境中的调用入口：
+
+```sh
+mise run capture:node -- --input <已验收的单目标暂存目录> --target <Rust target>
+mise run assemble:node -- --input target/node-artifacts
+```
+
+两个任务均读取 `GITHUB_SHA`、`GITHUB_RUN_ID`、`GITHUB_RUN_ATTEMPT`，不推断或补造批次。输入缺失、损坏或混用批次时，在创建输出前失败；最终打包失败则不生成 `batch.json`。未完成目录不作为交付物上传。汇总过程不依赖本机 `dist/` 或 `native/`，不构建 Rust／TS，也不修改源码 manifest。
+
+批次严格包含 attempt。只重跑失败 job 不会复用上一次 attempt 的产物；需要完整交付时，使用 **Re-run all jobs** 重建同一批次。输入与完整交付的 Actions 产物均短期保留，具体期限见工作流；过期后重新构建，不拼接其他 run。SHA-256 用于完整性核验与字节追溯，不等于签名、发布 provenance 或最低系统要求证明。
+
+本地回归用八目标夹具验证完整汇总、拒绝混批／缺失／篡改及原样复制，不宣称八种本机运行能力。真实八平台批次须在本次代码对应的 CI 中完成；之后还需验证完整主包在隔离注册表中无需 overrides 的自动平台选择。
 
 ## CI 配置与验证边界
 
@@ -92,10 +114,12 @@ mise run pack:node -- --target aarch64-apple-darwin
 
 musl 构建使用 `build:node:musl`，以 napi-rs 支持的 `CARGO_BUILD_TARGET` 选择目标，复用原生与 TS 构建任务。mise 在该任务内锁定 Zig／cargo-zigbuild；原生任务的 `--cross-compile` 交给 napi-rs，后者为 musl 加入动态 CRT 参数。首轮 CI 已证明 Ubuntu 的 `musl-gcc` 路径缺少 `libgcc_s.so.1`，因此改用官方推荐的 Zig 路径，不链接宿主 glibc 的运行库。Alpine 仅包含运行时，声明在构建机检查，不复制 workspace 开发依赖。[napi-rs 交叉构建](https://napi.rs/docs/cross-build)
 
-首批八目标均已通过上述 CI 的真实分发验收，运行时为 Node 24.21.0；Linux x64 glibc 另通过最低 Node 24.15.0 检查。每个任务独立构建并安装本目标的主包／平台包，未汇总成全矩阵发布产物；musl 消费端不运行依赖 glibc 的 TypeScript 编译器，声明在构建机检查。本机另完成 macOS arm64 分发验收和 Linux x64 musl 交叉构建，但没有本机 Docker 运行证据。不存在发布工作流、产物上传或 npm 发布。
+首批八目标均已通过上述 CI 的真实独立分发验收，运行时为 Node 24.21.0；Linux x64 glibc 另通过最低 Node 24.15.0 检查。musl 消费端不运行依赖 glibc 的 TypeScript 编译器，声明在构建机检查。本机另完成 macOS arm64 分发验收和 Linux x64 musl 交叉构建，但没有本机 Docker 运行证据。
+
+当前工作流新增同批产物上传／下载及 `Complete Node distribution` 汇总任务，并将其纳入最终 `verify` 门禁。它不替代上述单平台验收；失败或跳过的汇总不能让最终门禁通过。历史八目标通过的 CI 不证明新增汇总已运行，完整批次以本次提交的远端结果为准。不存在发布工作流或 npm 发布。
 
 全部产物验收后，才讨论发布身份、npm scope 权限、支持底线和人工发布审批。未来发布应使用已验收的同一批产物，先完成平台包再发布主包；部分失败先对账，不能把不同二进制覆盖到同一版本。[napi-rs 发布与恢复](https://napi.rs/docs/deep-dive/release#recover-from-a-partial-release)
 
 ## 发布前剩余门槛
 
-汇总并验收同批多平台产物、验证完整可选依赖的平台筛选及注册表安装、确定最低系统要求、核验 npm scope 权限并取得发布授权。其余七项逐一落实运行环境，WASI 另议。
+完成本次代码的真实八目标汇总验收、验证完整可选依赖的平台筛选及注册表安装、确定最低系统要求、核验 npm scope 权限并取得发布授权。其余七项逐一落实运行环境，WASI 另议。

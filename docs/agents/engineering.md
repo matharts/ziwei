@@ -80,6 +80,8 @@ Oxfmt 读取根 [.editorconfig](../../.editorconfig)：TypeScript 和 JSON 使�
 
 `mise run pack:node -- --target <Rust target>` 对已构建产物生成独立私有暂存包，不隐式构建或发布；布局、平台批次和完整性边界见 [Node 分发设计](../architecture/node-distribution-proposal.md)。`packages/ziwei/tools/pack.ts` 负责实际组装，不是第二套任务调度器。
 
+CI 的 `capture:node` 在目标消费端通过后封存实际测试的 tarball；`assemble:node` 仅汇总当前提交、run ID 和 attempt 的完整目标集，不重新编译。真实批次失败后需要重跑全部任务，不能把只重跑失败 job 的产物混入前一 attempt。完整交付以 `batch.json` 为完成标记，校验边界、产物保留及注册表验收区别见[同批产物封存与汇总](../architecture/node-distribution-proposal.md#同批产物封存与汇总)。
+
 musl 使用 `CARGO_BUILD_TARGET` 指定目标，运行 `mise run build:node:musl`。此任务锁定 Zig／cargo-zigbuild 并复用原生与 TS 构建；`build:node:native --cross-compile` 将选项传给 napi，不传入 `--` 后的 Cargo 参数。普通 `build:node` 不需要交叉链接工具链。
 
 `check:node` 同时覆盖原有自包含包和新的无二进制主包／平台包。后者用 Node 随附 npm 离线安装本地 tarball，override 仅存在于临时消费端；仓库依赖管理继续使用 pnpm。正常 runner 从已安装包检查声明，musl 在对应 CPU 的 Alpine 运行同一消费端夹具、在构建机检查声明。注册表安装和八目标可选依赖的自动筛选须另行验收。

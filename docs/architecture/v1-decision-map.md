@@ -300,6 +300,7 @@
 | D-261 | npm 包由 `@ziweijs/core` 改为 `@matharts/ziwei`，同步包自引用、Rstest 外置模块、类型与独立消费端测试、基准入口和使用文档；不保留旧包名别名。保留 `packages/core` 目录、`bindings/node` 与 Cargo 包 `ziwei-node`，原生二进制基名仍为 `ziwei-native`。只改变 npm 身份与导入路径，不改变方法、类型、领域行为、测量负载、工具链或依赖版本；继续禁止发布。 | 2026-09-10 用户明确要求修改 TS 包名；验证结果以实际检查为准；未提交、推送或发布 |
 | D-262 | TypeScript 包目录由 `packages/core` 改为 `packages/ziwei`，Rstest 包测试项目名同步改为 `ziwei`；更新 mise 工作目录、TypeScript 检查范围、pnpm 锁文件的 workspace 路径、工程测试、基准指纹与文档链接。保留 D-261 的 npm 包名 `@matharts/ziwei`、D-260 的 `bindings/node` 与 Cargo 包 `ziwei-node`；不改变公开 API、依赖版本、运行时要求或测量负载，不新增包与兼容目录。 | 2026-09-10 用户要求将 core 改为 ziwei；本次目录迁移，验证结果以实际检查为准；未提交、推送或发布 |
 | D-263 | Node 采用一个用户入口 `@matharts/ziwei` 与按平台分发的原生产物包，不增加转发包或 Rust crate。参考 Rolldown 的十五个原生目标，首批为 macOS／Windows x64、arm64 与 Linux x64、arm64 的 glibc／musl，共八项；其余七项保留候选，WASI 另议。源码 manifest 保持私有且不依赖未发布包；独立暂存区按显式选择且产物齐全的目标生成精确同版本 optionalDependencies，主包不含 `.node`。保留本机开发加载，新增真实拆包消费端验收与对应 CI；所有包继续 private，不授权发布或把配置当作已验证支持。 | 2026-09-10 用户确认 Rolldown 对照方案并要求执行；详见 [Node 分发设计](node-distribution-proposal.md) |
+| D-264 | Node CI 在单目标验收后封存已测试的 tarball，以同一提交、run ID 与 attempt 汇总完整目标集，校验版本、SHA-256 和公共文件一致性。平台 tarball 保持原样，主包只重组完整精确版本依赖。允许本批 GitHub Actions 产物上传／下载；保留 private，不扩平台、不改公开 API、不发布 npm。完整汇总不替代后续注册表自动平台选择验收。 | 2026-09-10 用户确认同批八平台产物汇总并要求执行；详见 [同批产物封存与汇总](node-distribution-proposal.md#同批产物封存与汇总) |
 
 ## 暂缓决策
 

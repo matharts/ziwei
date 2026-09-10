@@ -55,6 +55,8 @@ jobs:
       - name: Node development runtime contracts
         run: mise run check:node:tools
       - name: Node adapter integration and type contracts
+        env:
+          ZIWEI_NODE_ARTIFACTS: target/node-artifacts
         run: mise run check:node
       - name: TypeScript tooling and test contracts
         run: mise run check:typescript
@@ -64,6 +66,14 @@ jobs:
       - name: Node benchmark contract tests (smoke only, no performance gate)
         if: matrix.target == 'x86_64-unknown-linux-gnu'
         run: mise run check:node:bench
+      - name: Upload tested distribution inputs
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: node-distribution-${{ github.run_attempt }}-${{ matrix.target }}
+          path: target/node-artifacts/node-distribution-${{ github.run_attempt }}-${{ matrix.target }}/
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
 
   musl-distribution:
     name: Distribution (${{ matrix.target }})
@@ -109,6 +119,54 @@ jobs:
                 node /work/packages/ziwei/test/fixtures/distribution-consumer.ts "$artifacts"
               done
             '
+      - name: Seal the tested Alpine tarballs
+        run: |
+          for artifacts in target/node-distribution/ziwei-*; do
+            mise run capture:node -- --input "$artifacts" --target "$CARGO_BUILD_TARGET"
+          done
+      - name: Upload tested distribution inputs
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: node-distribution-${{ github.run_attempt }}-${{ matrix.target }}
+          path: target/node-artifacts/node-distribution-${{ github.run_attempt }}-${{ matrix.target }}/
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+
+  node-distribution:
+    name: Complete Node distribution
+    needs: [native-tests, musl-distribution, quality]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
+        with:
+          install_args: node pnpm
+          cache: false
+      - name: Install distribution tooling
+        run: mise exec -- pnpm install --frozen-lockfile
+      - name: Download this attempt only, keeping targets separate
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: node-distribution-${{ github.run_attempt }}-*
+          path: target/node-artifacts
+          merge-multiple: false
+      - name: Validate and assemble without rebuilding
+        run: mise run assemble:node -- --input target/node-artifacts
+      - name: Upload the complete private distribution
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: node-distribution-${{ github.run_attempt }}
+          path: |
+            target/node-distribution-complete/ziwei-*/*.tgz
+            target/node-distribution-complete/ziwei-*/artifacts.json
+            target/node-distribution-complete/ziwei-*/batch.json
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
 
   quality:
     runs-on: ubuntu-latest
@@ -153,7 +211,7 @@ jobs:
 
   # Keep a single stable check that cannot pass when a required job fails or skips.
   verify:
-    needs: [native-tests, musl-distribution, quality]
+    needs: [native-tests, musl-distribution, quality, node-distribution]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 1
@@ -163,7 +221,9 @@ jobs:
           NATIVE_RESULT: ${{ needs.native-tests.result }}
           MUSL_RESULT: ${{ needs.musl-distribution.result }}
           QUALITY_RESULT: ${{ needs.quality.result }}
+          DISTRIBUTION_RESULT: ${{ needs.node-distribution.result }}
         run: |
           test "$NATIVE_RESULT" = success
           test "$MUSL_RESULT" = success
           test "$QUALITY_RESULT" = success
+          test "$DISTRIBUTION_RESULT" = success
