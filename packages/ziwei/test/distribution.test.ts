@@ -92,7 +92,8 @@ test("complete artifact cohorts preserve tested bytes and reject mixed or damage
   const result = execFileSync(
     process.execPath,
     [fileURLToPath(new URL("./fixtures/artifact-contract.ts", import.meta.url))],
-    { ...options, timeout: 90_000 },
+    // GitHub enables colored Node assertion diffs; keep that rendering in the regression.
+    { ...options, timeout: 90_000, env: { ...process.env, FORCE_COLOR: "1" } },
   );
   assert.match(result, /artifact-contract-ok/);
 }, 120_000);

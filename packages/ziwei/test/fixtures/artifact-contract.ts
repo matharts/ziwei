@@ -92,8 +92,8 @@ try {
   const firstTarget = staged.packages[0]!.target;
   const manifestPath = join(first, "manifest.json");
   const originalManifest = readJson(manifestPath);
-  const fail = (pattern: RegExp) => {
-    assert.throws(() => assembleArtifacts(fixture, input, output, batch), pattern);
+  const fail = (expected: RegExp | { code: string; actual: unknown; expected: unknown }) => {
+    assert.throws(() => assembleArtifacts(fixture, input, output, batch), expected);
     assert.equal(existsSync(output), false, "失败的预检不能产生部分交付物");
   };
   // Missing and extra targets, including duplicate content under another name.
@@ -135,7 +135,7 @@ try {
       [`${firstTarget}.tgz`]: digest(readFileSync(nativeArchive)),
     },
   });
-  fail(/1.0.0-wrong/);
+  fail({ code: "ERR_ASSERTION", actual: "1.0.0-wrong", expected: source.version });
   writeJson(nativeManifestPath, originalNativeManifest);
   writeFileSync(nativeArchive, originalNative);
   writeJson(manifestPath, originalManifest);
