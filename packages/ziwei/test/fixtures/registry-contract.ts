@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { parseTriple } from "@napi-rs/cli";
 
 import { packDistribution } from "../../tools/pack.ts";
+import { verifyWindowsConsumers } from "../../tools/windows-container.ts";
 import { verifyRegistry } from "./registry-consumer.ts";
 
 const packageRoot = fileURLToPath(new URL("../..", import.meta.url));
@@ -15,6 +16,11 @@ const temporary = mkdtempSync(join(tmpdir(), "ziwei-registry-contract-"));
 const fixture = join(temporary, "packages/ziwei");
 const source = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8"));
 const brokenNative = process.argv.includes("--broken-native");
+const npmOnly = process.argv.includes("--npm-only");
+const windowsConsumers = process.argv.includes("--windows-consumers");
+const pnpmStartupFailure = process.argv.includes("--pnpm-startup-failure");
+const pnpmBootstrapFailure = process.argv.includes("--pnpm-bootstrap-failure");
+if (npmOnly || pnpmStartupFailure) process.env.ZIWEI_PNPM_BIN = join(temporary, "missing-pnpm");
 const digest = (path: string) => {
   const bytes = readFileSync(path);
   return { bytes: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex") };
@@ -74,12 +80,63 @@ try {
     delete process.env[variable];
   const observations: { manager: string; node: string; arch: string; sharedObjects: string[] }[] =
     [];
-  const consume = () => verifyRegistry(staged.directory, (runtime) => observations.push(runtime));
-  if (brokenNative) await assert.rejects(consume(), /Cannot find native binding/);
-  else await consume();
+  if (windowsConsumers) {
+    const progressPath = join(temporary, "checks.json");
+    let bootstrapCalls = 0;
+    const consume = () =>
+      verifyWindowsConsumers(
+        staged.directory,
+        () => {
+          bootstrapCalls++;
+          const [npm, pnpm] = JSON.parse(readFileSync(progressPath, "utf8"));
+          assert.equal(npm.manager, "npm");
+          assert.equal(npm.passed, !brokenNative);
+          assert.equal(npm.stage, brokenNative ? "registry-consumers" : "complete");
+          assert.equal(pnpm.stage, "bootstrap");
+          if (pnpmBootstrapFailure)
+            throw Object.assign(new Error("pnpm bootstrap unavailable"), { code: "BOOTSTRAP" });
+        },
+        (checks) => writeFileSync(progressPath, JSON.stringify(checks)),
+      );
+    if (brokenNative || pnpmStartupFailure || pnpmBootstrapFailure) {
+      await assert.rejects(consume(), (error: unknown) => {
+        assert.ok(error instanceof AggregateError);
+        assert.equal(error.errors.length, brokenNative ? 2 : 1);
+        return true;
+      });
+    } else await consume();
+    assert.equal(bootstrapCalls, 1);
+    const [npm, pnpm] = JSON.parse(readFileSync(progressPath, "utf8"));
+    assert.equal(npm.manager, "npm");
+    assert.equal(pnpm.manager, "pnpm");
+    assert.equal(npm.passed, !brokenNative);
+    assert.equal(pnpm.passed, !brokenNative && !pnpmStartupFailure && !pnpmBootstrapFailure);
+    assert.equal(
+      pnpm.stage,
+      pnpmBootstrapFailure ? "bootstrap" : pnpm.passed ? "complete" : "registry-consumers",
+    );
+    if (pnpmStartupFailure) assert.equal(pnpm.error.code, "ENOENT");
+    if (pnpmBootstrapFailure) assert.equal(pnpm.error.code, "BOOTSTRAP");
+    if (brokenNative) {
+      assert.match(npm.error.message, /Cannot find native binding/);
+      assert.match(pnpm.error.message, /Cannot find native binding/);
+    }
+    observations.push(...npm.runtimes, ...pnpm.runtimes);
+    console.log("windows-independent-consumers-ok");
+  } else {
+    const consume = () =>
+      verifyRegistry(staged.directory, {
+        managers: npmOnly ? ["npm"] : ["npm", "pnpm"],
+        onRuntime: (runtime) => observations.push(runtime),
+      });
+    if (brokenNative) await assert.rejects(consume(), /Cannot find native binding/);
+    else await consume();
+  }
   assert.deepEqual(
     observations.map(({ manager }) => manager),
-    brokenNative ? ["npm"] : ["npm", "pnpm"],
+    npmOnly || pnpmStartupFailure || pnpmBootstrapFailure || (brokenNative && !windowsConsumers)
+      ? ["npm"]
+      : ["npm", "pnpm"],
   );
   for (const runtime of observations) {
     assert.equal(runtime.node, process.version);

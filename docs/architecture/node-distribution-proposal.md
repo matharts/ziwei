@@ -163,9 +163,9 @@ GNU 构建要求 Linux x64／arm64；指定目标沿用 `CARGO_BUILD_TARGET`。�
 现有 Windows 双架构 runner 继续验证实际包消费；新增的 `Windows x64 clean container experiment` 专门检查不继承宿主开发软件的消费环境。本节描述已接入的实验代码，不表示 Windows 干净环境已通过，也不增加最低 Windows 版本承诺。
 
 - **输入与环境**：[实验工具](../../packages/ziwei/tools/windows-container.ts)在 Windows x64 Docker 宿主运行，固定 Microsoft Server Core LTSC 2025 的 manifest digest，使用 process isolation。仅复制两个 manifest、必要的 TypeScript 测试文件及完整批次到临时只读挂载，结果目录单独可写；不挂载宿主 Node、运行库、Rust、MSVC 或 workspace 依赖。
-- **Node 与运行库**：下载官方 Node 24.15.0 x64 ZIP，同时核对固定 SHA-256 与官方 `SHASUMS256.txt`，容器解压后拒绝 ZIP 内出现 DLL。容器先记录系统运行库路径、文件版本与摘要，再用 Node 自带 npm 安装和根 `devEngines` 一致的官方 pnpm 可执行包，禁用安装脚本。不安装 VC Redistributable，不调整 CRT 链接方式；存在系统自带运行库时如实记录，不删除 DLL 制造负例。
-- **消费与证据**：传入当前 commit／run／attempt，由原有注册表夹具核对完整 tarball 集合与摘要，然后执行 npm／pnpm 的正常、禁用 optional、缺失、损坏八个场景。正常加载探针额外记录 Node 版本、CPU 和实际加载模块路径；即使原生导入失败也尽量保存该观察，不改变原有断言或失败退出码。仅提取报告必要字段，不上传完整 Node diagnostic report 中的环境变量。
-- **失败传播**：Docker 不可用、镜像不兼容、材料校验失败或真实消费失败都使任务失败；失败也上传阶段报告和容器 stdout／stderr。任务纳入最终 `verify`，不使用 `continue-on-error`。独立结果目录不可覆盖；容器退出或超时后尝试清理本轮容器并记录状态，清理临时输入，保留结果。工作流被取消时不保证报告上传。
+- **Node 与运行库**：下载官方 Node 24.15.0 x64 ZIP，同时核对固定 SHA-256 与官方 `SHASUMS256.txt`，容器解压后拒绝 ZIP 内出现 DLL。容器先记录系统运行库路径、文件版本与摘要，完成 npm 分支后，再用 Node 自带 npm 安装和根 `devEngines` 一致的官方 pnpm 可执行包，禁用安装脚本。不安装 VC Redistributable，不调整 CRT 链接方式；存在系统自带运行库时如实记录，不删除 DLL 制造负例。
+- **消费与证据**：传入当前 commit／run／attempt，由原有注册表夹具核对完整 tarball 集合与摘要。npm／pnpm 分别使用独立注册表实例和冷缓存，各自执行正常、禁用 optional、缺失、损坏四个场景。pnpm 版本检查只属于 pnpm 分支；一个分支失败后仍执行另一个分支。`consumer.json.checks` 分别保留包管理器、阶段、通过状态、加载观察和错误消息／退出信息；`consumers` 保留平铺的加载观察。正常加载探针额外记录 Node 版本、CPU 和实际加载模块路径；即使原生导入失败也尽量保存该观察。仅提取报告必要字段，不上传完整 Node diagnostic report 中的环境变量。
+- **失败传播**：Docker 不可用、镜像不兼容、材料校验失败或真实消费失败都使任务失败。包管理器分支内仍遇错即停，另一分支继续；任一分支失败，最终汇总仍抛错退出。失败也上传阶段报告和容器 stdout／stderr。任务纳入最终 `verify`，不使用 `continue-on-error`。独立结果目录不可覆盖；容器退出或超时后尝试清理本轮容器并记录状态，清理临时输入，保留结果。工作流被取消时不保证报告上传。
 
 在具备 Windows x64 Docker daemon 的宿主运行：
 
@@ -173,7 +173,9 @@ GNU 构建要求 Linux x64／arm64；指定目标沿用 `CARGO_BUILD_TARGET`。�
 mise run check:node:windows -- <包含 batch.json 的完整交付目录> <新的结果目录>
 ```
 
-该实验仍待推送后验证 Docker daemon、镜像拉取与真实加载。Server Core 结果不能替代 Windows 11、arm64 或最低系统验收；双架构完整路径与官方依据见 [Windows 干净环境研究](../engineering/windows-clean-environment-research.md)。没有新增发布流程。
+首次远端运行 [34497803586](https://github.com/matharts/ziwei/actions/runs/34497803586) 对应提交 `9455a3c`、attempt 1：Docker 与固定镜像启动成功，Node 24.15.0 可运行，但 `pnpm.exe --version` 以 `3221225781` 退出。旧夹具的公共 pnpm 前置检查阻断了 npm 分支，`consumers` 为空，因此尚无该容器内的 Ziwei 加载结论。当前分支隔离修复仍待推送后的新 CI 验收；本地回归不等于 Windows 加载通过。
+
+Server Core 结果不能替代 Windows 11、arm64 或最低系统验收；双架构完整路径与官方依据见 [Windows 干净环境研究](../engineering/windows-clean-environment-research.md)。没有新增发布流程。
 
 ## 发布前剩余门槛
 

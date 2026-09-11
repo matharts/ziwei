@@ -140,4 +140,8 @@ GitHub larger runner 的自定义镜像可从干净 OS base image 生成，但�
 
 用户随后授权先实现 x64 容器 CI 验收，不要求本机安装虚拟机。[实验工具](../../packages/ziwei/tools/windows-container.ts)和[工作流](../../.github/workflows/ci.yml)已接入固定 digest 的 Server Core、官方最低 Node ZIP、同批 tarball 消费与失败证据保存；未改 CRT 链接方式，未自动安装 VC Redistributable，未扩展 arm64 环境或发布。
 
-该实验支持 CI 自动执行，但当前只有本地代码与检查结果，尚未推送和运行 Windows 容器。系统本身包含哪些 DLL、是否真实加载成功，必须以对应远端运行的 `experiment.json`、`consumer.json` 和原始日志为准；详细操作与边界见 [Windows x64 容器实验](../architecture/node-distribution-proposal.md#windows-x64-干净容器实验待远端验收)。
+首次运行 [34497803586](https://github.com/matharts/ziwei/actions/runs/34497803586)（提交 `9455a3c`、attempt 1）已启动固定 Server Core 镜像和 Node 24.15.0，但 `pnpm.exe --version` 以 `3221225781`（`0xC0000135`）退出。`consumer.json` 的 `consumers` 为空：当时公共 pnpm 前置检查早于 npm 验收，失败发生在任何 Ziwei 导入之前。不能把这次失败归为 Ziwei 原生模块加载失败。
+
+该批 pnpm 12.3.4 二进制的 SHA-256 为 `19acb40343170a98e3c610c1c2c379d0a6f0721ea6c4dd6d1737429fad63a12e`，与官方包提取结果相同；其 PE 导入包含 `VCRUNTIME140.dll`。容器记录的 System32 清单只有 `_clr0400` 变体及 UCRT，没有同名的 `VCRUNTIME140.dll`。这与缺失运行库的启动错误一致，但尚未通过补充运行库的对照实验验证，不调整链接方案。
+
+后续修复将 npm／pnpm 验收隔离：先完成 npm 分支，再准备并检查 pnpm；每个分支单独记录阶段、结果和错误，任一失败仍使 CI 失败。修复已补本地真实消费端回归，尚待新提交的 Windows CI 实测。详细操作与证据边界见 [Windows x64 容器实验](../architecture/node-distribution-proposal.md#windows-x64-干净容器实验待远端验收)。

@@ -16,7 +16,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { verifyRegistry } from "../test/fixtures/registry-consumer.ts";
+import { verifyRegistry, type RuntimeObservation } from "../test/fixtures/registry-consumer.ts";
 
 const root = fileURLToPath(new URL("../../..", import.meta.url));
 const readJson = (path: string) => JSON.parse(readFileSync(path, "utf8"));
@@ -120,6 +120,62 @@ $system = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion'
   );
 }
 
+type ManagerCheck = {
+  manager: RuntimeObservation["manager"];
+  stage: "bootstrap" | "registry-consumers" | "complete";
+  passed: boolean;
+  runtimes: RuntimeObservation[];
+  error?: { message: string; code?: unknown; status?: unknown; signal?: unknown };
+};
+
+/** Finish both independent checks before propagating any failures to the CI gate. */
+export async function verifyWindowsConsumers(
+  directory: string,
+  preparePnpm: () => void,
+  onProgress: (checks: readonly ManagerCheck[]) => void,
+) {
+  const checks: ManagerCheck[] = [];
+  const failures: unknown[] = [];
+  for (const manager of ["npm", "pnpm"] as const) {
+    const check: ManagerCheck = {
+      manager,
+      stage: manager === "pnpm" ? "bootstrap" : "registry-consumers",
+      passed: false,
+      runtimes: [],
+    };
+    checks.push(check);
+    onProgress(checks);
+    try {
+      if (manager === "pnpm") preparePnpm();
+      check.stage = "registry-consumers";
+      onProgress(checks);
+      await verifyRegistry(directory, {
+        managers: [manager],
+        onRuntime: (runtime) => {
+          check.runtimes.push(runtime);
+          onProgress(checks);
+        },
+      });
+      check.passed = true;
+      check.stage = "complete";
+    } catch (error) {
+      check.error = {
+        message: error instanceof Error ? error.message : String(error),
+        ...(error instanceof Error && {
+          code: "code" in error ? error.code : undefined,
+          status: "status" in error ? error.status : undefined,
+          signal: "signal" in error ? error.signal : undefined,
+        }),
+      };
+      failures.push(error);
+    } finally {
+      onProgress(checks);
+    }
+  }
+  if (failures.length)
+    throw new AggregateError(failures, "Windows 包管理器验收失败，详见各分支报告");
+}
+
 async function consumeInsideContainer() {
   const report: Record<string, unknown> = {
     passed: false,
@@ -133,41 +189,39 @@ async function consumeInsideContainer() {
     assert.equal(process.version, `v${windowsBaseline.nodeVersion}`);
     report.runtimeBefore = runtimeInventory();
     save(path, report);
-    const pnpmVersion = readJson(join(root, "package.json")).devEngines.packageManager.version;
-    report.stage = "pnpm-bootstrap";
-    save(path, report);
-    const npmCli = join(dirname(process.execPath), "node_modules/npm/bin/npm-cli.js");
-    execFileSync(
-      process.execPath,
-      [
-        npmCli,
-        "install",
-        "--prefix",
-        "C:\\pnpm-tool",
-        "--ignore-scripts",
-        "--no-audit",
-        "--no-fund",
-        "--registry=https://registry.npmjs.org/",
-        `@pnpm/exe.win32-x64@${pnpmVersion}`,
-      ],
-      {
-        stdio: "inherit",
-        timeout: 180_000,
-      },
-    );
-    const pnpm = "C:\\pnpm-tool\\node_modules\\@pnpm\\exe.win32-x64\\pnpm.exe";
-    process.env.ZIWEI_PNPM_BIN = pnpm;
-    report.pnpm = {
-      version: pnpmVersion,
-      sha256: createHash("sha256").update(readFileSync(pnpm)).digest("hex"),
+    const preparePnpm = () => {
+      const pnpmVersion = readJson(join(root, "package.json")).devEngines.packageManager.version;
+      const npmCli = join(dirname(process.execPath), "node_modules/npm/bin/npm-cli.js");
+      execFileSync(
+        process.execPath,
+        [
+          npmCli,
+          "install",
+          "--prefix",
+          "C:\\pnpm-tool",
+          "--ignore-scripts",
+          "--no-audit",
+          "--no-fund",
+          "--registry=https://registry.npmjs.org/",
+          `@pnpm/exe.win32-x64@${pnpmVersion}`,
+        ],
+        {
+          stdio: "inherit",
+          timeout: 180_000,
+        },
+      );
+      const pnpm = "C:\\pnpm-tool\\node_modules\\@pnpm\\exe.win32-x64\\pnpm.exe";
+      process.env.ZIWEI_PNPM_BIN = pnpm;
+      report.pnpm = {
+        version: pnpmVersion,
+        sha256: createHash("sha256").update(readFileSync(pnpm)).digest("hex"),
+      };
+      report.runtimeAfterBootstrap = runtimeInventory();
     };
-    report.runtimeAfterBootstrap = runtimeInventory();
     report.stage = "registry-consumers";
-    const consumers: unknown[] = [];
-    report.consumers = consumers;
-    save(path, report);
-    await verifyRegistry("C:\\input\\cohort", (runtime) => {
-      consumers.push(runtime);
+    await verifyWindowsConsumers("C:\\input\\cohort", preparePnpm, (checks) => {
+      report.checks = checks;
+      report.consumers = checks.flatMap(({ runtimes }) => runtimes);
       save(path, report);
     });
     report.passed = true;
