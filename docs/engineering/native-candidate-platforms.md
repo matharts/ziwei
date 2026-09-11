@@ -1,6 +1,6 @@
 # 七个原生候选平台：宿主、构建与验收矩阵
 
-状态：2026-09-12，提交 `f38b0ea` 的远端候选 CI 已通过七目标核心检查、三项 GNU addon 交叉构建与静态审计。本地另实现 ppc64le／s390x 的独立 QEMU 消费任务，尚未提交或运行远端仿真；不能据此升级为已支持。七目标仍属于用户要求的完整交付范围。现有八目标结论沿用 [Node 分发设计](../architecture/node-distribution-proposal.md)，不在本文重做。
+状态：2026-09-12，提交 `d8a30aa` 已首次运行 ppc64le／s390x 的独立 QEMU 消费任务。七目标核心检查、三项 GNU addon 交叉构建／静态审计及两个架构、两版 Node 的 npm 消费通过；pnpm 启动失败，完整候选验收仍未通过。七目标仍属于用户要求的完整交付范围。现有八目标结论沿用 [Node 分发设计](../architecture/node-distribution-proposal.md)，不在本文重做。
 
 候选实现包含 [静态审计](../../packages/ziwei/tools/compatibility.ts)、[候选封存与消费](../../packages/ziwei/tools/candidate.ts)、[仿真控制器](../../packages/ziwei/tools/candidate-runtime.ts) 和独立的[候选 CI](../../.github/workflows/native-candidates.yml)。不改正式目标 manifest、依赖或公开 API，不安装本机 SDK、虚拟机或设备工具，不申请云资源，不发布。下文的实施路径与工期是项目建议，不是上游支持承诺。
 
@@ -168,7 +168,7 @@ Node 候选的最低与开发 Node 测试均消费同一已封存 addon，不重
 
 ## 验证记录
 
-### 已实现、待远端运行：ppc64le／s390x 仿真消费
+### ppc64le／s390x 仿真消费
 
 这是独立候选实验，不是新增正式支持。QEMU 用户态仿真可以运行目标架构程序，但共享构建机内核，不验证 POWER／IBM Z 真机、最低 CPU 或最低内核；固定 Debian 镜像也不等于 glibc 2.28 最低用户态验收。[Docker 仿真说明](https://docs.docker.com/build/building/multi-platform/#qemu)
 
@@ -179,7 +179,7 @@ Node 候选的最低与开发 Node 测试均消费同一已封存 addon，不重
 5. 消费端检查实际 OS、CPU、端序、Node 与 glibc，随后通过安装后的公开包验证双入口、查询、错误身份、缓存、冻结、Worker 和 ESM／require 身份。npm／pnpm 各执行正常、禁用 optional、缺失包、损坏包四种场景，使用独立临时目录、锁文件与冷缓存。一个客户端或 Node 版本失败，不阻止另一个留下独立结果。
 6. 每版 `consumer.json`、stdout／stderr 与总 `experiment.json` 单独保存，始终标记 `verification: "emulated"`，仅完整通过后置 `passed: true`。失败返回非零并保存已产生的结果；汇总 gate 同时要求编译、静态审计与两目标仿真成功，不使用 `continue-on-error`。
 
-当前仅有本机工具、打包和共享消费链的验证；未运行 Docker／QEMU，也未触发这份新 workflow。合成 ELF 测试不能作为目标运行证据。后续先验收同一新提交的仿真结果，再补齐原生环境与最低系统合同，才讨论正式平台提升。
+初轮实现只有本机工具、打包和共享消费链验证；首次远端执行结果见下方记录。合成 ELF 测试不能作为目标运行证据。须先验收同一提交的完整仿真结果，再补齐原生环境与最低系统合同，才讨论正式平台提升。
 
 本步验证记录（2026-09-12，macOS arm64，基于 `f38b0ea` 的未提交工作树）：
 
@@ -187,6 +187,15 @@ Node 候选的最低与开发 Node 测试均消费同一已封存 addon，不重
 - 最低 Node 24.15.0：候选工具 14 项与分发消费 14 项通过，包含 npm／pnpm、Worker 与失败分支。这些运行发生在本机 arm64，不是 ppc64le／s390x 的运行证据。
 - 从[运行 `34632827266`](https://github.com/matharts/ziwei/actions/runs/34632827266)已下载的两份真实 addon 在本机完成候选打包；原始文件与 tarball 内 addon 的摘要一致。使用当前工作树的工具进行封存预检，没有执行目标二进制。
 - TypeScript、Oxlint、Oxfmt、差异检查通过；workflow YAML、10 段 shell 与 64 种汇总状态组合通过，只有所有上游 job 成功时汇总才通过。实际 QEMU 镜像启动和目标客户端运行留给新提交的远端验收。
+
+### 2026-09-12：首次仿真暴露的工程问题
+
+[候选 CI `34641691181`](https://github.com/matharts/ziwei/actions/runs/34641691181) 与[主 CI `34641691172`](https://github.com/matharts/ziwei/actions/runs/34641691172) 均对应 `d8a30aa8ca027a7e9409bfcf5068f797a8daa38f`，结论均为失败，未重标为通过：
+
+- 主 CI 的开发工具测试在产品构建前运行；新增的两项封存断言错误地依赖已有 `dist/native`。修复把这两项测试移至构建后的分发组，不跳过测试、不修改 CI 顺序。无生成目录时，108 项工具测试通过；构建后 49 项 Node 测试通过，另含新增加的调用目录隔离回归。
+- 候选报告实际观察到 ppc64/LE 与 s390x/BE、Node 24.15.0／24.21.0、glibc 2.36。四组 npm 客户端全部通过正常及三种失败场景，包含公开包、双建盘入口、查询、错误、缓存、冻结和 Worker；这只是仿真用户态证据。
+- 四组 pnpm 均在 `--version` 阶段失败：s390x 的 `ERR_PNPM_BAD_CONFIG_DEP` 表明版本探针读取控制工程配置并尝试联网解析 pnpm；ppc64le 收到 `SIGSEGV`。两者都未进入 pnpm 安装或 Ziwei 加载验证，不归因于引擎。
+- 版本探针改在本次消费夹具的独立临时目录运行，仍严格核对 pnpm 12.4.1。以真实 pnpm 加载调用目录的无效 workspace 配置，已得到修复前失败、修复后通过的本地回归；不修改开发工程 `devEngines`，不启用外网或降低版本。该修复能否消除 ppc64le 崩溃，须等待同一新提交的远端结果。
 
 ### 2026-09-11：初轮实现
 

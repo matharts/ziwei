@@ -202,7 +202,11 @@ export async function consumeRegistry(
     url = `http://127.0.0.1:${address.port}`;
     for (const manager of managers) {
       if (manager === "pnpm")
-        assert.equal((await execute(pnpm, ["--version"], options)).stdout.trim(), expectedPnpm);
+        // Even --version reads project configuration; keep the probe out of the controller workspace.
+        assert.equal(
+          (await execute(pnpm, ["--version"], { ...options, cwd: temporary })).stdout.trim(),
+          expectedPnpm,
+        );
       for (const mode of ["normal", "omit-optional", "missing", "corrupted"] as const) {
         const consumer = join(temporary, `${manager}-${mode}`);
         mkdirSync(consumer);

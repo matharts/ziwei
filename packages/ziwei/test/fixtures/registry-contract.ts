@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -13,6 +14,7 @@ import { verifyRegistry } from "./registry-consumer.ts";
 
 const packageRoot = fileURLToPath(new URL("../..", import.meta.url));
 const temporary = mkdtempSync(join(tmpdir(), "ziwei-registry-contract-"));
+const originalCwd = process.cwd();
 const fixture = join(temporary, "packages/ziwei");
 const source = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8"));
 const brokenNative = process.argv.includes("--broken-native");
@@ -84,6 +86,20 @@ try {
   // Synthetic transport fixtures are not a GitHub artifact cohort.
   for (const variable of ["GITHUB_SHA", "GITHUB_RUN_ID", "GITHUB_RUN_ATTEMPT"])
     delete process.env[variable];
+  if (process.argv.includes("--hostile-cwd")) {
+    const caller = join(temporary, "caller");
+    mkdirSync(caller);
+    writeFileSync(join(caller, "pnpm-workspace.yaml"), "packages: [\n");
+    // Prove the real client would read the caller's invalid config, even for --version.
+    assert.throws(() =>
+      execFileSync(process.env.ZIWEI_PNPM_BIN ?? "pnpm", ["--version"], {
+        cwd: caller,
+        stdio: "pipe",
+        timeout: 10_000,
+      }),
+    );
+    process.chdir(caller);
+  }
   const observations: { manager: string; node: string; arch: string; sharedObjects: string[] }[] =
     [];
   if (windowsManager) {
@@ -177,5 +193,6 @@ try {
   }
   console.log(brokenNative ? "registry-runtime-failure-ok" : "registry-runtime-success-ok");
 } finally {
+  process.chdir(originalCwd);
   rmSync(temporary, { recursive: true, force: true });
 }

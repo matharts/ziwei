@@ -142,7 +142,7 @@ Wasm 使用独立的 `bindings/wasm` 与 `packages/ziwei-wasm`，实现与浏览
 
 新增候选原生平台通过[独立 CI](../../.github/workflows/native-candidates.yml)检查七目标核心可编译性，并构建、静态审计三个 GNU addon。`check:node:gnu-candidate` 接受 Rust target 和实际 `.node` 文件，需要 GNU readelf；它不读取或生成八目标批次，不代替目标 CPU／OS 的运行测试。当前支持声明和环境缺口见[候选矩阵](../engineering/native-candidate-platforms.md)。
 
-ppc64le／s390x 使用 `pack:node:candidate -- --target <target> --input <静态审计目录> --output <新目录>` 封存原始 addon，再由 Linux x64 Docker／QEMU 上的 `check:node:candidate -- --target <target> --input <候选目录> --output <新目录>` 运行双 Node／双客户端消费。两者都要求 `GITHUB_SHA`、`GITHUB_RUN_ID`、`GITHUB_RUN_ATTEMPT`；不接受混批或覆盖旧结果。候选使用独立清单，不扩大正式目标。固定运行时、隔离与结果边界见[仿真消费说明](../engineering/native-candidate-platforms.md#已实现待远端运行ppc64les390x-仿真消费)；仅配置任务不代表仿真通过，仿真通过也不代表真机与最低系统验收。
+ppc64le／s390x 使用 `pack:node:candidate -- --target <target> --input <静态审计目录> --output <新目录>` 封存原始 addon，再由 Linux x64 Docker／QEMU 上的 `check:node:candidate -- --target <target> --input <候选目录> --output <新目录>` 运行双 Node／双客户端消费。两者都要求 `GITHUB_SHA`、`GITHUB_RUN_ID`、`GITHUB_RUN_ATTEMPT`；不接受混批或覆盖旧结果。候选使用独立清单，不扩大正式目标。固定运行时、隔离与结果边界见[仿真消费说明](../engineering/native-candidate-platforms.md#ppc64les390x-仿真消费)；仅配置任务不代表仿真通过，仿真通过也不代表真机与最低系统验收。依赖已生成公共文件的封存测试归入构建后的分发测试；`node-tools` 必须能在没有产品生成目录时独立运行。包管理器版本探针和安装都在消费夹具自己的目录执行，不继承调用工程配置。
 
 ## 按变更选择验证
 

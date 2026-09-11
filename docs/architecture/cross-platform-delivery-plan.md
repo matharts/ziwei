@@ -1,6 +1,6 @@
 # 跨平台完整交付计划
 
-状态：2026-09-12，提交 `f38b0ea` 的主 CI 与候选 CI 均已通过，Wasm 工具安装修复已获远端验证。本地新增 ppc64le／s390x 仿真消费任务，尚未提交或远端运行。其余七个原生候选平台、Wasm 与浏览器适配均属于完整交付目标，不是可延期项。本文区分实现与实测状态，提交、推送和发布仍以用户授权为准。
+状态：2026-09-12，`f38b0ea` 已验证 Wasm 工具安装修复；新增仿真任务的首次提交 `d8a30aa` 在主 CI 暴露测试前置条件问题，在候选 CI 暴露 pnpm 启动失败。两个候选架构、两版 Node 的 npm 消费通过，不代表完整验收。其余七个原生候选平台、Wasm 与浏览器适配均属于完整交付目标。本文区分实现与实测状态，提交、推送和发布仍以用户授权为准。
 
 ## 范围与当前基线
 
@@ -151,4 +151,4 @@ Wasm 原始资源为 **124345 bytes**，SHA-256 为 `6c5d9ffbe51015c5dbcdc67f9e0
 
 用户已确认保持 Node 的 napi-rs 与浏览器的 wasm-bindgen 两条适配路径，不合并或迁移绑定。对照实验留在本地忽略目录，不进入分发包或本次提交；上述结果不改变平台支持声明。
 
-当前工作树已实现[ppc64le／s390x 仿真消费](../engineering/native-candidate-platforms.md#已实现待远端运行ppc64les390x-仿真消费)：复用同批原始 addon，验证两版 Node、npm／pnpm 安装与公开入口，并独立保存失败结果。尚未提交、推送或运行新的远端任务；下一步在授权后验收新提交的 CI。仿真不代替原生及最低系统检查。Android／OHOS 的具体 SDK Interface 和真实环境尚未确定，不增加占位平台包，也不用 Wasm 结果代替原生支持。公共发布仍未授权。
+后续 `d8a30aa` 已首次执行[ppc64le／s390x 仿真消费](../engineering/native-candidate-platforms.md#ppc64les390x-仿真消费)。其[主 CI](https://github.com/matharts/ziwei/actions/runs/34641691172) 与[候选 CI](https://github.com/matharts/ziwei/actions/runs/34641691181) 均失败；npm 的四组消费通过，pnpm 尚未完成启动。封存测试前置条件和版本探针调用目录已作局部修复，具体症状与复验边界见[首次仿真记录](../engineering/native-candidate-platforms.md#2026-09-12首次仿真暴露的工程问题)。下一步验收修复提交，不把旧失败重标为通过。仿真不代替原生及最低系统检查；Android／OHOS 的具体 SDK Interface 和真实环境尚未确定。公共发布仍未授权。
