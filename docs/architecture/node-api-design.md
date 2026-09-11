@@ -265,7 +265,7 @@ INVALID_ARGUMENT 的 reason 为 missing、type、non_finite、non_integer、out_
 
 - TypeScript 声明检查基线已按用户要求升级为 7.0.2，实际包与完整设计合同通过 NodeNext／Bundler 检查。D-256 另以最终包入口测试已实现查询、限运及 JSON，并在独立消费端验证打包后的声明；不能由此宣称其他宿主已得到验证。先前 5.9.3 的设计阶段核验记录保留如下。
 
-- mise 管理 Rust、Node 24.21.0、pnpm 12.3.4 及 build:node/check:node。根 Cargo workspace 已加入绑定，default-members 仍为核心；CI 已接入首轮 Node 构建与测试。本地钩子不新增 Node 测试，Rust 工具链不变。
+- mise 管理 Rust、Node 24.21.0、pnpm 12.4.1 及 build:node/check:node。根 Cargo workspace 已加入绑定，default-members 仍为核心；CI 已接入首轮 Node 构建与测试。本地钩子不新增 Node 测试，Rust 工具链不变。
 
 ## 10. 验收与完成界限
 

@@ -3,7 +3,7 @@ lefthook = "2.1.12"
 rust = "1.98.1"
 node = "24.21.0"
 # Only the macOS x64 npm backend needs pnpm's reviewed native-binary setup script.
-pnpm = { version = "12.3.4", allow_builds = ["pnpm"] }
+pnpm = { version = "12.4.1", allow_builds = ["pnpm"] }
 
 [settings]
 # CI may already have tool directories on PATH without a mise activation record.
