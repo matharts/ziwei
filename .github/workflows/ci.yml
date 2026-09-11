@@ -373,6 +373,52 @@ jobs:
               done
             '
 
+      - name: Minimum Node Alpine registry consumers on the target CPU
+        if: matrix.docker-platform
+        shell: bash
+        env:
+          DOCKER_PLATFORM: ${{ matrix.docker-platform }}
+          # Docker Hub index for 24.15.0-alpine3.23; both amd64 and arm64 checked 2026-09-11.
+          MUSL_IMAGE: node:24.15.0-alpine3.23@sha256:d1b3b4da11eefd5941e7f0b9cf17783fc99d9c6fc34884a665f40a06dbdfc94f
+        run: |
+          case "$DOCKER_PLATFORM" in
+            linux/amd64) expected_arch=x64; test "$(uname -m)" = x86_64 ;;
+            linux/arm64) expected_arch=arm64; test "$(uname -m)" = aarch64 ;;
+            *) exit 1 ;;
+          esac
+          cohorts=(target/node-registry/ziwei-*)
+          test "${#cohorts[@]}" -eq 1
+          test -f "${cohorts[0]}/batch.json"
+          mkdir -p target/musl-compatibility
+          docker pull --platform "$DOCKER_PLATFORM" "$MUSL_IMAGE"
+          docker image inspect "$MUSL_IMAGE" --format '{"id":{{json .Id}},"os":{{json .Os}},"architecture":{{json .Architecture}},"repoDigests":{{json .RepoDigests}}}' > target/musl-compatibility/image.json
+          docker run --rm --platform "$DOCKER_PLATFORM" \
+            --mount "type=bind,src=$PWD,dst=/work,readonly" \
+            --mount "type=bind,src=$PWD/target/musl-compatibility,dst=/evidence" \
+            -e EXPECTED_NODE_ARCH="$expected_arch" \
+            -e GITHUB_SHA -e GITHUB_RUN_ID -e GITHUB_RUN_ATTEMPT \
+            "$MUSL_IMAGE" sh -eu -c '
+              set -- /work/target/node-registry/ziwei-*
+              test "$#" -eq 1
+              test -f "$1/batch.json"
+              cp "$1/batch.json" /evidence/batch.json
+              node /work/packages/ziwei/tools/compatibility.ts --musl-runtime "$EXPECTED_NODE_ARCH" > /evidence/runtime.json
+              cat /evidence/runtime.json
+              pnpm_version=$(node -p "require(\"/work/package.json\").devEngines.packageManager.version")
+              npm install --prefix /tmp/pnpm-tool --ignore-scripts --no-audit --no-fund \
+                "@pnpm/exe.linux-${EXPECTED_NODE_ARCH}-musl@${pnpm_version}"
+              export ZIWEI_PNPM_BIN="/tmp/pnpm-tool/node_modules/@pnpm/exe.linux-${EXPECTED_NODE_ARCH}-musl/pnpm"
+              node /work/packages/ziwei/test/fixtures/registry-consumer.ts "$1"
+            ' 2>&1 | tee target/musl-compatibility/consumer.log
+      - name: Preserve musl minimum Node evidence
+        if: ${{ !cancelled() && matrix.docker-platform }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: musl-compatibility-${{ github.run_attempt }}-${{ matrix.target }}
+          path: target/musl-compatibility/
+          if-no-files-found: error
+          retention-days: 7
+
   windows-clean-consumer:
     name: Windows x64 clean consumers
     needs: node-distribution

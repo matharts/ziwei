@@ -84,6 +84,8 @@ CI 的 `capture:node` 在目标消费端通过后封存实际测试的 tarball�
 
 musl 使用 `CARGO_BUILD_TARGET` 指定目标，运行 `mise run build:node:musl`。此任务锁定 Zig／cargo-zigbuild 并复用原生与 TS 构建；`build:node:native --cross-compile` 将选项传给 napi，不传入 `--` 后的 Cargo 参数。普通 `build:node` 不需要交叉链接工具链。
 
+musl 注册表任务保留当前 Node 消费测试，并追加固定摘要的最低 Node 双架构镜像验收；容器内直接执行 `compatibility.ts --musl-runtime <x64|arm64>`，等价的工程入口是 `check:node:musl-runtime`。它核对实际运行环境，不构建产物；版本、镜像和同批消费证据分别保存，边界见 [Linux musl 最低 Node 验收](../architecture/node-distribution-proposal.md#linux-musl-最低-node-验收)。
+
 GNU CI 使用 `build:node:gnu`，在 Linux x64／arm64 上经 `--use-napi-cross` 构建，再执行 `test:node` 与 `check:node:types`。完整汇总上传前运行 `check:node:glibc -- <完整交付目录>`，需要 GNU `readelf`，拒绝超过 glibc 2.28 的版本需求；随后同批 tarball 在实际 glibc 2.28／最低 Node 容器中复用注册表合同。构建任务本身不代表最低环境验收已通过；具体边界见 [GNU 验收目标](../architecture/node-distribution-proposal.md#gnu-glibc-228-验收目标)。
 
 `check:node:macos -- <完整交付目录>` 直接检查两个 macOS tarball 的 Mach-O 元数据，无需 Apple 工具链。macOS 注册表任务先审计同批产物，再分别以开发版本和最低 Node 运行既有 npm／pnpm 消费合同；审计结果与最低 Node 日志按目标保存。系统标记上限和依赖路径约束只构成静态门禁，最低 macOS 版本仍需真实环境验收，见 [macOS 兼容性门禁](../architecture/node-distribution-proposal.md#macos-兼容性门禁)。

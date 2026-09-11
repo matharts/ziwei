@@ -68,6 +68,10 @@ run = "pnpm exec -- node packages/ziwei/test/fixtures/registry-consumer.ts"
 description = "检查完整批次中 GNU 二进制的架构、摘要与 glibc 2.28 符号上限；需要 readelf"
 run = "pnpm exec -- node packages/ziwei/tools/compatibility.ts"
 
+[tasks."check:node:musl-runtime"]
+description = "核验当前进程的最低 Node、CPU 与 Alpine/musl 运行环境；参数 x64 或 arm64"
+run = "pnpm exec -- node packages/ziwei/tools/compatibility.ts --musl-runtime"
+
 [tasks."check:node:macos"]
 description = "检查完整批次的双架构 Mach-O、系统版本标记与动态库路径；不代表最低系统实测"
 run = "pnpm exec -- node packages/ziwei/tools/compatibility.ts --macos"

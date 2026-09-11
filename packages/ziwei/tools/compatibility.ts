@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -27,6 +27,79 @@ const digest = (bytes: Buffer): Digest => ({
   bytes: bytes.length,
   sha256: createHash("sha256").update(bytes).digest("hex"),
 });
+
+type MuslRuntime = {
+  platform: string;
+  arch: string;
+  node: string;
+  alpine: string;
+  glibc?: string;
+  sharedObjects: string[];
+  loaderStatus: number | null;
+  loaderOutput: string;
+};
+
+/** Validate this test environment, not a minimum Alpine or musl support promise. */
+export function verifyMuslRuntime(runtime: MuslRuntime, expectedArch: string) {
+  assert.ok(expectedArch === "x64" || expectedArch === "arm64", "未知 musl 验收架构");
+  assert.equal(runtime.platform, "linux", "musl 验收需要 Linux");
+  assert.equal(runtime.arch, expectedArch, "musl 验收 CPU 不匹配");
+  assert.equal(runtime.node, "v24.15.0", "musl 验收需要最低 Node 24.15.0");
+  assert.match(runtime.alpine, /^3\.23\.\d+$/, "musl 验收保持 Alpine 3.23 系列");
+  assert.equal(runtime.glibc, undefined, "musl 验收不可加载 glibc");
+  const loaderArch = expectedArch === "x64" ? "x86_64" : "aarch64";
+  const loader = `/lib/ld-musl-${loaderArch}.so.1`;
+  assert.ok(runtime.sharedObjects.includes(loader), "Node 未报告实际加载的 musl loader");
+  // musl prints its version/usage to stderr and exits 1 when no program is supplied.
+  assert.equal(runtime.loaderStatus, 1, "musl loader 版本探针退出状态异常");
+  const version =
+    /^musl libc \((x86_64|aarch64)\)\r?\nVersion (\d+\.\d+\.\d+)\r?\nDynamic Program Loader\r?\n/.exec(
+      runtime.loaderOutput,
+    );
+  assert.ok(version, "缺少可验证的 musl loader 版本输出");
+  assert.equal(version[1], loaderArch, "musl loader CPU 不匹配");
+  return {
+    platform: runtime.platform,
+    arch: runtime.arch,
+    node: runtime.node,
+    alpine: runtime.alpine,
+    musl: version[2]!,
+    loader,
+  };
+}
+
+function inspectMuslRuntime(expectedArch: string) {
+  assert.ok(expectedArch === "x64" || expectedArch === "arm64", "未知 musl 验收架构");
+  assert.equal(process.platform, "linux", "musl 验收需要 Linux");
+  assert.equal(process.arch, expectedArch, "musl 验收 CPU 不匹配");
+  const report = process.report.getReport() as {
+    header: { glibcVersionRuntime?: string };
+    sharedObjects: string[];
+  };
+  const loader = spawnSync(
+    `/lib/ld-musl-${expectedArch === "x64" ? "x86_64" : "aarch64"}.so.1`,
+    [],
+    {
+      encoding: "utf8",
+      timeout: 5_000,
+      maxBuffer: 16 * 1024,
+    },
+  );
+  assert.equal(loader.error, undefined, "无法执行 musl loader 版本探针");
+  return verifyMuslRuntime(
+    {
+      platform: process.platform,
+      arch: process.arch,
+      node: process.version,
+      alpine: readFileSync("/etc/alpine-release", "utf8").trim(),
+      glibc: report.header.glibcVersionRuntime,
+      sharedObjects: report.sharedObjects,
+      loaderStatus: loader.status,
+      loaderOutput: loader.stdout + loader.stderr,
+    },
+    expectedArch,
+  );
+}
 
 /** Check requirements, not version definitions or incidental strings in the binary. */
 export function verifyGlibcVersions(output: string) {
@@ -380,7 +453,10 @@ export function recordWindowsCrt(
 }
 
 if (import.meta.main) {
-  if (process.argv[2] === "--macos") {
+  if (process.argv[2] === "--musl-runtime") {
+    assert.equal(process.argv.length, 4, "用法：--musl-runtime <x64|arm64>");
+    console.log(JSON.stringify(inspectMuslRuntime(process.argv[3]!), null, 2));
+  } else if (process.argv[2] === "--macos") {
     assert.equal(process.argv.length, 4, "用法：mise run check:node:macos -- <完整交付目录>");
     console.log(JSON.stringify(verifyMacosArtifacts(resolve(process.argv[3]!)), null, 2));
   } else if (process.argv[2] === "--windows-arm64") {

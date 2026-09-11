@@ -16,10 +16,135 @@ import {
   verifyGlibcVersions,
   verifyGnuArtifacts,
   verifyMacosArtifacts,
+  verifyMuslRuntime,
   verifyWindowsArm64Artifact,
 } from "../../packages/ziwei/tools/compatibility.ts";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
+
+function muslRuntime(arch: "x64" | "arm64" = "x64") {
+  const loaderArch = arch === "x64" ? "x86_64" : "aarch64";
+  return {
+    platform: "linux",
+    arch,
+    node: "v24.15.0",
+    alpine: "3.23.3",
+    sharedObjects: [`/lib/ld-musl-${loaderArch}.so.1`, "/usr/lib/libstdc++.so.6"],
+    loaderStatus: 1,
+    loaderOutput: `musl libc (${loaderArch})\nVersion 1.2.5\nDynamic Program Loader\nUsage: loader pathname\n`,
+  };
+}
+
+for (const arch of ["x64", "arm64"] as const) {
+  test(`musl runtime gate records the actual ${arch} loader version and accepts its usage exit`, () => {
+    const runtime = muslRuntime(arch);
+    assert.deepEqual(verifyMuslRuntime(runtime, arch), {
+      platform: "linux",
+      arch,
+      node: "v24.15.0",
+      alpine: "3.23.3",
+      musl: "1.2.5",
+      loader: runtime.sharedObjects[0],
+    });
+    // Version is observed, not a promised minimum or an artificial equality gate.
+    assert.equal(
+      verifyMuslRuntime(
+        {
+          ...runtime,
+          loaderOutput: runtime.loaderOutput.replace("1.2.5", "1.2.6"),
+          alpine: "3.23.4",
+        },
+        arch,
+      ).musl,
+      "1.2.6",
+    );
+  });
+
+  test(`musl runtime gate rejects wrong ${arch} environment or missing live loader evidence`, () => {
+    const runtime = muslRuntime(arch);
+    for (const fields of [
+      { platform: "darwin" },
+      { arch: arch === "x64" ? "arm64" : "x64" },
+      { node: "v24.21.0" },
+      { node: "v24.14.0" },
+      { alpine: "3.22.3" },
+      { alpine: "3.23" },
+      { glibc: "2.28" },
+      { sharedObjects: [] },
+      { sharedObjects: ["/lib/ld-linux-x86-64.so.2"] },
+      { loaderStatus: null },
+      { loaderStatus: 0 },
+      { loaderStatus: 127 },
+      { loaderOutput: "" },
+      { loaderOutput: "ldd (GNU libc) 2.28" },
+      { loaderOutput: runtime.loaderOutput.replace("1.2.5", "invalid") },
+      {
+        loaderOutput: runtime.loaderOutput.replace(
+          arch === "x64" ? "x86_64" : "aarch64",
+          arch === "x64" ? "aarch64" : "x86_64",
+        ),
+      },
+    ])
+      assert.throws(() => verifyMuslRuntime({ ...runtime, ...fields }, arch));
+    assert.throws(() => verifyMuslRuntime(runtime, "riscv64"), /未知 musl 验收架构/);
+  });
+}
+
+test("musl runtime CLI rejects missing, extra and unknown architecture arguments", () => {
+  const cli = join(root, "packages/ziwei/tools/compatibility.ts");
+  for (const args of [[], ["x64", "extra"], ["riscv64"]])
+    assert.throws(() =>
+      execFileSync(process.execPath, [cli, "--musl-runtime", ...args], { stdio: "pipe" }),
+    );
+});
+
+test("musl minimum Node CI preserves current coverage and consumes a pinned same-CPU image and cohort", () => {
+  const workflow = readFileSync(join(root, ".github/workflows/ci.yml"), "utf8");
+  const registry = workflow
+    .split("  registry-consumers:")[1]!
+    .split("  windows-clean-consumer:")[0]!;
+  const minimum = registry
+    .split("- name: Minimum Node Alpine registry consumers on the target CPU")[1]!
+    .split("- name:")[0]!;
+  const evidence = registry.split("- name: Preserve musl minimum Node evidence")[1]!;
+  assert.match(registry, /node:24\.21\.0-alpine3\.23 sh -eu -c/);
+  assert.match(minimum, /if: matrix.docker-platform/);
+  assert.match(minimum, /shell: bash/);
+  assert.match(minimum, /MUSL_IMAGE: node:24\.15\.0-alpine3\.23@sha256:[a-f0-9]{64}\n/);
+  assert.match(minimum, /linux\/amd64\) expected_arch=x64; test "\$\(uname -m\)" = x86_64/);
+  assert.match(minimum, /linux\/arm64\) expected_arch=arm64; test "\$\(uname -m\)" = aarch64/);
+  assert.match(minimum, /docker pull --platform "\$DOCKER_PLATFORM" "\$MUSL_IMAGE"/);
+  assert.match(minimum, /docker image inspect "\$MUSL_IMAGE"/);
+  assert.match(minimum, /docker run --rm --platform "\$DOCKER_PLATFORM"/);
+  assert.match(minimum, /dst=\/work,readonly/);
+  assert.match(minimum, /-e GITHUB_SHA -e GITHUB_RUN_ID -e GITHUB_RUN_ATTEMPT/);
+  assert.match(minimum, /"\$MUSL_IMAGE" sh -eu -c/);
+  assert.match(
+    minimum,
+    /compatibility\.ts --musl-runtime "\$EXPECTED_NODE_ARCH" > \/evidence\/runtime.json/,
+  );
+  assert.match(minimum, /cp "\$1\/batch.json" \/evidence\/batch.json/);
+  assert.match(minimum, /registry-consumer\.ts "\$1"/);
+  assert.match(minimum, /2>&1 \| tee target\/musl-compatibility\/consumer.log/);
+  assert.match(minimum, /npm install --prefix \/tmp\/pnpm-tool --ignore-scripts/);
+  assert.match(evidence, /!cancelled\(\) && matrix.docker-platform/);
+  assert.match(
+    evidence,
+    /name: musl-compatibility-\$\{\{ github.run_attempt \}\}-\$\{\{ matrix.target \}\}/,
+  );
+  assert.match(evidence, /path: target\/musl-compatibility\//);
+  assert.match(evidence, /if-no-files-found: error/);
+  assert.doesNotMatch(
+    registry,
+    /continue-on-error|qemu|mise run (?:build:|pack:|check:node:minimum)/,
+  );
+  assert.match(workflow.split("  verify:")[1]!, /test "\$REGISTRY_RESULT" = success/);
+  const mise = readFileSync(join(root, "mise.toml"), "utf8");
+  assert.match(
+    mise,
+    /\[tasks\."check:node:musl-runtime"\][\s\S]*?compatibility\.ts --musl-runtime/,
+  );
+});
 
 // Minimal load commands exercise the gate; these bytes are not runnable addons.
 function macosBinary(arm64 = false, commands?: Buffer[]) {

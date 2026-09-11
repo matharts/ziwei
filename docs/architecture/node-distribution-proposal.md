@@ -158,6 +158,23 @@ GNU 构建要求 Linux x64／arm64；指定目标沿用 `CARGO_BUILD_TARGET`。�
 
 上述提交已完成 GNU 构建、实际产物符号检查，以及双架构 glibc 2.28／Node 24.15.0 的同批运行验收。该结论仅对应列明的提交、批次和环境；后续改动须重新经过同样门禁。容器共享宿主内核，不能据此承诺最低 Linux 内核或全部旧发行版。
 
+## Linux musl 最低 Node 验收
+
+x64／arm64 的注册表任务保留现有 `node:24.21.0-alpine3.23` 消费测试，追加 Node 24.15.0 的独立容器。两轮读取同 commit／run／attempt 的完整交付包，复用 npm／pnpm 的正常、禁用 optional、缺失及损坏四类合同，不改 Zig 构建路径、不重新编译或打包。
+
+- **镜像身份**：最低 Node 镜像使用 `node:24.15.0-alpine3.23`，并固定[工作流](../../.github/workflows/ci.yml)中的多架构索引 SHA-256。2026-09-11 的 [Docker Hub 官方标签元数据](https://hub.docker.com/v2/repositories/library/node/tags/24.15.0-alpine3.23)同时列出 Linux amd64 与 arm64/v8；元数据核验不等于运行验证。Docker 按固定摘要及明确的 `--platform` 拉取，记录实际 image ID、CPU、OS 与 RepoDigests；更换摘要须重新核验双架构。
+- **实际环境**：宿主 CPU 必须与容器目标对应，不使用 QEMU。容器内要求实际 Node 恰为 `v24.15.0`、CPU 匹配、Alpine 为 3.23 系列，且 Node diagnostic report 无 glibc、确实列出对应 musl loader。直接执行该 loader 读取版本与架构，记录实际 Alpine patch 和 musl 版本，不把它们作为更低系统版本承诺。无程序参数时 loader 输出版本／usage 并返回 `1`，检查器同时核验退出码和输出，不能把任意失败当作版本证据。[musl loader 实现](https://git.musl-libc.org/cgit/musl/tree/ldso/dynlink.c)
+- **消费与证据**：只读挂载仓库与交付包，结果目录单独可写。用镜像随附 npm 安装根 `devEngines` 指定版本的官方 musl pnpm 测试客户端，禁用安装脚本；随后原注册表夹具核对完整批次和实际安装二进制，验证 ESM／require、建盘、查询、错误和冻结合同。每个目标的 `musl-compatibility-<attempt>-<target>` 保存 `image.json`、`runtime.json`、输入 `batch.json` 和 `consumer.log`；报告只保留必要运行字段，不上传完整 diagnostic report。
+- **失败传播**：拉取、环境核验或消费失败都会让注册表任务及最终 `verify` 失败，外层 Bash 的 `pipefail` 防止 `tee` 掩盖 Docker 失败。未取消的失败任务仍尝试保留已有证据；空报告不代表成功，启动前失败由 CI 日志说明。远端通过结论必须对应实际提交与批次，不能以本地模拟测试代替双架构实测。
+
+在合适的 Alpine 最低 Node 环境内，可单独检查运行时：
+
+```sh
+node packages/ziwei/tools/compatibility.ts --musl-runtime x64
+```
+
+arm64 使用 `arm64` 参数。该命令只验证运行环境，完整验收仍须执行同批注册表消费测试。新门禁不改变 [Node 对 musl 的支持分级](https://github.com/nodejs/docker-node#musl-builds-for-alpine)，也不承诺最低 Alpine、musl 或 Linux 内核版本；容器仍共享宿主内核。
+
 ## macOS 兼容性门禁
 
 macOS x64／arm64 注册表任务消费完整汇总的同一批 tarball，先执行 `check:node:macos`，保留当前 Node 版本的合同，再追加 Node 24.15.0 的 npm／pnpm 验收。这里增加产物检查与最低 Node 覆盖，不改变 Rust 编译参数，也不把现有 macOS runner 当作最低系统环境。
