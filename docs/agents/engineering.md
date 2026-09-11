@@ -70,7 +70,7 @@ Oxfmt 读取根 [.editorconfig](../../.editorconfig)：TypeScript 和 JSON 使�
 
 最低版本统一为 Node `>=24.15.0`：内置 TypeScript 类型擦除在 24.12.0 稳定，`require(ESM)` 在 24.15.0 稳定，见 [Node TypeScript](https://nodejs.org/docs/latest-v24.x/api/typescript.html) 与 [require(ESM)](https://nodejs.org/docs/latest-v24.x/api/modules.html#loading-ecmascript-modules-using-require)。
 
-这是项目支持门槛，不表示更早版本无法执行生成的 JS。mise 开发版本固定 24.21.0；`check:node:minimum` 额外运行 24.15.0，CI 只在 Linux 执行此版本检查。
+这是项目支持门槛，不表示更早版本无法执行生成的 JS。mise 开发版本固定 24.21.0；`check:node:minimum` 在 Linux CI 运行最低版本的完整工程检查。macOS 双架构与 Windows arm64 的最低版本消费验收直接复用封存包与注册表任务，不调用会重新构建的聚合检查。
 
 手写源码、测试、Worker、配置和工具全部使用 `.ts`；Node 直接执行工具的可擦除 TS 语法，保留 `.ts` 导入扩展名，不依赖 tsx。根 `tsconfig.json` 严格检查这些文件，并启用 `erasableSyntaxOnly`、`verbatimModuleSyntax`；`mise run check:typescript` 需在产品构建后运行。
 
@@ -84,13 +84,21 @@ CI 的 `capture:node` 在目标消费端通过后封存实际测试的 tarball�
 
 musl 使用 `CARGO_BUILD_TARGET` 指定目标，运行 `mise run build:node:musl`。此任务锁定 Zig／cargo-zigbuild 并复用原生与 TS 构建；`build:node:native --cross-compile` 将选项传给 napi，不传入 `--` 后的 Cargo 参数。普通 `build:node` 不需要交叉链接工具链。
 
+musl 注册表任务保留当前 Node 消费测试，并追加固定摘要的最低 Node 双架构镜像验收；容器内直接执行 `compatibility.ts --musl-runtime <x64|arm64>`，等价的工程入口是 `check:node:musl-runtime`。它核对实际运行环境，不构建产物；版本、镜像和同批消费证据分别保存，边界见 [Linux musl 最低 Node 验收](../architecture/node-distribution-proposal.md#linux-musl-最低-node-验收)。
+
 GNU CI 使用 `build:node:gnu`，在 Linux x64／arm64 上经 `--use-napi-cross` 构建，再执行 `test:node` 与 `check:node:types`。完整汇总上传前运行 `check:node:glibc -- <完整交付目录>`，需要 GNU `readelf`，拒绝超过 glibc 2.28 的版本需求；随后同批 tarball 在实际 glibc 2.28／最低 Node 容器中复用注册表合同。构建任务本身不代表最低环境验收已通过；具体边界见 [GNU 验收目标](../architecture/node-distribution-proposal.md#gnu-glibc-228-验收目标)。
+
+`check:node:macos -- <完整交付目录>` 直接检查两个 macOS tarball 的 Mach-O 元数据，无需 Apple 工具链。macOS 注册表任务先审计同批产物，再分别以开发版本和最低 Node 运行既有 npm／pnpm 消费合同；审计结果与最低 Node 日志按目标保存。系统标记上限和依赖路径约束只构成静态门禁，最低 macOS 版本仍需真实环境验收，见 [macOS 兼容性门禁](../architecture/node-distribution-proposal.md#macos-兼容性门禁)。
 
 `check:node` 同时覆盖原有自包含包和新的无二进制主包／平台包。后者用 Node 随附 npm 离线安装本地 tarball，override 仅存在于临时消费端；仓库依赖管理继续使用 pnpm。正常 runner 从已安装包检查声明，musl 在对应 CPU 的 Alpine 运行同一消费端夹具、在构建机检查声明。
 
 `check:node:registry -- <完整交付目录>` 让 npm／pnpm 从仅监听本机的只读注册表冻结安装全部目标依赖，无 overrides 或架构覆盖。CI 在八种实际运行环境消费同一批已汇总 tarball；本地回归仅验证本机真实二进制与其他平台的筛选。冷缓存、失败路径及 Alpine 测试客户端启动方式见[隔离注册表安装验收](../architecture/node-distribution-proposal.md#隔离注册表安装验收)。它不执行公共 npm 发布。
 
-`check:node:windows -- <完整交付目录> <新的结果目录>` 是 Windows x64 Server Core 消费实验，要求 Windows Docker daemon。固定镜像与 Node ZIP，复用同批注册表夹具，不安装 CRT 或挂载宿主开发软件；结果目录保留环境清单和失败日志。CI 任务纳入 `verify`，实现不等于远端已经通过，也不替代 arm64／Windows 11 验收；详见 [Windows x64 容器实验](../architecture/node-distribution-proposal.md#windows-x64-干净容器实验待远端验收)。
+`check:node:windows -- <完整交付目录> <新的结果目录>` 要求 Windows x64 Docker，使用固定 Server Core 镜像、Node ZIP 与同批 tarball。日常门禁分别运行 `npm-clean`（无额外 CRT、无 pnpm）与 `pnpm-runtime`（安装经摘要和 Microsoft 签名校验的运行库后运行 pnpm），两组必须均通过，报告独立保存。前者拒绝额外 VC Runtime 和开发工具链，并核对实际加载模块。`--compare-vc-runtime` 保留原来的完整对照，仅供按需诊断；其失败仍返回非零，不属于日常门禁。结果不能替代 arm64／Windows 11 验收，详见 [Windows x64 容器验收](../architecture/node-distribution-proposal.md#windows-x64-干净容器验收)。
+
+`build:node:native` 在任务内默认启用 x64 MSVC 静态 CRT，本地与 CI 共用；其他目标与独立 Cargo 命令不变。显式目标参数可用于动态诊断，但正式产物必须通过 `check:node:windows-crt` 的静态依赖检查。检查后的 DLL 不得重复构建；继续构建 TS、运行 Node 与类型合同，封存同一产物。手动 CI 参数 `compare_windows_crt` 才额外构建动态基线；日常只构建静态交付包。详见[静态 CRT 策略](../architecture/node-distribution-proposal.md#windows-x64-静态-crt)。
+
+`check:node:windows-arm64 -- <完整交付目录>` 审计封存 ARM64 PE 的架构、导入表和摘要，记录 CRT 依赖但不套用 x64 静态策略。现有 arm64 注册表任务追加最低 Node 消费检查并保存证据；有预装运行库的 runner 不代表干净系统，详见 [Windows arm64 兼容性门禁](../architecture/node-distribution-proposal.md#windows-arm64-兼容性门禁)。
 
 ### 依赖版本管理
 

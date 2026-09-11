@@ -16,7 +16,7 @@ const hash = (bytes: Buffer, algorithm = "sha256", encoding: "hex" | "base64" = 
 type Scenario = "normal" | "omit-optional" | "missing" | "corrupted";
 type Receipt = { tarball: string; bytes: number; sha256: string };
 type Platform = Receipt & { target: string; name: string; binaryDigest: Omit<Receipt, "tarball"> };
-type RuntimeObservation = {
+export type RuntimeObservation = {
   manager: "npm" | "pnpm";
   node: string;
   arch: string;
@@ -87,8 +87,15 @@ function readCohort(directory: string) {
 /** Serve the immutable cohort locally; real clients resolve all optional dependencies. */
 export async function verifyRegistry(
   directory: string,
-  onRuntime?: (runtime: RuntimeObservation) => void,
+  {
+    managers = ["npm", "pnpm"],
+    onRuntime,
+  }: {
+    managers?: readonly RuntimeObservation["manager"][];
+    onRuntime?: (runtime: RuntimeObservation) => void;
+  } = {},
 ) {
+  assert.ok(managers.length > 0, "至少选择一个包管理器");
   const { packages, main, matching, platforms } = readCohort(directory);
   const temporary = mkdtempSync(join(tmpdir(), "ziwei-registry-consumer-"));
   const env = { ...process.env };
@@ -156,13 +163,14 @@ export async function verifyRegistry(
     }
   });
   try {
-    assert.equal((await execute(pnpm, ["--version"], options)).stdout.trim(), expectedPnpm);
     server.listen(0, "127.0.0.1");
     await once(server, "listening");
     const address = server.address();
     assert.ok(address && typeof address !== "string");
     url = `http://127.0.0.1:${address.port}`;
-    for (const manager of ["npm", "pnpm"] as const) {
+    for (const manager of managers) {
+      if (manager === "pnpm")
+        assert.equal((await execute(pnpm, ["--version"], options)).stdout.trim(), expectedPnpm);
       for (const mode of ["normal", "omit-optional", "missing", "corrupted"] as const) {
         const consumer = join(temporary, `${manager}-${mode}`);
         mkdirSync(consumer);
