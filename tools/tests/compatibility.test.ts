@@ -10,11 +10,121 @@ import { test } from "@rstest/core";
 import type { TestContext } from "@rstest/core";
 
 import {
+  inspectWindowsX64Imports,
+  recordWindowsCrt,
   verifyGlibcVersions,
   verifyGnuArtifacts,
 } from "../../packages/ziwei/tools/compatibility.ts";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
+
+// Synthetic PE descriptors test inspection only; CI must still load the real addon.
+function windowsBinary(imports: string[], delayImports: string[] = []) {
+  const binary = Buffer.alloc(0xc00);
+  binary.write("MZ");
+  binary.writeUInt32LE(0x80, 0x3c);
+  binary.write("PE\0\0", 0x80);
+  binary.writeUInt16LE(0x8664, 0x84);
+  binary.writeUInt16LE(1, 0x86);
+  binary.writeUInt16LE(240, 0x94);
+  binary.writeUInt16LE(0x2000, 0x96);
+  binary.writeUInt16LE(0x20b, 0x98);
+  binary.writeUInt32LE(16, 0x98 + 108);
+  binary.writeUInt32LE(0xa00, 0x188 + 8);
+  binary.writeUInt32LE(0x1000, 0x188 + 12);
+  binary.writeUInt32LE(0xa00, 0x188 + 16);
+  binary.writeUInt32LE(0x200, 0x188 + 20);
+  let nameOffset = 0x500;
+  for (const [names, directory, offset, size, nameField] of [
+    [imports, 1, 0x200, 20, 12],
+    [delayImports, 13, 0x300, 32, 4],
+  ] as const) {
+    if (names.length === 0) continue;
+    binary.writeUInt32LE(offset + 0xe00, 0x98 + 112 + directory * 8);
+    binary.writeUInt32LE((names.length + 1) * size, 0x98 + 116 + directory * 8);
+    names.forEach((name, index) => {
+      if (directory === 13) binary.writeUInt32LE(1, offset + index * size);
+      binary.writeUInt32LE(nameOffset + 0xe00, offset + index * size + nameField);
+      binary.write(name + "\0", nameOffset);
+      nameOffset += Buffer.byteLength(name) + 1;
+    });
+  }
+  return binary;
+}
+
+test("Windows inspection reads normal and delay imports without incidental string matches", () => {
+  const binary = windowsBinary(["KERNEL32.dll", "VCRUNTIME140.dll"], ["USER32.dll"]);
+  binary.write("msvcp140.dll", 0xb00);
+  assert.deepEqual(inspectWindowsX64Imports(binary), {
+    imports: ["KERNEL32.dll", "VCRUNTIME140.dll"],
+    delayImports: ["USER32.dll"],
+  });
+  assert.deepEqual(inspectWindowsX64Imports(windowsBinary([])), {
+    imports: [],
+    delayImports: [],
+  });
+});
+
+test("Windows inspection fails closed for malformed or unsupported PE structures", () => {
+  const mutations: ((binary: Buffer) => void)[] = [
+    (b) => b.write("NO"),
+    (b) => b.writeUInt32LE(0xfffffff0, 0x3c),
+    (b) => b.write("NE", 0x80),
+    (b) => b.writeUInt16LE(0xaa64, 0x84),
+    (b) => b.writeUInt16LE(0, 0x96),
+    (b) => b.writeUInt16LE(0x10b, 0x98),
+    (b) => b.writeUInt16LE(120, 0x94),
+    (b) => b.writeUInt32LE(1, 0x98 + 108),
+    (b) => b.writeUInt32LE(0xffff, 0x188 + 16),
+    (b) => b.writeUInt32LE(0, 0x98 + 120),
+    (b) => b.writeUInt32LE(20, 0x98 + 124),
+    (b) => b.writeUInt32LE(0x1a00, 0x20c),
+    (b) => b.fill(65, 0x500),
+    (b) => {
+      b[0x500] = 0xff;
+    },
+    (b) => b.writeUInt32LE(0, 0x300),
+    (b) => b.writeUInt32LE(3, 0x300),
+    (b) => b.writeUInt32LE(32, 0x98 + 116 + 13 * 8),
+  ];
+  for (const mutate of mutations) {
+    const binary = windowsBinary(["KERNEL32.dll"], ["VCRUNTIME140.dll"]);
+    mutate(binary);
+    assert.throws(() => inspectWindowsX64Imports(binary), { name: "AssertionError" });
+  }
+  assert.throws(() => inspectWindowsX64Imports(Buffer.alloc(10)), { name: "AssertionError" });
+});
+
+test("Windows CRT records exact binary evidence and rejects normal or delayed VC dependencies", (t) => {
+  const directory = mkdtempSync(join(tmpdir(), "ziwei-crt-contract-"));
+  t.onTestFinished(() => rmSync(directory, { recursive: true, force: true }));
+  const path = join(directory, "addon.node");
+  const dynamic = windowsBinary(["KERNEL32.dll", "VCRUNTIME140.dll"]);
+  writeFileSync(path, dynamic);
+  const baseline = recordWindowsCrt("dynamic", path, directory);
+  assert.equal(baseline.bytes, dynamic.length);
+  assert.equal(baseline.sha256, createHash("sha256").update(dynamic).digest("hex"));
+  assert.deepEqual(readFileSync(join(directory, "dynamic.node")), dynamic);
+  assert.deepEqual(JSON.parse(readFileSync(join(directory, "dynamic.json"), "utf8")), baseline);
+  assert.throws(() => recordWindowsCrt("dynamic", path, directory), /EEXIST/);
+
+  writeFileSync(path, windowsBinary(["KERNEL32.dll", "api-ms-win-crt-runtime-l1-1-0.dll"]));
+  assert.deepEqual(recordWindowsCrt("static", path, directory).crtImports, []);
+  assert.throws(() => recordWindowsCrt("dynamic", path, join(directory, "no-crt")), /缺少动态 CRT/);
+  for (const [index, binary] of [
+    windowsBinary(["vCrUnTiMe140_1.DLL"]),
+    windowsBinary(["KERNEL32.dll"], ["MSVCP140.dll"]),
+  ].entries()) {
+    writeFileSync(path, binary);
+    const output = join(directory, `rejected-${index}`);
+    assert.throws(() => recordWindowsCrt("static", path, output), /仍依赖 VC Runtime/);
+    assert.deepEqual(readFileSync(join(output, "static.node")), binary);
+    assert.equal(
+      JSON.parse(readFileSync(join(output, "static.json"), "utf8")).crtImports.length,
+      1,
+    );
+  }
+});
 const versionInfo = (versions: string[]) =>
   `Version symbols section '.gnu.version' contains 100 entries:\n` +
   `Version needs section '.gnu.version_r' contains 1 entry:\n` +

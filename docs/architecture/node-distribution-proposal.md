@@ -187,6 +187,16 @@ mise run check:node:windows -- <包含 batch.json 的完整交付目录> <新的
 
 提交 `0efe848` 的 [CI 34561101352](https://github.com/matharts/ziwei/actions/runs/34561101352) 已进入容器：Docker 首次探测 7123 ms 成功；npm 安装和实际二进制摘要校验通过，但加载 `.node` 报 `The specified module could not be found.`；pnpm 仍在 `--version` 以 `0xC0000135` 退出。该同批 `.node` 直接导入 `VCRUNTIME140.dll`，容器 System32 清单缺少同名 DLL。18 项其他任务通过，容器和总门禁失败。用户随后授权上述运行库对照；对照结果以新 CI 的两组报告为准，不提前改变运行库部署或链接决策。
 
+提交 `32a0241` 的 [CI 34562804795](https://github.com/matharts/ziwei/actions/runs/34562804795) 完成了运行库对照：两组安装前 DLL 清单、Node、pnpm 与 tarball 输入相同；基线复现 npm 原生加载失败及 pnpm `0xC0000135`，补充运行库后 npm／pnpm 的四个消费场景均通过，加载观察包含 `VCRUNTIME140.dll`。安装器签名有效、退出码为 0。基线仍失败，因此 CI 未通过；这确认该环境下的运行库缺失问题，不代表已经选择部署运行库的方案。
+
+### Windows x64 静态 CRT 候选
+
+下一轮实验仅在 CI 的 x64 MSVC 构建中显式对照 `-C target-feature=-crt-static` 和 `+crt-static`，使用目标专属的 `CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS`，不改默认本地构建、arm64 或其他平台。[Rust CRT 链接说明](https://doc.rust-lang.org/reference/linkage.html#static-and-dynamic-c-runtimes)、[Cargo 目标参数](https://doc.rust-lang.org/cargo/reference/config.html#targettriplerustflags)
+
+`check:node:windows-crt -- <dynamic|static> <二进制路径> <新的证据目录>` 保存两份实际 `.node` 及 JSON，记录原始文件大小、SHA-256、构建批次、普通与延迟导入。检查器验证 PE32+ x64 DLL、目录与 section 边界；动态基线必须导入 `VCRUNTIME140.dll`，静态候选不得残留 VC Redistributable DLL 导入。它不枚举运行时主动加载或传递依赖，因此仍须真实消费验证。[Microsoft PE 格式](https://learn.microsoft.com/en-us/windows/win32/debug/pe-format)
+
+静态候选通过现有 Node 集成及类型合同后进入同 commit／run／attempt 的完整封存批次，再由原容器实验消费。`windows-crt-<attempt>` 保存动态与静态文件及报告；必须核对静态报告摘要与完整批次实际二进制一致，才能关联体积、依赖和加载结果。容器基线仍不安装运行库，pnpm 自身的 CRT 要求仍单独记录；不调整包管理器门禁，也不以 npm 通过宣称全部 CI 通过。实验结果不自动成为正式链接策略。
+
 Server Core 结果不能替代 Windows 11、arm64 或最低系统验收；双架构完整路径与官方依据见 [Windows 干净环境研究](../engineering/windows-clean-environment-research.md)。没有新增发布流程。
 
 ## 发布前剩余门槛

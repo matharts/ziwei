@@ -54,8 +54,31 @@ jobs:
         run: mise exec -- pnpm install --frozen-lockfile
       - name: Node development runtime contracts
         run: mise run check:node:tools
+      # Experimental x64 comparison only. Local defaults and arm64 remain unchanged.
+      - name: Record Windows x64 dynamic CRT baseline
+        if: matrix.target == 'x86_64-pc-windows-msvc'
+        env:
+          CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS: -C target-feature=-crt-static
+        run: |
+          mise run build:node:native
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          mise run check:node:windows-crt -- dynamic packages/ziwei/native/ziwei-native.win32-x64-msvc.node target/windows-crt
+      - name: Record Windows x64 static CRT candidate
+        if: matrix.target == 'x86_64-pc-windows-msvc'
+        env:
+          CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS: -C target-feature=+crt-static
+        run: |
+          mise run build:node:native
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          mise run check:node:windows-crt -- static packages/ziwei/native/ziwei-native.win32-x64-msvc.node target/windows-crt
+      - name: Windows x64 static CRT integration and type contracts
+        if: matrix.target == 'x86_64-pc-windows-msvc'
+        env:
+          CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS: -C target-feature=+crt-static
+          ZIWEI_NODE_ARTIFACTS: target/node-artifacts
+        run: mise run check:node
       - name: Node adapter integration and type contracts
-        if: runner.os != 'Linux'
+        if: runner.os != 'Linux' && matrix.target != 'x86_64-pc-windows-msvc'
         env:
           ZIWEI_NODE_ARTIFACTS: target/node-artifacts
         run: mise run check:node
@@ -80,6 +103,15 @@ jobs:
         with:
           name: node-distribution-${{ github.run_attempt }}-${{ matrix.target }}
           path: target/node-artifacts/node-distribution-${{ github.run_attempt }}-${{ matrix.target }}/
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+      - name: Preserve Windows x64 CRT comparison evidence
+        if: ${{ !cancelled() && matrix.target == 'x86_64-pc-windows-msvc' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: windows-crt-${{ github.run_attempt }}
+          path: target/windows-crt/
           if-no-files-found: error
           retention-days: 7
           compression-level: 0

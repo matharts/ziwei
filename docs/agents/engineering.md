@@ -92,6 +92,8 @@ GNU CI 使用 `build:node:gnu`，在 Linux x64／arm64 上经 `--use-napi-cross`
 
 `check:node:windows -- <完整交付目录> <新的结果目录>` 是 Windows x64 Server Core 消费实验，要求 Windows Docker daemon。固定镜像与 Node ZIP，复用同批注册表夹具，默认不安装 CRT，也不挂载宿主开发软件。显式加 `--compare-vc-runtime` 会保留基线，再在同镜像的新容器中安装经固定摘要及 Microsoft 签名校验的官方运行库作对照；当前 CI 使用此模式。两组报告独立保存，基线失败仍使 `verify` 失败；不得用对照组通过替代基线通过。结果目录保留环境清单和失败日志；实现不等于远端已经通过，也不替代 arm64／Windows 11 验收，详见 [Windows x64 容器实验](../architecture/node-distribution-proposal.md#windows-x64-干净容器实验待远端验收)。
 
+Windows x64 静态 CRT 候选由 CI 的目标专属 Rust flags 控制，不改变本地默认构建或其他架构。`check:node:windows-crt` 只记录并检查实际 PE 依赖；真实消费仍使用上面的完整批次容器门禁。两份二进制、大小与摘要的对照方法见[静态 CRT 实验](../architecture/node-distribution-proposal.md#windows-x64-静态-crt-候选)。
+
 ### 依赖版本管理
 
 根 [pnpm-workspace.yaml](../../pnpm-workspace.yaml) 的默认 Catalog 是直接 npm 开发依赖版本的唯一来源，各 manifest 使用 `catalog:`；`catalogMode: strict` 约束后续依赖添加，CI 继续冻结安装。Rust 依赖与 mise 工具链版本不进入 Catalog。

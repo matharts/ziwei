@@ -69,6 +69,10 @@ run = "pnpm exec -- node packages/ziwei/tools/compatibility.ts"
 description = "在 Windows x64 Server Core 容器中消费同批 tarball；需要 Windows Docker，保留失败报告"
 run = "pnpm exec -- node packages/ziwei/tools/windows-container.ts"
 
+[tasks."check:node:windows-crt"]
+description = "记录 Windows x64 动态/静态 CRT 候选的实际 PE 依赖、摘要与大小；不改变默认构建"
+run = "pnpm exec -- node packages/ziwei/tools/compatibility.ts --windows-crt"
+
 [tasks."check:node:types"]
 description = "验证已构建 Node 包的 TypeScript 消费端合同"
 dir = "packages/ziwei"

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { lstatSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -106,7 +106,139 @@ export function verifyGnuArtifacts(directory: string, inspect = readVersionInfo)
   });
 }
 
+/** Inspect our MSVC PE32+ x64 DLLs, not arbitrary PE variants or runtime-loaded libraries. */
+export function inspectWindowsX64Imports(binary: Buffer) {
+  const range = (offset: number, size: number) => {
+    assert.ok(offset >= 0 && size >= 0 && offset + size <= binary.length, "PE 文件范围越界");
+  };
+  range(0, 64);
+  assert.equal(binary.toString("ascii", 0, 2), "MZ", "需要 DOS header");
+  const pe = binary.readUInt32LE(0x3c);
+  range(pe, 24);
+  assert.ok(pe >= 64, "PE header 与 DOS header 重叠");
+  assert.equal(binary.toString("ascii", pe, pe + 4), "PE\0\0", "需要 PE signature");
+  assert.equal(binary.readUInt16LE(pe + 4), 0x8664, "需要 Windows x64 产物");
+  assert.ok(binary.readUInt16LE(pe + 22) & 0x2000, "需要 PE DLL 产物");
+  const count = binary.readUInt16LE(pe + 6);
+  const optionalSize = binary.readUInt16LE(pe + 20);
+  const optional = pe + 24;
+  range(optional, optionalSize);
+  assert.ok(optionalSize >= 112 + 14 * 8, "PE optional header 缺少导入目录");
+  assert.equal(binary.readUInt16LE(optional), 0x20b, "需要 PE32+ 产物");
+  const directories = binary.readUInt32LE(optional + 108);
+  assert.ok(directories >= 14 && 112 + directories * 8 <= optionalSize, "PE 目录数量无效");
+  assert.ok(count > 0 && count <= 96, "PE section 数量无效");
+  const sectionTable = optional + optionalSize;
+  range(sectionTable, count * 40);
+  const sections = Array.from({ length: count }, (_, index) => {
+    const header = sectionTable + index * 40;
+    const address = binary.readUInt32LE(header + 12);
+    const size = binary.readUInt32LE(header + 16);
+    const offset = binary.readUInt32LE(header + 20);
+    range(offset, size);
+    if (size > 0) assert.ok(offset >= sectionTable + count * 40, "PE section 与 header 重叠");
+    return { address, size, offset };
+  });
+  // Only file-backed section bytes can supply descriptors or DLL names.
+  const locate = (rva: number, size: number) => {
+    const matches = sections.filter(
+      (section) => rva >= section.address && rva + size <= section.address + section.size,
+    );
+    assert.equal(matches.length, 1, "PE RVA 必须映射到唯一的文件 section");
+    const section = matches[0]!;
+    return { offset: section.offset + rva - section.address, end: section.offset + section.size };
+  };
+  const dllName = (rva: number) => {
+    const { offset, end } = locate(rva, 1);
+    const terminator = binary.indexOf(0, offset);
+    assert.ok(terminator > offset && terminator < end, "PE DLL 名称缺少终止符");
+    const name = binary.subarray(offset, terminator);
+    assert.ok(
+      name.every((byte) => byte >= 0x20 && byte <= 0x7e),
+      "PE DLL 名称必须为 ASCII",
+    );
+    return name.toString("ascii");
+  };
+  const readImports = (directory: number, descriptorSize: number, nameField: number) => {
+    const entry = optional + 112 + directory * 8;
+    const rva = binary.readUInt32LE(entry);
+    const size = binary.readUInt32LE(entry + 4);
+    if (rva === 0 && size === 0) return [];
+    assert.ok(rva > 0 && size >= descriptorSize, "PE 导入目录无效");
+    const { offset } = locate(rva, size);
+    const names: string[] = [];
+    for (let cursor = offset; cursor + descriptorSize <= offset + size; cursor += descriptorSize) {
+      if (binary.subarray(cursor, cursor + descriptorSize).every((byte) => byte === 0)) {
+        return [...new Set(names)];
+      }
+      if (directory === 13) {
+        assert.equal(binary.readUInt32LE(cursor), 1, "仅支持 RVA 格式的 PE 延迟导入");
+      }
+      names.push(dllName(binary.readUInt32LE(cursor + nameField)));
+    }
+    assert.fail("PE 导入目录缺少空 descriptor 终止符");
+  };
+  return { imports: readImports(1, 20, 12), delayImports: readImports(13, 32, 4) };
+}
+
+/** Keep failed candidates too. System/UCRT imports are not VC Redistributable imports. */
+export function recordWindowsCrt(
+  mode: "dynamic" | "static",
+  binaryPath: string,
+  directory: string,
+) {
+  assert.ok(lstatSync(binaryPath).isFile(), "Windows 二进制必须为普通文件");
+  const binary = readFileSync(binaryPath);
+  const dependencies = inspectWindowsX64Imports(binary);
+  const crtImports = [...new Set([...dependencies.imports, ...dependencies.delayImports])].filter(
+    (name) => /^(?:vcruntime|msvcp|msvcr|concrt|vcomp|vcamp)\d.*\.dll$/i.test(name),
+  );
+  const report = {
+    target: "x86_64-pc-windows-msvc",
+    mode,
+    ...digest(binary),
+    ...dependencies,
+    crtImports,
+    rustflags: process.env.CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS ?? null,
+    batch: {
+      commit: process.env.GITHUB_SHA ?? null,
+      runId: process.env.GITHUB_RUN_ID ?? null,
+      runAttempt: process.env.GITHUB_RUN_ATTEMPT ?? null,
+    },
+  };
+  mkdirSync(directory, { recursive: true });
+  writeFileSync(join(directory, `${mode}.node`), binary, { flag: "wx" });
+  writeFileSync(join(directory, `${mode}.json`), JSON.stringify(report, null, 2) + "\n", {
+    flag: "wx",
+  });
+  if (mode === "static")
+    assert.equal(crtImports.length, 0, `静态候选仍依赖 VC Runtime：${crtImports}`);
+  else
+    assert.ok(
+      crtImports.some((name) => /^vcruntime140\.dll$/i.test(name)),
+      "基线缺少动态 CRT 依赖",
+    );
+  return report;
+}
+
 if (import.meta.main) {
-  assert.equal(process.argv.length, 3, "用法：mise run check:node:glibc -- <完整交付目录>");
-  console.log(JSON.stringify(verifyGnuArtifacts(resolve(process.argv[2]!)), null, 2));
+  if (process.argv[2] === "--windows-crt") {
+    assert.equal(
+      process.argv.length,
+      6,
+      "用法：--windows-crt <dynamic|static> <二进制> <证据目录>",
+    );
+    const mode = process.argv[3];
+    assert.ok(mode === "dynamic" || mode === "static", "CRT 模式必须为 dynamic 或 static");
+    console.log(
+      JSON.stringify(
+        recordWindowsCrt(mode, resolve(process.argv[4]!), resolve(process.argv[5]!)),
+        null,
+        2,
+      ),
+    );
+  } else {
+    assert.equal(process.argv.length, 3, "用法：mise run check:node:glibc -- <完整交付目录>");
+    console.log(JSON.stringify(verifyGnuArtifacts(resolve(process.argv[2]!)), null, 2));
+  }
 }

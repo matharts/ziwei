@@ -152,4 +152,8 @@ GitHub larger runner 的自定义镜像可从干净 OS base image 生成，但�
 
 提交 `0efe848` 的 [CI 34561101352](https://github.com/matharts/ziwei/actions/runs/34561101352) 首次 `docker info` 用时 7123 ms，固定容器随后成功启动。npm 已完成平台包安装、514560 字节及 SHA-256 校验，在真实 `.node` 导入时出现 `The specified module could not be found.`；pnpm 12.3.4 在独立分支仍以 `0xC0000135` 启动失败。同批 x64 `.node` 摘要为 `b0ba58cca4bc29a46fc582ed4a61605b1b679968eae08134b7eadf09fc4e898f`，直接导入 `VCRUNTIME140.dll`；容器仍只有 `_clr0400` 变体和 UCRT，没有该同名文件。其余 18 项任务通过；这证明加载失败已复现，不是 optional 包未安装，尚不等于补齐 DLL 后一定通过。
 
-用户随后授权同镜像、同产物、仅补齐官方 VC Runtime 的对照。`--compare-vc-runtime` 使用两个全新容器、独立结果目录，先保留不安装运行库的基线，再安装固定 Microsoft x64 Redistributable `14.51.36247.0`（SHA-256 `843068991daaa1f73ad9f6239bce4d0f6a07a51f18c37ea2a867e9beca71295c`）；安装前必须通过 Microsoft Authenticode 与版本检查，不在宿主执行、不重启、不改链接方式。对照结果尚待新 CI；即使对照通过，原基线失败仍保留，不据此修改默认部署前提。
+用户随后授权同镜像、同产物、仅补齐官方 VC Runtime 的对照。`--compare-vc-runtime` 使用两个全新容器、独立结果目录，先保留不安装运行库的基线，再安装固定 Microsoft x64 Redistributable `14.51.36247.0`（SHA-256 `843068991daaa1f73ad9f6239bce4d0f6a07a51f18c37ea2a867e9beca71295c`）；安装前必须通过 Microsoft Authenticode 与版本检查，不在宿主执行、不重启、不改链接方式。
+
+提交 `32a0241` 的 [CI 34562804795](https://github.com/matharts/ziwei/actions/runs/34562804795) 已完成对照。两组安装前运行库清单一致、pnpm 二进制摘要一致，已有系统 DLL 未被替换。基线仍复现 npm 加载失败及 pnpm `0xC0000135`；运行库组安装器签名有效、安装退出码 0，npm／pnpm 四个注册表消费场景均通过，加载模块包含 `VCRUNTIME140.dll`。这确认该环境下补齐运行库可以解决两条独立路径的失败；基线与最终门禁仍失败，不据此修改默认部署前提。
+
+用户进一步授权只对 Windows x64 addon 实验静态 CRT。CI 同一 job 保存显式动态基线与静态候选的 PE 普通／延迟导入、原始文件大小、摘要和实际二进制，静态候选再进入既有 Node 回归及同批干净容器消费。默认本地链接配置、arm64 和 pnpm 保持不变；不新增发布。具体入口、产物关联与验收边界见[静态 CRT 候选](../architecture/node-distribution-proposal.md#windows-x64-静态-crt-候选)。
