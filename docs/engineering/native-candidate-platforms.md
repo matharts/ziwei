@@ -1,6 +1,6 @@
 # 七个原生候选平台：宿主、构建与验收矩阵
 
-状态：2026-09-12，上游依赖同步后的前提复核。七目标属于用户要求的完整交付范围；已完成七目标核心类型检查和三项 GNU 候选的静态探针，但尚未构建、加载或实机验收候选 Node addon，不能据此升级为已支持。现有八目标结论沿用 [Node 分发设计](../architecture/node-distribution-proposal.md)，不在本文重做。
+状态：2026-09-12，已核验提交 `031fa79` 的远端候选 CI。七目标核心类型检查、三项 GNU 候选 addon 的交叉构建与静态审计均通过；尚未完成候选宿主的加载与独立消费验收，不能据此升级为已支持。七目标仍属于用户要求的完整交付范围。现有八目标结论沿用 [Node 分发设计](../architecture/node-distribution-proposal.md)，不在本文重做。
 
 本切片修改 [compatibility.ts](../../packages/ziwei/tools/compatibility.ts)、[对应测试](../../tools/tests/compatibility.test.ts) 和本文，并新增独立的[候选 CI](../../.github/workflows/native-candidates.yml)；不改目标 manifest、依赖或公开 API，不安装本机 SDK、虚拟机或设备工具，不申请云资源，不发布。下文的实施路径与工期是项目建议，不是上游支持承诺。
 
@@ -29,7 +29,7 @@ Android 官方将 JNI 定位为 Java／Kotlin 与原生代码之间的接口；O
 | `pnpm` 12.4.1 的平台依赖已包含 Linux ppc64、s390x、FreeBSD x64 与 Android arm64 客户端 | 四项目标应从“缺客户端包”改为“客户端包存在、目标运行待验”；不能把另外三个目标的缺口泛化到全部七项 | [当前 pnpm 元数据](https://registry.npmjs.org/pnpm/12.4.1)、[当前 exe 元数据](https://registry.npmjs.org/@pnpm/exe/12.4.1) |
 | GitHub 托管 runner 没有本次七目标的直接原生标签；自托管 runner CPU 支持也不包含 ppc64le／s390x | 后两者需由受支持的控制机远程执行，或使用相应原生 CI 服务；不能只添加 `runs-on` | [托管 runner](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)、[自托管架构](https://docs.github.com/en/actions/reference/runners/self-hosted-runners#supported-processor-architectures) |
 
-Rust 1.98.0 文档将前五项列为 Tier 2 with Host Tools，两个 Android 目标列为 Tier 2 without Host Tools；这描述 Rust 工具链，不描述 Node 支持。下表的指针宽度、字节序、OS／env 经本机 Rust 1.98.1 的 `rustc --print cfg --target <triple>` 核验；随后已安装七份标准库并完成核心 `cargo check`，但没有链接或执行候选 addon。[Rust 1.98.0 平台表](https://doc.rust-lang.org/1.98.0/rustc/platform-support.html)
+Rust 1.98.0 文档将前五项列为 Tier 2 with Host Tools，两个 Android 目标列为 Tier 2 without Host Tools；这描述 Rust 工具链，不描述 Node 支持。下表的指针宽度、字节序、OS／env 经本机 Rust 1.98.1 的 `rustc --print cfg --target <triple>` 核验；本机完成七目标核心 `cargo check`，远端另完成三项 GNU addon 的交叉链接与静态审计，均未执行候选宿主代码。[Rust 1.98.0 平台表](https://doc.rust-lang.org/1.98.0/rustc/platform-support.html)
 
 ## 平台矩阵
 
@@ -156,15 +156,15 @@ Node 候选的最低与开发 Node 测试均消费同一已封存 addon，不重
 
 2026-09-11 的本机盘点未在 PATH 或已检查系统路径找到 GNU `readelf`／`greadelf`；NDK 的 `llvm-readelf` 不替代现有 GNU 输出合同。真实 GNU readelf 与实际候选产物的正向端到端检查仍待 Linux 环境；客户端包缺失、已有包尚未运行、原生机器及移动宿主未确定分别按上表跟踪，不再统一记为 pnpm 缺包。
 
-## 已配置：独立候选 CI，尚待远端运行
+## 已通过：独立候选 CI 的编译与静态审计
 
 [native-candidates.yml](../../.github/workflows/native-candidates.yml) 在 push／PR／手动运行时检查七个候选的 Rust 核心：安装各自标准库后执行目标 `cargo check`，不链接 Node addon、不运行测试。FreeBSD、Android 与 OHOS 不借此声称有可用的宿主绑定或 SDK。
 
 三个 GNU 候选在 Ubuntu x64 另行复用 `build:node:gnu`，通过固定 CLI 的 `--use-napi-cross` 真正构建；随后复制一次 `.node`，审计这份副本并保存原始 bytes 与 `audit.json`。工件名包含源码 SHA、attempt 与 target，前缀独立于现有 `node-distribution`，不生成 batch，不进入八目标汇总或发布路径。
 
-这两个 job 的工具运行在 Ubuntu x64 构建机，不需要在候选 CPU 上启动 pnpm。核心 job 只安装 Rust；GNU job 使用根 mise 选择 Rust／Node／pnpm，并冻结安装 workspace。CLI 3.9.1 使用锁定的 `@napi-rs/cross-toolchain@1.0.3`，其下载路径另经构建机的 `npm pack` 取得精确版本的工具链包；这部分网络与解包仍待远端验证，不能把 workspace 冻结安装等同于交叉工具链已经就绪。[CLI 构建源码](https://github.com/napi-rs/napi-rs/blob/7e3f293e2d6a3032eabfe51ff38bcaa82d342a2f/cli/src/api/build.ts)、[工具链元数据](https://registry.npmjs.org/@napi-rs/cross-toolchain/1.0.3)
+这两个 job 的工具运行在 Ubuntu x64 构建机，不需要在候选 CPU 上启动 pnpm。核心 job 只安装 Rust；GNU job 使用根 mise 选择 Rust／Node／pnpm，并冻结安装 workspace。CLI 3.9.1 使用锁定的 `@napi-rs/cross-toolchain@1.0.3`，其下载路径另经构建机的 `npm pack` 取得精确版本的工具链包；提交 `031fa79` 的三个 GNU job 已实际完成工具链准备、交叉构建与审计，而不只是验证 workspace 冻结安装。[CLI 构建源码](https://github.com/napi-rs/napi-rs/blob/7e3f293e2d6a3032eabfe51ff38bcaa82d342a2f/cli/src/api/build.ts)、[工具链元数据](https://registry.npmjs.org/@napi-rs/cross-toolchain/1.0.3)
 
-候选汇总 gate 要求核心检查和 GNU 构建／静态审计都成功；上传失败证据不掩盖先前错误。Actions 沿用主 CI 的完整 SHA 固定。工作流本身已核对配置语法、矩阵、脚本结构及锁定工具的目标支持；另有下述本机核心检查，但未触发远端 workflow。不能把“已配置”写成“已经交叉构建通过”，也不能以核心检查替代原生环境及 npm／pnpm 消费验收。
+候选汇总 gate 要求核心检查和 GNU 构建／静态审计都成功；上传失败证据不掩盖先前错误。Actions 沿用主 CI 的完整 SHA 固定。[运行 `34625060596`](https://github.com/matharts/ziwei/actions/runs/34625060596) 对应提交 `031fa79e507915ba13a73f1243cf2495432a76c4`，七项核心检查、三项 GNU 构建／静态审计与汇总 gate 共 11 个 job 全部通过。该结果证明构建机上的编译与审计路径可运行，不替代原生环境及 npm／pnpm 消费验收。
 
 ## 验证记录
 
@@ -187,3 +187,9 @@ Node 候选的最低与开发 Node 测试均消费同一已封存 addon，不重
 - 候选 workflow 的 YAML 解析、七段 shell 语法、七核心／三 GNU 矩阵及与主 CI 一致的完整 Action SHA 检查通过。实际执行汇总 shell 的 16 种结果组合，只有两个 job 均为 `success` 时通过；没有用仿真构建来代替真实编译。
 - `build:node:gnu` 的 mise dry-run 确认先原生后 TypeScript 的调用顺序；开发 Node 下 `check:node:tools -- tools/tests/compatibility.test.ts` 的 48 项检查通过，零失败、零跳过。
 - 尚未提交、推送或触发远端 workflow。上述检查验证配置和本机审计器，不证明目标 addon 已构建、静态审计已在 Linux 运行或原生消费已通过。
+
+### 2026-09-12：提交后的远端候选验收
+
+- 已核验提交 `031fa79e507915ba13a73f1243cf2495432a76c4` 的[候选 CI](https://github.com/matharts/ziwei/actions/runs/34625060596)：11 个 job 全部成功，涵盖七目标核心检查、三项 GNU addon 交叉构建／静态审计及汇总 gate。
+- 三个实际构建目标为 `armv7-unknown-linux-gnueabihf`、`powerpc64le-unknown-linux-gnu` 与 `s390x-unknown-linux-gnu`；它们仍是候选，不加入现有八目标分发批次或主包平台依赖。
+- FreeBSD、Android 两 ABI 与 OpenHarmony 本轮只有核心类型检查证据；所有七目标仍缺对应宿主运行与独立消费验收。上节“尚未提交”等表述保留为提交前的历史记录，不代表当前状态。

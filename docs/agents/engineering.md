@@ -132,7 +132,9 @@ Node 侧统一使用锁定版本的 `@rstest/core`（JavaScript 框架，不是 
 
 ## Wasm 与浏览器验证
 
-Wasm 使用独立的 `bindings/wasm` 与 `packages/ziwei-wasm`，实现与浏览器合同见 [Wasm 包约定](../../packages/ziwei-wasm/AGENTS.md)。版本和命令以 [mise](../../mise.toml)、[Cargo manifest](../../bindings/wasm/Cargo.toml) 与 Catalog 为准；wasm-bindgen CLI 仅在胶水任务激活，须与 Rust 依赖精确匹配，普通 Node 构建不安装它。
+Wasm 使用独立的 `bindings/wasm` 与 `packages/ziwei-wasm`，实现与浏览器合同见 [Wasm 包约定](../../packages/ziwei-wasm/AGENTS.md)。版本和命令以 [mise](../../mise.toml)、[Cargo manifest](../../bindings/wasm/Cargo.toml) 与 Catalog 为准；wasm-bindgen CLI 须与 Rust 依赖精确匹配，普通 Node 构建不安装它。胶水任务在执行处显式使用带精确版本的 `mise exec` 安装并激活 CLI，不依赖父任务提前收集内联子任务的 `tools`；这是按需构建工具的局部处理，不改变普通 Node 任务的运行时选择。
+
+[工具回归](../../tools/tests/wasm-tools.test.ts)在独立 mise 配置、空工具缓存和无继承工具目录的 PATH 中运行真实胶水任务，验证首次安装、缓存复用及安装／生成失败的传播。只替换 Cargo 安装器与外部程序，不替换 mise 调度器；版本从 Rust manifest 对照。这验证安装与激活的编排，真实 CLI 下载、生成 Wasm 胶水和浏览器消费仍由 `check:wasm` 与对应 CI 验收。
 
 首次运行 `setup:wasm` 安装当前 Rust 的目标标准库，`setup:wasm:browsers` 安装测试浏览器；Linux CI 为浏览器补充系统依赖。`build:wasm` 顺序生成 release Wasm、web 胶水与资源指纹，再通过 Rslib 生成 ESM、声明和独立资源。手写文件全为 Rust／TS，`generated/` 与 `dist/` 均不提交或格式化。
 

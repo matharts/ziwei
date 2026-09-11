@@ -31,9 +31,10 @@ run = "cargo build -p ziwei-wasm --target wasm32-unknown-unknown --target-dir ta
 
 [tasks."build:wasm:glue"]
 description = "以匹配 Rust 依赖的 wasm-bindgen 生成浏览器胶水与资源指纹"
-tools."cargo:wasm-bindgen-cli" = "0.2.128"
+# mise 2026.9.5 does not install task.tools for nested run-task steps on a cold cache.
+# Resolve the exact CLI at the invocation boundary; ordinary Node tasks never install it.
 run = [
-  "wasm-bindgen --target web --out-dir packages/ziwei-wasm/generated --out-name ziwei_wasm target/wasm32-unknown-unknown/release/ziwei_wasm.wasm",
+  "mise exec cargo:wasm-bindgen-cli@0.2.128 -- wasm-bindgen --target web --out-dir packages/ziwei-wasm/generated --out-name ziwei_wasm target/wasm32-unknown-unknown/release/ziwei_wasm.wasm",
   "pnpm exec -- node packages/ziwei-wasm/tools/manifest.ts",
 ]
 
