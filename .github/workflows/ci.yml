@@ -76,7 +76,13 @@ jobs:
         env:
           CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS: -C target-feature=+crt-static
           ZIWEI_NODE_ARTIFACTS: target/node-artifacts
-        run: mise run check:node
+        # Reuse the inspected native bytes. check:node would build the DLL again.
+        run: |
+          mise run build:node:ts
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          mise run test:node
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          mise run check:node:types
       - name: Node adapter integration and type contracts
         if: runner.os != 'Linux' && matrix.target != 'x86_64-pc-windows-msvc'
         env:

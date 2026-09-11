@@ -18,6 +18,22 @@ import {
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
 
+test("Windows CRT candidate tests reuse the already inspected native binary", () => {
+  const workflow = readFileSync(join(root, ".github/workflows/ci.yml"), "utf8");
+  const integration = workflow
+    .split("- name: Windows x64 static CRT integration and type contracts")[1]
+    ?.split("- name: Node adapter integration and type contracts")[0];
+  assert.ok(integration);
+  assert.match(integration, /if: matrix.target == 'x86_64-pc-windows-msvc'/);
+  assert.match(
+    integration,
+    /CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS: -C target-feature=\+crt-static/,
+  );
+  const tasks = [...integration.matchAll(/mise run ([\w:]+)/g)].map((match) => match[1]);
+  assert.deepEqual(tasks, ["build:node:ts", "test:node", "check:node:types"]);
+  assert.equal(integration.match(/if \(\$LASTEXITCODE -ne 0\)/g)?.length, 2);
+});
+
 // Synthetic PE descriptors test inspection only; CI must still load the real addon.
 function windowsBinary(imports: string[], delayImports: string[] = []) {
   const binary = Buffer.alloc(0xc00);
