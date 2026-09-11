@@ -3,6 +3,12 @@ name: Rust core
 on:
   push:
   pull_request:
+  workflow_dispatch:
+    inputs:
+      compare_windows_crt:
+        description: Also build and retain the Windows x64 dynamic CRT baseline
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -54,19 +60,17 @@ jobs:
         run: mise exec -- pnpm install --frozen-lockfile
       - name: Node development runtime contracts
         run: mise run check:node:tools
-      # Experimental x64 comparison only. Local defaults and arm64 remain unchanged.
+      # Optional diagnostic baseline; normal builds use the shared mise static policy.
       - name: Record Windows x64 dynamic CRT baseline
-        if: matrix.target == 'x86_64-pc-windows-msvc'
+        if: matrix.target == 'x86_64-pc-windows-msvc' && inputs.compare_windows_crt == true
         env:
           CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS: -C target-feature=-crt-static
         run: |
           mise run build:node:native
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           mise run check:node:windows-crt -- dynamic packages/ziwei/native/ziwei-native.win32-x64-msvc.node target/windows-crt
-      - name: Record Windows x64 static CRT candidate
+      - name: Record Windows x64 static CRT artifact
         if: matrix.target == 'x86_64-pc-windows-msvc'
-        env:
-          CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS: -C target-feature=+crt-static
         run: |
           mise run build:node:native
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -74,7 +78,6 @@ jobs:
       - name: Windows x64 static CRT integration and type contracts
         if: matrix.target == 'x86_64-pc-windows-msvc'
         env:
-          CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS: -C target-feature=+crt-static
           ZIWEI_NODE_ARTIFACTS: target/node-artifacts
         # Reuse the inspected native bytes. check:node would build the DLL again.
         run: |
@@ -112,7 +115,7 @@ jobs:
           if-no-files-found: error
           retention-days: 7
           compression-level: 0
-      - name: Preserve Windows x64 CRT comparison evidence
+      - name: Preserve Windows x64 CRT evidence
         if: ${{ !cancelled() && matrix.target == 'x86_64-pc-windows-msvc' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -317,7 +320,7 @@ jobs:
             '
 
   windows-clean-consumer:
-    name: Windows x64 clean container experiment
+    name: Windows x64 clean consumers
     needs: node-distribution
     runs-on: windows-2025
     timeout-minutes: 30
@@ -333,14 +336,14 @@ jobs:
         with:
           install_args: node pnpm
           cache: false
-      - name: Compare the sealed cohort before and after official VC Runtime installation
+      - name: Verify clean npm and runtime-equipped pnpm against the sealed cohort
         shell: pwsh
         run: |
           $cohorts = @(Get-ChildItem target/node-registry -Directory)
           if ($cohorts.Count -ne 1) { throw 'Expected exactly one complete cohort' }
-          mise run check:node:windows -- $cohorts[0].FullName "$PWD/target/windows-clean-consumer" --compare-vc-runtime
+          mise run check:node:windows -- $cohorts[0].FullName "$PWD/target/windows-clean-consumer"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Preserve Windows experiment evidence, including failures
+      - name: Preserve Windows consumer evidence, including failures
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:

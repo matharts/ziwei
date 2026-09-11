@@ -24,6 +24,16 @@ const readJson = (path: string) => JSON.parse(readFileSync(path, "utf8"));
 const save = (path: string, value: unknown) =>
   writeFileSync(path, JSON.stringify(value, null, 2) + "\n");
 
+// Normal acceptance separates product requirements from package-manager prerequisites.
+// The original two-manager comparison remains available as an explicit diagnostic.
+export const windowsScenarios = {
+  "npm-clean": { withVcRuntime: false, managers: ["npm"] },
+  "pnpm-runtime": { withVcRuntime: true, managers: ["pnpm"] },
+  baseline: { withVcRuntime: false, managers: ["npm", "pnpm"] },
+  "vc-runtime": { withVcRuntime: true, managers: ["npm", "pnpm"] },
+} as const;
+type WindowsScenario = keyof typeof windowsScenarios;
+
 export const windowsBaseline = {
   // Microsoft Server Core LTSC 2025 manifest list, inspected 2026-09-10 (amd64 only).
   image:
@@ -136,7 +146,7 @@ Expand-Archive -LiteralPath C:\input\node.zip -DestinationPath C:\runtime
 $nodeRoot = 'C:\runtime\node-v${windowsBaseline.nodeVersion}-win-x64'
 if (Get-ChildItem -LiteralPath $nodeRoot -Recurse -Filter *.dll) { throw 'Unexpected DLL in Node ZIP' }
 $env:PATH = "$nodeRoot;$env:SystemRoot\System32;$env:SystemRoot;$env:SystemRoot\System32\WindowsPowerShell\v1.0"
-& "$nodeRoot\node.exe" C:\input\source\packages\ziwei\tools\windows-container.ts --inside-container
+& "$nodeRoot\node.exe" C:\input\source\packages\ziwei\tools\windows-container.ts --inside-container npm-clean
 exit $LASTEXITCODE
 `;
 
@@ -144,7 +154,11 @@ function containerName(input: string) {
   return `ziwei-windows-${createHash("sha256").update(input).digest("hex").slice(0, 16)}`;
 }
 
-export function windowsContainerArgs(input: string, output: string, withVcRuntime = false) {
+export function windowsContainerArgs(
+  input: string,
+  output: string,
+  scenario: WindowsScenario = "npm-clean",
+) {
   // Docker's --mount parser reserves commas even when argv preserves spaces.
   assert.ok(!input.includes(",") && !output.includes(","), "挂载路径不能包含逗号");
   return [
@@ -170,9 +184,7 @@ export function windowsContainerArgs(input: string, output: string, withVcRuntim
     "-NonInteractive",
     "-EncodedCommand",
     Buffer.from(
-      withVcRuntime
-        ? windowsBootstrap.replace("--inside-container", "--inside-container --with-vc-runtime")
-        : windowsBootstrap,
+      windowsBootstrap.replace("--inside-container npm-clean", `--inside-container ${scenario}`),
       "utf16le",
     ).toString("base64"),
   ];
@@ -182,7 +194,7 @@ function runtimeInventory() {
   const script = String.raw`
 $ErrorActionPreference = 'Stop'
 $dlls = @(Get-ChildItem "$env:SystemRoot\System32" -File | Where-Object {
-  $_.Name -match '^(vcruntime140.*|msvcp140.*|ucrtbase)\.dll$'
+  $_.Name -match '^(vcruntime\d.*|msvcp\d.*|msvcr\d.*|concrt\d.*|vcomp\d.*|vcamp\d.*|ucrtbase)\.dll$'
 } | ForEach-Object {
   [ordered]@{ path = $_.FullName; version = $_.VersionInfo.FileVersion; sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash }
 })
@@ -207,6 +219,22 @@ $system = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion'
   );
 }
 
+/** The pinned OS may contain CLR-specific variants, but no ordinary VC runtime. */
+export function verifyCleanWindowsRuntime(inventory: {
+  dlls: { path: string }[];
+  developmentTools: string[];
+}) {
+  assert.deepEqual(inventory.developmentTools, [], "干净容器中不应存在开发工具链");
+  for (const { path } of inventory.dlls) {
+    const name = path.split(/[\\/]/).at(-1)!;
+    assert.ok(
+      /_clr0400\.dll$/i.test(name) ||
+        !/^(?:vcruntime|msvcp|msvcr|concrt|vcomp|vcamp)\d.*\.dll$/i.test(name),
+      `干净容器发现额外 VC Runtime：${path}`,
+    );
+  }
+}
+
 type ManagerCheck = {
   manager: RuntimeObservation["manager"];
   stage: "bootstrap" | "registry-consumers" | "complete";
@@ -215,15 +243,24 @@ type ManagerCheck = {
   error?: { message: string; code?: unknown; status?: unknown; signal?: unknown };
 };
 
-/** Finish both independent checks before propagating any failures to the CI gate. */
+/** Finish all selected checks before propagating any failures to the CI gate. */
 export async function verifyWindowsConsumers(
   directory: string,
   preparePnpm: () => void,
   onProgress: (checks: readonly ManagerCheck[]) => void,
+  managers: readonly RuntimeObservation["manager"][] = ["npm", "pnpm"],
 ) {
+  assert.ok(
+    managers.length > 0 && new Set(managers).size === managers.length,
+    "需要非空且不重复的包管理器列表",
+  );
+  assert.ok(
+    managers.every((manager) => manager === "npm" || manager === "pnpm"),
+    "未知包管理器",
+  );
   const checks: ManagerCheck[] = [];
   const failures: unknown[] = [];
-  for (const manager of ["npm", "pnpm"] as const) {
+  for (const manager of managers) {
     const check: ManagerCheck = {
       manager,
       stage: manager === "pnpm" ? "bootstrap" : "registry-consumers",
@@ -263,20 +300,24 @@ export async function verifyWindowsConsumers(
     throw new AggregateError(failures, "Windows 包管理器验收失败，详见各分支报告");
 }
 
-async function consumeInsideContainer(withVcRuntime: boolean) {
+async function consumeInsideContainer(scenario: WindowsScenario) {
+  const { withVcRuntime, managers } = windowsScenarios[scenario];
   const report: Record<string, unknown> = {
     passed: false,
     stage: "runtime-preflight",
     baseline: windowsBaseline,
-    scenario: withVcRuntime ? "vc-runtime" : "baseline",
+    scenario,
+    managers,
   };
   const path = "C:\\output\\consumer.json";
   try {
     assert.equal(process.platform, "win32");
     assert.equal(process.arch, "x64");
     assert.equal(process.version, `v${windowsBaseline.nodeVersion}`);
-    report.runtimeBefore = runtimeInventory();
+    const inventory = runtimeInventory();
+    report.runtimeBefore = inventory;
     save(path, report);
+    if (scenario === "npm-clean") verifyCleanWindowsRuntime(inventory);
     if (withVcRuntime) {
       report.stage = "vc-runtime-install";
       installVcRuntime((evidence) => {
@@ -316,11 +357,24 @@ async function consumeInsideContainer(withVcRuntime: boolean) {
       report.runtimeAfterBootstrap = runtimeInventory();
     };
     report.stage = "registry-consumers";
-    await verifyWindowsConsumers("C:\\input\\cohort", preparePnpm, (checks) => {
-      report.checks = checks;
-      report.consumers = checks.flatMap(({ runtimes }) => runtimes);
-      save(path, report);
-    });
+    let runtimes: RuntimeObservation[] = [];
+    await verifyWindowsConsumers(
+      "C:\\input\\cohort",
+      preparePnpm,
+      (checks) => {
+        report.checks = checks;
+        runtimes = checks.flatMap((check) => check.runtimes);
+        report.consumers = runtimes;
+        save(path, report);
+      },
+      managers,
+    );
+    if (scenario === "npm-clean") {
+      verifyCleanWindowsRuntime({
+        dlls: runtimes.flatMap((runtime) => runtime.sharedObjects.map((path) => ({ path }))),
+        developmentTools: [],
+      });
+    }
     report.passed = true;
     report.stage = "complete";
   } catch (error) {
@@ -506,21 +560,24 @@ function dockerDiagnostics() {
   };
 }
 
-type ScenarioCheck = { name: "baseline" | "vc-runtime"; passed: boolean; error?: string };
+type ScenarioCheck = { name: WindowsScenario; passed: boolean; error?: string };
 
-/** A failed baseline must neither hide treatment evidence nor become a passing gate. */
+/** Every selected scenario is required; a failure must not hide later evidence. */
 export async function verifyWindowsScenarios(
   compareVcRuntime: boolean,
-  run: (withVcRuntime: boolean) => Promise<boolean>,
+  run: (scenario: WindowsScenario) => Promise<boolean>,
   onProgress: (checks: readonly ScenarioCheck[]) => void,
 ) {
   const checks: ScenarioCheck[] = [];
-  for (const withVcRuntime of compareVcRuntime ? [false, true] : [false]) {
-    const check: ScenarioCheck = { name: withVcRuntime ? "vc-runtime" : "baseline", passed: false };
+  const scenarios: readonly WindowsScenario[] = compareVcRuntime
+    ? ["baseline", "vc-runtime"]
+    : ["npm-clean", "pnpm-runtime"];
+  for (const scenario of scenarios) {
+    const check: ScenarioCheck = { name: scenario, passed: false };
     checks.push(check);
     onProgress(checks);
     try {
-      check.passed = await run(withVcRuntime);
+      check.passed = await run(scenario);
     } catch (error) {
       check.error = error instanceof Error ? error.message : String(error);
     } finally {
@@ -533,12 +590,12 @@ export async function verifyWindowsScenarios(
   );
 }
 
-function runOneContainer(input: string, output: string, withVcRuntime: boolean) {
-  const report: Record<string, unknown> = { scenario: withVcRuntime ? "vc-runtime" : "baseline" };
+function runOneContainer(input: string, output: string, scenario: WindowsScenario) {
+  const report: Record<string, unknown> = { scenario };
   const stdout = openSync(join(output, "container.stdout.log"), "wx");
   const stderr = openSync(join(output, "container.stderr.log"), "wx");
   try {
-    const result = spawnSync("docker", windowsContainerArgs(input, output, withVcRuntime), {
+    const result = spawnSync("docker", windowsContainerArgs(input, output, scenario), {
       stdio: ["ignore", stdout, stderr],
       timeout: 600_000,
     });
@@ -570,7 +627,11 @@ async function runContainer(directory: string, output: string, compareVcRuntime:
   // Keep every run's evidence; never overwrite a prior result.
   mkdirSync(output);
   const temporary = mkdtempSync(join(tmpdir(), "ziwei-windows-container-"));
-  const report: Record<string, unknown> = { passed: false, baseline: windowsBaseline };
+  const report: Record<string, unknown> = {
+    passed: false,
+    baseline: windowsBaseline,
+    mode: compareVcRuntime ? "comparison" : "acceptance",
+  };
   try {
     report.stage = "docker-preflight";
     const diagnostics: {
@@ -640,12 +701,11 @@ async function runContainer(directory: string, output: string, compareVcRuntime:
     report.image = { id: image.Id, digests: image.RepoDigests, osVersion: image.OsVersion };
     await verifyWindowsScenarios(
       compareVcRuntime,
-      async (withVcRuntime) => {
-        const name = withVcRuntime ? "vc-runtime" : "baseline";
-        const scenarioOutput = compareVcRuntime ? join(output, name) : output;
-        if (compareVcRuntime) mkdirSync(scenarioOutput);
+      async (scenario) => {
+        const scenarioOutput = join(output, scenario);
+        mkdirSync(scenarioOutput);
         // Download only after baseline evidence has been saved. Never execute on the host.
-        if (withVcRuntime) {
+        if (windowsScenarios[scenario].withVcRuntime) {
           report.stage = "vc-runtime-material";
           save(join(output, "experiment.json"), report);
           const bytes = Buffer.from(await (await download(vcRuntime.url)).arrayBuffer());
@@ -654,7 +714,7 @@ async function runContainer(directory: string, output: string, compareVcRuntime:
         }
         report.stage = "container";
         save(join(output, "experiment.json"), report);
-        return runOneContainer(temporary, scenarioOutput, withVcRuntime);
+        return runOneContainer(temporary, scenarioOutput, scenario);
       },
       (checks) => {
         report.scenarios = checks;
@@ -674,11 +734,12 @@ async function runContainer(directory: string, output: string, compareVcRuntime:
 
 if (import.meta.main) {
   if (process.argv[2] === "--inside-container") {
+    const scenario = process.argv[3];
     assert.ok(
-      process.argv.length <= 4 && (!process.argv[3] || process.argv[3] === "--with-vc-runtime"),
+      process.argv.length === 4 && scenario && Object.hasOwn(windowsScenarios, scenario),
       "未知容器参数",
     );
-    await consumeInsideContainer(process.argv[3] === "--with-vc-runtime");
+    await consumeInsideContainer(scenario as WindowsScenario);
   } else {
     const [directory, output, option] = process.argv.slice(2);
     assert.ok(directory && output, "需要完整批次目录和新的结果目录");

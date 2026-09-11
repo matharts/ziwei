@@ -158,24 +158,24 @@ GNU 构建要求 Linux x64／arm64；指定目标沿用 `CARGO_BUILD_TARGET`。�
 
 上述提交已完成 GNU 构建、实际产物符号检查，以及双架构 glibc 2.28／Node 24.15.0 的同批运行验收。该结论仅对应列明的提交、批次和环境；后续改动须重新经过同样门禁。容器共享宿主内核，不能据此承诺最低 Linux 内核或全部旧发行版。
 
-## Windows x64 干净容器实验（待远端验收）
+## Windows x64 干净容器验收
 
-现有 Windows 双架构 runner 继续验证实际包消费；新增的 `Windows x64 clean container experiment` 专门检查不继承宿主开发软件的消费环境。本节描述已接入的实验代码，不表示 Windows 干净环境已通过，也不增加最低 Windows 版本承诺。
+现有 Windows 双架构 runner 继续验证实际包消费；`Windows x64 clean consumers` 额外检查不继承宿主开发软件的消费环境。正式门禁区分 Ziwei 的运行要求与 pnpm 自身的先决条件，不增加最低 Windows 版本承诺。
 
 - **输入与环境**：[实验工具](../../packages/ziwei/tools/windows-container.ts)在 Windows x64 Docker 宿主运行，固定 Microsoft Server Core LTSC 2025 的 manifest digest，使用 process isolation。仅复制两个 manifest、必要的 TypeScript 测试文件及完整批次到临时只读挂载，结果目录单独可写；不挂载宿主 Node、运行库、Rust、MSVC 或 workspace 依赖。
 - **Docker 预检**：就绪探测窗口最多 120 秒，单次 `docker info` 最多 10 秒，两次之间最多等待 2 秒；末次探测与等待按剩余预算裁剪。缺少可执行文件、输出超限、无效 JSON 或错误 OS／CPU 立即失败。`experiment.json.dockerAttempts` 逐次保存耗时、超时预算、退出状态和输出。探测前后另以 5～10 秒的独立命令限时记录客户端版本、当前 context／endpoint、三个服务（`docker`、`hns`、`vmcompute`）、`dockerd` 进程和近 15 分钟的相关 Windows 事件；每个事件来源最多取 30 条。诊断采集时间不计入 120 秒就绪窗口。
 - **诊断边界**：只读宿主状态，不启动或重启服务、不切换 context、不降级 Docker。命令输出限制为 256 KiB，上传前过滤已知敏感环境值、认证字段与 URL 凭据／查询参数；不读取完整环境、进程命令行或 Docker 凭据文件。解析和就绪判定使用原始命令数据，报告只持有独立的脱敏副本；报告中的 stdout／stderr 是诊断文本，不保证保留其原始结构。诊断命令自身的失败也保留在报告中，不代替真实就绪判定。Windows runner 的额外测试实际执行同一 PowerShell 诊断脚本；本地模拟测试只证明等待、退出和证据保留机制。
-- **Node 与运行库**：下载官方 Node 24.15.0 x64 ZIP，同时核对固定 SHA-256 与官方 `SHASUMS256.txt`，容器解压后拒绝 ZIP 内出现 DLL。容器先记录系统运行库路径、文件版本与摘要，完成 npm 分支后，再用 Node 自带 npm 安装和根 `devEngines` 一致的官方 pnpm 可执行包，禁用安装脚本。默认基线不安装 VC Redistributable，不调整 CRT 链接方式；存在系统自带运行库时如实记录，不删除 DLL 制造负例。
+- **Node 与运行库**：下载官方 Node 24.15.0 x64 ZIP，同时核对固定 SHA-256 与官方 `SHASUMS256.txt`，容器解压后拒绝 ZIP 内出现 DLL。默认依次启动两个全新容器：`npm-clean` 不安装额外运行库，也不安装或启动 pnpm；`pnpm-runtime` 先安装经校验的官方运行库，再用 Node 自带 npm 安装和根 `devEngines` 一致的 pnpm 可执行包，禁用安装脚本。两组均记录系统运行库路径、版本与摘要。`npm-clean` 拒绝开发工具链与普通 VC Runtime DLL，并核对实际加载模块；固定系统自带的 CLR 专用变体与 UCRT 单独保留，不删除 DLL 制造负例。
 - **运行库对照**：显式传入 `--compare-vc-runtime` 时，先完成原基线，再从同一 digest 启动另一个全新容器；复用同一 Node ZIP、源码和只读 tarball 批次，唯一安装条件差异为 Microsoft 官方 x64 VC Redistributable。安装器固定下载地址、版本 `14.51.36247.0` 和 SHA-256；宿主只下载，容器内再次校验摘要，并要求 Authenticode 状态为 `Valid`、签名者为 Microsoft Corporation、文件版本匹配，之后才使用 `/install /quiet /norestart /log` 执行。保留安装器签名、版本、摘要、安装退出码、日志和安装前后 DLL 清单。退出码 3010 只记录需要重启，不执行重启、不代替真实消费测试。[官方下载入口](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist?view=msvc-170)、[官方安装参数](https://learn.microsoft.com/en-us/cpp/windows/redistributing-visual-cpp-files?view=msvc-170#command-line-options-for-the-redistributable-packages)
 - **消费与证据**：传入当前 commit／run／attempt，由原有注册表夹具核对完整 tarball 集合与摘要。npm／pnpm 分别使用独立注册表实例和冷缓存，各自执行正常、禁用 optional、缺失、损坏四个场景。pnpm 版本检查只属于 pnpm 分支；一个分支失败后仍执行另一个分支。`consumer.json.checks` 分别保留包管理器、阶段、通过状态、加载观察和错误消息／退出信息；`consumers` 保留平铺的加载观察。正常加载探针额外记录 Node 版本、CPU 和实际加载模块路径；即使原生导入失败也尽量保存该观察。仅提取报告必要字段，不上传完整 Node diagnostic report 中的环境变量。
-- **失败传播**：Docker 不可用、镜像不兼容、材料校验失败或真实消费失败都使任务失败。包管理器分支内仍遇错即停，另一分支继续；任一分支失败，最终汇总仍抛错退出。对照模式即使基线失败也执行运行库组，但两组必须均通过才能通过门禁；不把预期基线失败计为成功。根 `experiment.json.scenarios` 汇总两组结果，`baseline/`、`vc-runtime/` 各自保存 `consumer.json`、退出／清理信息 `container.json` 及 stdout／stderr；默认单组仍直接写入结果目录。任务纳入最终 `verify`，不使用 `continue-on-error`。独立结果目录不可覆盖；容器退出或超时后只清理对应本轮容器，清理临时输入，保留结果。工作流被取消时不保证报告上传。
+- **失败传播**：Docker 不可用、镜像不兼容、材料校验失败或真实消费失败都使任务失败。正式门禁要求 `npm-clean` 与 `pnpm-runtime` 均通过；一个失败后仍执行另一个并保留证据。手动对照仍执行 `baseline`／`vc-runtime` 两组的全部 npm／pnpm 检查，失败如实传播，不把已知 pnpm 启动失败视为成功。根 `experiment.json.mode` 区分 `acceptance`／`comparison`，`scenarios` 汇总结果；每组独立子目录保存 `consumer.json`、退出／清理信息 `container.json` 及 stdout／stderr。任务纳入最终 `verify`，不使用 `continue-on-error`。结果目录不可覆盖；退出或超时后只清理本轮容器与临时输入，保留结果。工作流被取消时不保证报告上传。
 
 在具备 Windows x64 Docker daemon 的宿主运行：
 
 ```sh
 mise run check:node:windows -- <包含 batch.json 的完整交付目录> <新的结果目录>
 
-# 获准的单变量对照；当前 CI 显式启用此模式。
+# 按需诊断：两组均运行 npm/pnpm；已知失败仍返回非零，不属于日常门禁。
 mise run check:node:windows -- <包含 batch.json 的完整交付目录> <新的结果目录> --compare-vc-runtime
 ```
 
@@ -189,13 +189,15 @@ mise run check:node:windows -- <包含 batch.json 的完整交付目录> <新的
 
 提交 `32a0241` 的 [CI 34562804795](https://github.com/matharts/ziwei/actions/runs/34562804795) 完成了运行库对照：两组安装前 DLL 清单、Node、pnpm 与 tarball 输入相同；基线复现 npm 原生加载失败及 pnpm `0xC0000135`，补充运行库后 npm／pnpm 的四个消费场景均通过，加载观察包含 `VCRUNTIME140.dll`。安装器签名有效、退出码为 0。基线仍失败，因此 CI 未通过；这确认该环境下的运行库缺失问题，不代表已经选择部署运行库的方案。
 
-### Windows x64 静态 CRT 候选
+### Windows x64 静态 CRT
 
-下一轮实验仅在 CI 的 x64 MSVC 构建中显式对照 `-C target-feature=-crt-static` 和 `+crt-static`，使用目标专属的 `CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS`，不改默认本地构建、arm64 或其他平台。[Rust CRT 链接说明](https://doc.rust-lang.org/reference/linkage.html#static-and-dynamic-c-runtimes)、[Cargo 目标参数](https://doc.rust-lang.org/cargo/reference/config.html#targettriplerustflags)
+提交 `99840fb` 的 [CI 34566054495](https://github.com/matharts/ziwei/actions/runs/34566054495) 已验证静态候选：普通与延迟导入均无 VC Runtime DLL，原始 `.node` 从 514560 增至 607744 字节（增加 93184 字节，约 18.1%），封存包与受检文件逐字节一致。无额外运行库时 npm 四个场景均通过；pnpm 仍以 `0xC0000135` 启动失败，补齐运行库后两者均通过。原实验门禁仍失败，相关记录保留。
 
-`check:node:windows-crt -- <dynamic|static> <二进制路径> <新的证据目录>` 保存两份实际 `.node` 及 JSON，记录原始文件大小、SHA-256、构建批次、普通与延迟导入。检查器验证 PE32+ x64 DLL、目录与 section 边界；动态基线必须导入 `VCRUNTIME140.dll`，静态候选不得残留 VC Redistributable DLL 导入。它不枚举运行时主动加载或传递依赖，因此仍须真实消费验证。[Microsoft PE 格式](https://learn.microsoft.com/en-us/windows/win32/debug/pe-format)
+用户随后确认正式采用 x64 Node 静态 CRT，并调整验收合同。`build:node:native` 在任务内通过目标专属的 `CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS` 默认设置 `-C target-feature=+crt-static`，本地与 CI 复用同一入口。仅改变 x64 MSVC addon 构建，不改变其他架构或独立 Cargo 命令；显式目标参数覆盖只供受控诊断，日常产物必须通过静态依赖检查。[Rust CRT 链接说明](https://doc.rust-lang.org/reference/linkage.html#static-and-dynamic-c-runtimes)、[Cargo 目标参数](https://doc.rust-lang.org/cargo/reference/config.html#targettriplerustflags)
 
-静态候选通过现有 Node 集成及类型合同后进入同 commit／run／attempt 的完整封存批次，再由原容器实验消费。`windows-crt-<attempt>` 保存动态与静态文件及报告；必须核对静态报告摘要与完整批次实际二进制一致，才能关联体积、依赖和加载结果。容器基线仍不安装运行库，pnpm 自身的 CRT 要求仍单独记录；不调整包管理器门禁，也不以 npm 通过宣称全部 CI 通过。实验结果不自动成为正式链接策略。
+`check:node:windows-crt -- <dynamic|static> <二进制路径> <新的证据目录>` 保存对应模式的实际 `.node` 及 JSON，记录原始文件大小、SHA-256、构建批次、普通与延迟导入；`rustflags` 仅记录检查进程继承的目标参数，没有继承时为 null。检查器验证 PE32+ x64 DLL、目录与 section 边界；动态基线必须导入 `VCRUNTIME140.dll`，静态产物不得残留 VC Redistributable DLL 导入。它不枚举运行时主动加载或传递依赖，因此仍须真实消费验证。[Microsoft PE 格式](https://learn.microsoft.com/en-us/windows/win32/debug/pe-format)
+
+原生模块构建并检查后，只构建 TypeScript 层、运行 Node 与类型合同，禁止通过聚合任务再次构建 DLL。实际测试产物进入同 commit／run／attempt 的完整封存批次，再由两条正式容器门禁消费。`windows-crt-<attempt>` 保留静态文件与报告；核对其摘要与完整批次一致后才能关联依赖和加载结果。日常不再重复动态构建；手动运行 `ci.yml` 并启用 `compare_windows_crt` 才额外构建、保存动态基线，随后仍验收静态交付包。
 
 Server Core 结果不能替代 Windows 11、arm64 或最低系统验收；双架构完整路径与官方依据见 [Windows 干净环境研究](../engineering/windows-clean-environment-research.md)。没有新增发布流程。
 

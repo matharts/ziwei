@@ -18,9 +18,15 @@ const source = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8"
 const brokenNative = process.argv.includes("--broken-native");
 const npmOnly = process.argv.includes("--npm-only");
 const windowsConsumers = process.argv.includes("--windows-consumers");
+const windowsManager = process.argv.includes("--windows-npm-only")
+  ? "npm"
+  : process.argv.includes("--windows-pnpm-only")
+    ? "pnpm"
+    : undefined;
 const pnpmStartupFailure = process.argv.includes("--pnpm-startup-failure");
 const pnpmBootstrapFailure = process.argv.includes("--pnpm-bootstrap-failure");
-if (npmOnly || pnpmStartupFailure) process.env.ZIWEI_PNPM_BIN = join(temporary, "missing-pnpm");
+if (npmOnly || windowsManager === "npm" || pnpmStartupFailure)
+  process.env.ZIWEI_PNPM_BIN = join(temporary, "missing-pnpm");
 const digest = (path: string) => {
   const bytes = readFileSync(path);
   return { bytes: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex") };
@@ -80,7 +86,29 @@ try {
     delete process.env[variable];
   const observations: { manager: string; node: string; arch: string; sharedObjects: string[] }[] =
     [];
-  if (windowsConsumers) {
+  if (windowsManager) {
+    const progressPath = join(temporary, "selected-check.json");
+    let bootstrapCalls = 0;
+    const consume = () =>
+      verifyWindowsConsumers(
+        staged.directory,
+        () => {
+          bootstrapCalls++;
+          assert.equal(windowsManager, "pnpm", "npm-only must not bootstrap pnpm");
+        },
+        (checks) => writeFileSync(progressPath, JSON.stringify(checks)),
+        [windowsManager],
+      );
+    if (brokenNative) await assert.rejects(consume(), AggregateError);
+    else await consume();
+    assert.equal(bootstrapCalls, windowsManager === "pnpm" ? 1 : 0);
+    const checks = JSON.parse(readFileSync(progressPath, "utf8"));
+    assert.equal(checks.length, 1);
+    assert.equal(checks[0].manager, windowsManager);
+    assert.equal(checks[0].passed, !brokenNative);
+    observations.push(...checks[0].runtimes);
+    console.log("windows-selected-consumer-ok");
+  } else if (windowsConsumers) {
     const progressPath = join(temporary, "checks.json");
     let bootstrapCalls = 0;
     const consume = () =>
@@ -134,9 +162,11 @@ try {
   }
   assert.deepEqual(
     observations.map(({ manager }) => manager),
-    npmOnly || pnpmStartupFailure || pnpmBootstrapFailure || (brokenNative && !windowsConsumers)
-      ? ["npm"]
-      : ["npm", "pnpm"],
+    windowsManager
+      ? [windowsManager]
+      : npmOnly || pnpmStartupFailure || pnpmBootstrapFailure || (brokenNative && !windowsConsumers)
+        ? ["npm"]
+        : ["npm", "pnpm"],
   );
   for (const runtime of observations) {
     assert.equal(runtime.node, process.version);

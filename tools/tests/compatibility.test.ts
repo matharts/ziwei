@@ -18,17 +18,20 @@ import {
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
 
-test("Windows CRT candidate tests reuse the already inspected native binary", () => {
+test("Windows CRT acceptance reuses inspected bytes and dynamic comparison is opt-in", () => {
   const workflow = readFileSync(join(root, ".github/workflows/ci.yml"), "utf8");
   const integration = workflow
     .split("- name: Windows x64 static CRT integration and type contracts")[1]
     ?.split("- name: Node adapter integration and type contracts")[0];
   assert.ok(integration);
   assert.match(integration, /if: matrix.target == 'x86_64-pc-windows-msvc'/);
-  assert.match(
-    integration,
-    /CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS: -C target-feature=\+crt-static/,
-  );
+  assert.doesNotMatch(integration, /CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS/);
+  assert.match(workflow, /workflow_dispatch:[\s\S]*compare_windows_crt:[\s\S]*default: false/);
+  const dynamic = workflow
+    .split("- name: Record Windows x64 dynamic CRT baseline")[1]!
+    .split("- name:")[0]!;
+  assert.match(dynamic, /inputs.compare_windows_crt == true/);
+  assert.match(dynamic, /target-feature=-crt-static/);
   const tasks = [...integration.matchAll(/mise run ([\w:]+)/g)].map((match) => match[1]);
   assert.deepEqual(tasks, ["build:node:ts", "test:node", "check:node:types"]);
   assert.equal(integration.match(/if \(\$LASTEXITCODE -ne 0\)/g)?.length, 2);

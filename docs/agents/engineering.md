@@ -90,9 +90,9 @@ GNU CI 使用 `build:node:gnu`，在 Linux x64／arm64 上经 `--use-napi-cross`
 
 `check:node:registry -- <完整交付目录>` 让 npm／pnpm 从仅监听本机的只读注册表冻结安装全部目标依赖，无 overrides 或架构覆盖。CI 在八种实际运行环境消费同一批已汇总 tarball；本地回归仅验证本机真实二进制与其他平台的筛选。冷缓存、失败路径及 Alpine 测试客户端启动方式见[隔离注册表安装验收](../architecture/node-distribution-proposal.md#隔离注册表安装验收)。它不执行公共 npm 发布。
 
-`check:node:windows -- <完整交付目录> <新的结果目录>` 是 Windows x64 Server Core 消费实验，要求 Windows Docker daemon。固定镜像与 Node ZIP，复用同批注册表夹具，默认不安装 CRT，也不挂载宿主开发软件。显式加 `--compare-vc-runtime` 会保留基线，再在同镜像的新容器中安装经固定摘要及 Microsoft 签名校验的官方运行库作对照；当前 CI 使用此模式。两组报告独立保存，基线失败仍使 `verify` 失败；不得用对照组通过替代基线通过。结果目录保留环境清单和失败日志；实现不等于远端已经通过，也不替代 arm64／Windows 11 验收，详见 [Windows x64 容器实验](../architecture/node-distribution-proposal.md#windows-x64-干净容器实验待远端验收)。
+`check:node:windows -- <完整交付目录> <新的结果目录>` 要求 Windows x64 Docker，使用固定 Server Core 镜像、Node ZIP 与同批 tarball。日常门禁分别运行 `npm-clean`（无额外 CRT、无 pnpm）与 `pnpm-runtime`（安装经摘要和 Microsoft 签名校验的运行库后运行 pnpm），两组必须均通过，报告独立保存。前者拒绝额外 VC Runtime 和开发工具链，并核对实际加载模块。`--compare-vc-runtime` 保留原来的完整对照，仅供按需诊断；其失败仍返回非零，不属于日常门禁。结果不能替代 arm64／Windows 11 验收，详见 [Windows x64 容器验收](../architecture/node-distribution-proposal.md#windows-x64-干净容器验收)。
 
-Windows x64 静态 CRT 候选由 CI 的目标专属 Rust flags 控制，不改变本地默认构建或其他架构。`check:node:windows-crt` 只记录并检查实际 PE 依赖；真实消费仍使用上面的完整批次容器门禁。两份二进制、大小与摘要的对照方法见[静态 CRT 实验](../architecture/node-distribution-proposal.md#windows-x64-静态-crt-候选)。
+`build:node:native` 在任务内默认启用 x64 MSVC 静态 CRT，本地与 CI 共用；其他目标与独立 Cargo 命令不变。显式目标参数可用于动态诊断，但正式产物必须通过 `check:node:windows-crt` 的静态依赖检查。检查后的 DLL 不得重复构建；继续构建 TS、运行 Node 与类型合同，封存同一产物。手动 CI 参数 `compare_windows_crt` 才额外构建动态基线；日常只构建静态交付包。详见[静态 CRT 策略](../architecture/node-distribution-proposal.md#windows-x64-静态-crt)。
 
 ### 依赖版本管理
 

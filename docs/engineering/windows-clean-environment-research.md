@@ -146,7 +146,7 @@ GitHub larger runner 的自定义镜像可从干净 OS base image 生成，但�
 
 后续修复将 npm／pnpm 验收隔离：先完成 npm 分支，再准备并检查 pnpm；每个分支单独记录阶段、结果和错误，任一失败仍使 CI 失败。提交 `45c196c` 的 [CI 34557451358](https://github.com/matharts/ziwei/actions/runs/34557451358) 中，常规验收通过，但宿主首次 `docker info` 超时，尚未启动容器，不能据此评价分支隔离后的真实加载结果。
 
-两次任务的 runner 镜像分别为 `20260824.214.3` 和 `20260907.229.1`，官方清单中的 Docker 版本分别为 [29.1.5](https://github.com/actions/runner-images/blob/win25-vs2026/20260824.214/images/windows/Windows2025-VS2026-Readme.md) 与 [29.7.2](https://github.com/actions/runner-images/blob/win25-vs2026/20260907.229/images/windows/Windows2025-VS2026-Readme.md)。镜像变化不是根因证明；需要同一任务内的服务、连接目标和 daemon 事件证据。新增预检保留探测前后诊断与最多 120 秒的就绪探测记录，不自动重启或降级。等待和失败传播由本地回归检查，Windows 行为仍待新 CI 实测；详细边界见 [Windows x64 容器实验](../architecture/node-distribution-proposal.md#windows-x64-干净容器实验待远端验收)。
+两次任务的 runner 镜像分别为 `20260824.214.3` 和 `20260907.229.1`，官方清单中的 Docker 版本分别为 [29.1.5](https://github.com/actions/runner-images/blob/win25-vs2026/20260824.214/images/windows/Windows2025-VS2026-Readme.md) 与 [29.7.2](https://github.com/actions/runner-images/blob/win25-vs2026/20260907.229/images/windows/Windows2025-VS2026-Readme.md)。镜像变化不是根因证明；需要同一任务内的服务、连接目标和 daemon 事件证据。新增预检保留探测前后诊断与最多 120 秒的就绪探测记录，不自动重启或降级。等待和失败传播由本地回归检查，Windows 行为仍待新 CI 实测；详细边界见 [Windows x64 容器验收](../architecture/node-distribution-proposal.md#windows-x64-干净容器验收)。
 
 诊断提交 `00d961e` 的 [CI 34559509252](https://github.com/matharts/ziwei/actions/runs/34559509252) 已记录 Docker／HNS／vmcompute 均运行、daemon 完成初始化且监听本地 named pipe；Docker 29.7.2 首次 `info` 在约 4 秒内返回。该次失败是诊断脱敏先于解析、改坏 JSON 的回归，不是 Docker 无响应。修复改为原始数据参与控制流、脱敏副本进入报告；原先超时的原因仍未确认。
 
@@ -156,4 +156,8 @@ GitHub larger runner 的自定义镜像可从干净 OS base image 生成，但�
 
 提交 `32a0241` 的 [CI 34562804795](https://github.com/matharts/ziwei/actions/runs/34562804795) 已完成对照。两组安装前运行库清单一致、pnpm 二进制摘要一致，已有系统 DLL 未被替换。基线仍复现 npm 加载失败及 pnpm `0xC0000135`；运行库组安装器签名有效、安装退出码 0，npm／pnpm 四个注册表消费场景均通过，加载模块包含 `VCRUNTIME140.dll`。这确认该环境下补齐运行库可以解决两条独立路径的失败；基线与最终门禁仍失败，不据此修改默认部署前提。
 
-用户进一步授权只对 Windows x64 addon 实验静态 CRT。CI 同一 job 保存显式动态基线与静态候选的 PE 普通／延迟导入、原始文件大小、摘要和实际二进制，静态候选再进入既有 Node 回归及同批干净容器消费。默认本地链接配置、arm64 和 pnpm 保持不变；不新增发布。具体入口、产物关联与验收边界见[静态 CRT 候选](../architecture/node-distribution-proposal.md#windows-x64-静态-crt-候选)。
+用户进一步授权只对 Windows x64 addon 实验静态 CRT。CI 同一 job 保存显式动态基线与静态候选的 PE 普通／延迟导入、原始文件大小、摘要和实际二进制，静态候选再进入既有 Node 回归及同批干净容器消费。该阶段默认本地链接配置、arm64 和 pnpm 保持不变；不新增发布。
+
+提交 `99840fb` 的 [CI 34566054495](https://github.com/matharts/ziwei/actions/runs/34566054495) 已完成候选验收：静态二进制与封存包逐字节一致，607744 字节，相比动态基线增加 93184 字节（约 18.1%）；无普通或延迟 VC Runtime 导入。干净基线 npm 四个场景通过；pnpm 启动仍缺自身运行库，补齐后两者通过。旧实验总门禁仍失败，记录不修改。
+
+用户随后确认将 x64 addon 静态 CRT 设为本地／CI 共用构建入口的默认值，并将日常验收调整为两个独立必过场景：无额外运行库的 `npm-clean` 与具备运行库的 `pnpm-runtime`。原完整对照按需运行，动态构建由手动 CI 参数启用；正式策略不扩展 arm64 或 Windows 11 承诺，也不新增发布。具体入口、产物关联与验收边界见[静态 CRT 策略](../architecture/node-distribution-proposal.md#windows-x64-静态-crt)。
