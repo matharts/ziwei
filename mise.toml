@@ -16,6 +16,9 @@ run = [{ task = "build:node:native" }, { task = "build:node:ts" }]
 [tasks."build:node:native"]
 description = "构建 Node 原生绑定；默认本机，可用 CARGO_BUILD_TARGET 指定目标"
 dir = "packages/ziwei"
+# Only this addon task defaults x64 MSVC to static CRT. An explicit target override
+# remains available for the on-demand comparison; unrelated Cargo builds are unchanged.
+env.CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS = "{{ env.CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS | default(value='-C target-feature=+crt-static') }}"
 usage = '''
 flag "--cross-compile" help="使用 napi-rs 的 Zig／xwin 交叉链接工具链"
 flag "--use-napi-cross" help="在 Linux 上使用 napi-rs 的 GNU 交叉工具链"
@@ -65,9 +68,25 @@ run = "pnpm exec -- node packages/ziwei/test/fixtures/registry-consumer.ts"
 description = "检查完整批次中 GNU 二进制的架构、摘要与 glibc 2.28 符号上限；需要 readelf"
 run = "pnpm exec -- node packages/ziwei/tools/compatibility.ts"
 
+[tasks."check:node:musl-runtime"]
+description = "核验当前进程的最低 Node、CPU 与 Alpine/musl 运行环境；参数 x64 或 arm64"
+run = "pnpm exec -- node packages/ziwei/tools/compatibility.ts --musl-runtime"
+
+[tasks."check:node:macos"]
+description = "检查完整批次的双架构 Mach-O、系统版本标记与动态库路径；不代表最低系统实测"
+run = "pnpm exec -- node packages/ziwei/tools/compatibility.ts --macos"
+
 [tasks."check:node:windows"]
-description = "在 Windows x64 Server Core 容器中消费同批 tarball；需要 Windows Docker，保留失败报告"
+description = "分别验收无额外 CRT 的 npm 与具备自身运行库的 pnpm；需要 Windows x64 Docker"
 run = "pnpm exec -- node packages/ziwei/tools/windows-container.ts"
+
+[tasks."check:node:windows-crt"]
+description = "检查 Windows x64 实际 PE 依赖并记录摘要与大小；动态模式仅供按需对照"
+run = "pnpm exec -- node packages/ziwei/tools/compatibility.ts --windows-crt"
+
+[tasks."check:node:windows-arm64"]
+description = "检查完整批次的 Windows ARM64 PE、导入依赖与摘要；不代表干净系统实测"
+run = "pnpm exec -- node packages/ziwei/tools/compatibility.ts --windows-arm64"
 
 [tasks."check:node:types"]
 description = "验证已构建 Node 包的 TypeScript 消费端合同"

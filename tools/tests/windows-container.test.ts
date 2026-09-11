@@ -9,6 +9,8 @@ import {
   dockerDiagnosticsScript,
   observeCommand,
   redactDiagnostic,
+  verifyCleanWindowsRuntime,
+  verifyWindowsConsumers,
   verifyNodeZip,
   verifyVcRuntime,
   verifyVcRuntimeSignature,
@@ -19,7 +21,66 @@ import {
   windowsBaseline,
   windowsBootstrap,
   windowsContainerArgs,
+  windowsScenarios,
 } from "../../packages/ziwei/tools/windows-container.ts";
+
+test("Clean npm rejects ordinary VC runtime DLLs and development tools", () => {
+  const clean = {
+    developmentTools: [],
+    dlls: [
+      { path: "C:\\Windows\\System32\\ucrtbase.dll" },
+      { path: "C:\\Windows\\System32\\vcruntime140_clr0400.dll" },
+    ],
+  };
+  verifyCleanWindowsRuntime(clean);
+  assert.throws(
+    () => verifyCleanWindowsRuntime({ ...clean, developmentTools: ["cl.exe"] }),
+    /开发工具链/,
+  );
+  for (const name of ["VCRUNTIME140.dll", "vcruntime140_1.dll", "MSVCP140.dll", "concrt140.dll"]) {
+    assert.throws(
+      () => verifyCleanWindowsRuntime({ ...clean, dlls: [{ path: `C:\\runtime\\${name}` }] }),
+      /额外 VC Runtime/,
+    );
+  }
+});
+
+test("Windows consumer selection cannot pass with an empty or duplicated manager list", async () => {
+  for (const managers of [[], ["npm", "npm"]] as const) {
+    await assert.rejects(
+      verifyWindowsConsumers(
+        "unused",
+        () => assert.fail(),
+        () => assert.fail(),
+        managers,
+      ),
+      /非空且不重复/,
+    );
+  }
+});
+
+test("Pinned Server Core system libraries are accepted only at their recorded path and hash", () => {
+  // Both fresh containers in CI 34567870581 contained these OS-shipped files before installation.
+  const dlls = [
+    {
+      path: "C:\\Windows\\System32\\msvcp110_win.dll",
+      sha256: "782E62872C751682BC220489B07DB6B80820E3799416028630AD899FBA113AE6",
+    },
+    {
+      path: "C:\\Windows\\System32\\msvcp60.dll",
+      sha256: "4B7D8E819274E42F4FD61A8F06ED6C8B5AAF9154A1881E2012DA5A3200118B96",
+    },
+  ];
+  verifyCleanWindowsRuntime({ developmentTools: [], dlls });
+  for (const dll of dlls) {
+    for (const changed of [
+      { ...dll, sha256: "0".repeat(64) },
+      { ...dll, sha256: undefined },
+      { ...dll, path: dll.path.replace("System32", "Temp") },
+    ])
+      assert.throws(() => verifyCleanWindowsRuntime({ developmentTools: [], dlls: [changed] }));
+  }
+});
 
 test("VC Runtime material is pinned and its signature must belong to Microsoft", () => {
   assert.equal(new URL(vcRuntime.url).hostname, "download.visualstudio.microsoft.com");
@@ -52,20 +113,20 @@ test("VC Runtime material is pinned and its signature must belong to Microsoft",
 });
 
 test("Runtime comparison finishes treatment after a failed baseline without passing the gate", async () => {
-  const calls: boolean[] = [];
+  const calls: string[] = [];
   const records: string[] = [];
   await assert.rejects(
     verifyWindowsScenarios(
       true,
-      async (withRuntime) => {
-        calls.push(withRuntime);
-        return withRuntime;
+      async (scenario) => {
+        calls.push(scenario);
+        return scenario === "vc-runtime";
       },
       (checks) => records.push(JSON.stringify(checks)),
     ),
     /Windows 容器验收失败/,
   );
-  assert.deepEqual(calls, [false, true]);
+  assert.deepEqual(calls, ["baseline", "vc-runtime"]);
   assert.deepEqual(JSON.parse(records.at(-1)!), [
     { name: "baseline", passed: false },
     { name: "vc-runtime", passed: true },
@@ -73,40 +134,62 @@ test("Runtime comparison finishes treatment after a failed baseline without pass
 });
 
 test("Runtime comparison retains startup failures and never skips the other scenario", async () => {
-  const calls: boolean[] = [];
+  const calls: string[] = [];
   const records: string[] = [];
   await assert.rejects(
     verifyWindowsScenarios(
       true,
-      async (withRuntime) => {
-        calls.push(withRuntime);
-        if (!withRuntime) throw new Error("container fixture failure");
+      async (scenario) => {
+        calls.push(scenario);
+        if (scenario === "baseline") throw new Error("container fixture failure");
         return false;
       },
       (checks) => records.push(JSON.stringify(checks)),
     ),
     /Windows 容器验收失败/,
   );
-  assert.deepEqual(calls, [false, true]);
+  assert.deepEqual(calls, ["baseline", "vc-runtime"]);
   assert.match(records.at(-1)!, /container fixture failure/);
   assert.equal(JSON.parse(records.at(-1)!)[1].passed, false);
 });
 
-test("The default scenario never installs a runtime and comparison requires both checks", async () => {
-  const calls: boolean[] = [];
+test("Acceptance requires clean npm and runtime-equipped pnpm, with neither path optional", async () => {
+  assert.deepEqual(windowsScenarios, {
+    "npm-clean": { withVcRuntime: false, managers: ["npm"] },
+    "pnpm-runtime": { withVcRuntime: true, managers: ["pnpm"] },
+    baseline: { withVcRuntime: false, managers: ["npm", "pnpm"] },
+    "vc-runtime": { withVcRuntime: true, managers: ["npm", "pnpm"] },
+  });
+  const calls: string[] = [];
   await verifyWindowsScenarios(
     false,
-    async (withRuntime) => {
-      calls.push(withRuntime);
+    async (scenario) => {
+      calls.push(scenario);
       return true;
     },
     () => {},
   );
-  assert.deepEqual(calls, [false]);
+  assert.deepEqual(calls, ["npm-clean", "pnpm-runtime"]);
+  for (const failure of calls) {
+    const visited: string[] = [];
+    await assert.rejects(
+      verifyWindowsScenarios(
+        false,
+        async (scenario) => {
+          visited.push(scenario);
+          if (scenario === failure) throw new Error("consumer failed");
+          return true;
+        },
+        () => {},
+      ),
+      /Windows 容器验收失败/,
+    );
+    assert.deepEqual(visited, calls);
+  }
   await assert.rejects(
     verifyWindowsScenarios(
       true,
-      async (withRuntime) => !withRuntime,
+      async (scenario) => scenario === "baseline",
       () => {},
     ),
   );
@@ -118,21 +201,21 @@ test("The default scenario never installs a runtime and comparison requires both
 });
 
 test("Comparison containers share the baseline image but have distinct state and output", () => {
-  const baseline = windowsContainerArgs("C:\\input", "C:\\results\\baseline");
-  const treatment = windowsContainerArgs("C:\\input", "C:\\results\\vc-runtime", true);
+  const baseline = windowsContainerArgs("C:\\input", "C:\\results\\baseline", "baseline");
+  const treatment = windowsContainerArgs("C:\\input", "C:\\results\\vc-runtime", "vc-runtime");
   assert.ok(baseline.includes(windowsBaseline.image));
   assert.ok(treatment.includes(windowsBaseline.image));
   assert.notEqual(
     baseline[baseline.indexOf("--name") + 1],
     treatment[treatment.indexOf("--name") + 1],
   );
-  assert.doesNotMatch(
+  assert.match(
     Buffer.from(baseline.at(-1)!, "base64").toString("utf16le"),
-    /--with-vc-runtime/,
+    /--inside-container baseline/,
   );
   assert.match(
     Buffer.from(treatment.at(-1)!, "base64").toString("utf16le"),
-    /--inside-container --with-vc-runtime/,
+    /--inside-container vc-runtime/,
   );
 });
 
@@ -391,7 +474,7 @@ test("Docker receives isolated input, separate output and only the cohort enviro
   assert.throws(() => windowsContainerArgs(input, "C:\\a,b"), /逗号/);
 });
 
-test("Windows experiment failures are retained and cannot bypass the final CI check", () => {
+test("Windows acceptance failures are retained and cannot bypass the final CI check", () => {
   const workflow = readFileSync(
     fileURLToPath(new URL("../../.github/workflows/ci.yml", import.meta.url)),
     "utf8",
@@ -399,7 +482,8 @@ test("Windows experiment failures are retained and cannot bypass the final CI ch
   const job = workflow.split("  windows-clean-consumer:\n")[1]!.split("\n  quality:")[0]!;
   assert.match(job, /needs: node-distribution/);
   assert.match(job, /runs-on: windows-2025/);
-  assert.match(job, /mise run check:node:windows -- .* --compare-vc-runtime/);
+  assert.match(job, /mise run check:node:windows -- /);
+  assert.doesNotMatch(job, /--compare-vc-runtime/);
   assert.match(job, /name: node-distribution-\$\{\{ github\.run_attempt \}\}/);
   assert.match(job, /if: \$\{\{ !cancelled\(\) \}\}/);
   assert.doesNotMatch(job, /continue-on-error/);
