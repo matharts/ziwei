@@ -165,21 +165,27 @@ GNU 构建要求 Linux x64／arm64；指定目标沿用 `CARGO_BUILD_TARGET`。�
 - **输入与环境**：[实验工具](../../packages/ziwei/tools/windows-container.ts)在 Windows x64 Docker 宿主运行，固定 Microsoft Server Core LTSC 2025 的 manifest digest，使用 process isolation。仅复制两个 manifest、必要的 TypeScript 测试文件及完整批次到临时只读挂载，结果目录单独可写；不挂载宿主 Node、运行库、Rust、MSVC 或 workspace 依赖。
 - **Docker 预检**：就绪探测窗口最多 120 秒，单次 `docker info` 最多 10 秒，两次之间最多等待 2 秒；末次探测与等待按剩余预算裁剪。缺少可执行文件、输出超限、无效 JSON 或错误 OS／CPU 立即失败。`experiment.json.dockerAttempts` 逐次保存耗时、超时预算、退出状态和输出。探测前后另以 5～10 秒的独立命令限时记录客户端版本、当前 context／endpoint、三个服务（`docker`、`hns`、`vmcompute`）、`dockerd` 进程和近 15 分钟的相关 Windows 事件；每个事件来源最多取 30 条。诊断采集时间不计入 120 秒就绪窗口。
 - **诊断边界**：只读宿主状态，不启动或重启服务、不切换 context、不降级 Docker。命令输出限制为 256 KiB，上传前过滤已知敏感环境值、认证字段与 URL 凭据／查询参数；不读取完整环境、进程命令行或 Docker 凭据文件。解析和就绪判定使用原始命令数据，报告只持有独立的脱敏副本；报告中的 stdout／stderr 是诊断文本，不保证保留其原始结构。诊断命令自身的失败也保留在报告中，不代替真实就绪判定。Windows runner 的额外测试实际执行同一 PowerShell 诊断脚本；本地模拟测试只证明等待、退出和证据保留机制。
-- **Node 与运行库**：下载官方 Node 24.15.0 x64 ZIP，同时核对固定 SHA-256 与官方 `SHASUMS256.txt`，容器解压后拒绝 ZIP 内出现 DLL。容器先记录系统运行库路径、文件版本与摘要，完成 npm 分支后，再用 Node 自带 npm 安装和根 `devEngines` 一致的官方 pnpm 可执行包，禁用安装脚本。不安装 VC Redistributable，不调整 CRT 链接方式；存在系统自带运行库时如实记录，不删除 DLL 制造负例。
+- **Node 与运行库**：下载官方 Node 24.15.0 x64 ZIP，同时核对固定 SHA-256 与官方 `SHASUMS256.txt`，容器解压后拒绝 ZIP 内出现 DLL。容器先记录系统运行库路径、文件版本与摘要，完成 npm 分支后，再用 Node 自带 npm 安装和根 `devEngines` 一致的官方 pnpm 可执行包，禁用安装脚本。默认基线不安装 VC Redistributable，不调整 CRT 链接方式；存在系统自带运行库时如实记录，不删除 DLL 制造负例。
+- **运行库对照**：显式传入 `--compare-vc-runtime` 时，先完成原基线，再从同一 digest 启动另一个全新容器；复用同一 Node ZIP、源码和只读 tarball 批次，唯一安装条件差异为 Microsoft 官方 x64 VC Redistributable。安装器固定下载地址、版本 `14.51.36247.0` 和 SHA-256；宿主只下载，容器内再次校验摘要，并要求 Authenticode 状态为 `Valid`、签名者为 Microsoft Corporation、文件版本匹配，之后才使用 `/install /quiet /norestart /log` 执行。保留安装器签名、版本、摘要、安装退出码、日志和安装前后 DLL 清单。退出码 3010 只记录需要重启，不执行重启、不代替真实消费测试。[官方下载入口](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist?view=msvc-170)、[官方安装参数](https://learn.microsoft.com/en-us/cpp/windows/redistributing-visual-cpp-files?view=msvc-170#command-line-options-for-the-redistributable-packages)
 - **消费与证据**：传入当前 commit／run／attempt，由原有注册表夹具核对完整 tarball 集合与摘要。npm／pnpm 分别使用独立注册表实例和冷缓存，各自执行正常、禁用 optional、缺失、损坏四个场景。pnpm 版本检查只属于 pnpm 分支；一个分支失败后仍执行另一个分支。`consumer.json.checks` 分别保留包管理器、阶段、通过状态、加载观察和错误消息／退出信息；`consumers` 保留平铺的加载观察。正常加载探针额外记录 Node 版本、CPU 和实际加载模块路径；即使原生导入失败也尽量保存该观察。仅提取报告必要字段，不上传完整 Node diagnostic report 中的环境变量。
-- **失败传播**：Docker 不可用、镜像不兼容、材料校验失败或真实消费失败都使任务失败。包管理器分支内仍遇错即停，另一分支继续；任一分支失败，最终汇总仍抛错退出。失败也上传阶段报告和容器 stdout／stderr。任务纳入最终 `verify`，不使用 `continue-on-error`。独立结果目录不可覆盖；容器退出或超时后尝试清理本轮容器并记录状态，清理临时输入，保留结果。工作流被取消时不保证报告上传。
+- **失败传播**：Docker 不可用、镜像不兼容、材料校验失败或真实消费失败都使任务失败。包管理器分支内仍遇错即停，另一分支继续；任一分支失败，最终汇总仍抛错退出。对照模式即使基线失败也执行运行库组，但两组必须均通过才能通过门禁；不把预期基线失败计为成功。根 `experiment.json.scenarios` 汇总两组结果，`baseline/`、`vc-runtime/` 各自保存 `consumer.json`、退出／清理信息 `container.json` 及 stdout／stderr；默认单组仍直接写入结果目录。任务纳入最终 `verify`，不使用 `continue-on-error`。独立结果目录不可覆盖；容器退出或超时后只清理对应本轮容器，清理临时输入，保留结果。工作流被取消时不保证报告上传。
 
 在具备 Windows x64 Docker daemon 的宿主运行：
 
 ```sh
 mise run check:node:windows -- <包含 batch.json 的完整交付目录> <新的结果目录>
+
+# 获准的单变量对照；当前 CI 显式启用此模式。
+mise run check:node:windows -- <包含 batch.json 的完整交付目录> <新的结果目录> --compare-vc-runtime
 ```
 
 首次远端运行 [34497803586](https://github.com/matharts/ziwei/actions/runs/34497803586) 对应提交 `9455a3c`、attempt 1：Docker 与固定镜像启动成功，Node 24.15.0 可运行，但 `pnpm.exe --version` 以 `3221225781` 退出。旧夹具的公共 pnpm 前置检查阻断了 npm 分支，`consumers` 为空，因此尚无该容器内的 Ziwei 加载结论。
 
 分支隔离提交 `45c196c` 的 [CI 34557451358](https://github.com/matharts/ziwei/actions/runs/34557451358) 中，18 项任务通过；Windows 实验在宿主首次 `docker info` 时超时，最终汇总失败，尚未运行容器。该任务的 runner 镜像从 `20260824.214.3` 更新为 `20260907.229.1`，官方清单中的 Docker 从 29.1.5 更新为 29.7.2；这只是排查线索，不是版本回归的证明。
 
-诊断提交 `00d961e` 的 [CI 34559509252](https://github.com/matharts/ziwei/actions/runs/34559509252) 中，Docker 29.7.2 的三个服务均正常运行，使用默认本地 named pipe，首次 `docker info` 在 4003 ms 内成功；随后脱敏改写 `Plugins.Authorization` 导致 JSON 解析失败。修复将解析与报告脱敏分离，并用真实子进程输出补充回归。这一结果确认该次 Docker 可用，不证明上一次超时的根因；修复后的容器加载仍待新 CI 验收。
+诊断提交 `00d961e` 的 [CI 34559509252](https://github.com/matharts/ziwei/actions/runs/34559509252) 中，Docker 29.7.2 的三个服务均正常运行，使用默认本地 named pipe，首次 `docker info` 在 4003 ms 内成功；随后脱敏改写 `Plugins.Authorization` 导致 JSON 解析失败。修复将解析与报告脱敏分离，并用真实子进程输出补充回归。这一结果确认该次 Docker 可用，不证明上一次超时的根因。
+
+提交 `0efe848` 的 [CI 34561101352](https://github.com/matharts/ziwei/actions/runs/34561101352) 已进入容器：Docker 首次探测 7123 ms 成功；npm 安装和实际二进制摘要校验通过，但加载 `.node` 报 `The specified module could not be found.`；pnpm 仍在 `--version` 以 `0xC0000135` 退出。该同批 `.node` 直接导入 `VCRUNTIME140.dll`，容器 System32 清单缺少同名 DLL。18 项其他任务通过，容器和总门禁失败。用户随后授权上述运行库对照；对照结果以新 CI 的两组报告为准，不提前改变运行库部署或链接决策。
 
 Server Core 结果不能替代 Windows 11、arm64 或最低系统验收；双架构完整路径与官方依据见 [Windows 干净环境研究](../engineering/windows-clean-environment-research.md)。没有新增发布流程。
 

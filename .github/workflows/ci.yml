@@ -295,12 +295,12 @@ jobs:
         with:
           install_args: node pnpm
           cache: false
-      - name: Consume the sealed cohort without host development tools or CRT installation
+      - name: Compare the sealed cohort before and after official VC Runtime installation
         shell: pwsh
         run: |
           $cohorts = @(Get-ChildItem target/node-registry -Directory)
           if ($cohorts.Count -ne 1) { throw 'Expected exactly one complete cohort' }
-          mise run check:node:windows -- $cohorts[0].FullName "$PWD/target/windows-clean-consumer"
+          mise run check:node:windows -- $cohorts[0].FullName "$PWD/target/windows-clean-consumer" --compare-vc-runtime
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Preserve Windows experiment evidence, including failures
         if: ${{ !cancelled() }}

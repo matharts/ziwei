@@ -32,6 +32,87 @@ export const windowsBaseline = {
   nodeSha256: "cc5149eabd53779ce1e7bdc5401643622d0c7e6800ade18928a767e940bb0e62",
 } as const;
 
+export const vcRuntime = {
+  // Resolved from Microsoft's documented vc14 x64 permalink on 2026-09-11.
+  url: "https://download.visualstudio.microsoft.com/download/pr/ebdab8e5-1d7b-4d9f-a11b-cbb1720c3b12/843068991DAAA1F73AD9F6239BCE4D0F6A07A51F18C37EA2A867E9BECA71295C/VC_redist.x64.exe",
+  version: "14.51.36247.0",
+  sha256: "843068991daaa1f73ad9f6239bce4d0f6a07a51f18c37ea2a867e9beca71295c",
+} as const;
+
+export const vcRuntimeInstallArgs = [
+  "/install",
+  "/quiet",
+  "/norestart",
+  "/log",
+  "C:\\output\\vc-runtime-install.log",
+] as const;
+
+export function verifyVcRuntime(bytes: Buffer, expectedSha256: string = vcRuntime.sha256) {
+  const sha256 = createHash("sha256").update(bytes).digest("hex");
+  assert.equal(sha256, expectedSha256, "VC Runtime 安装器与固定摘要不符");
+  return { bytes: bytes.length, sha256 };
+}
+
+export function verifyVcRuntimeSignature(signature: {
+  status: string;
+  subject: string;
+  version: string;
+}) {
+  assert.equal(signature.status, "Valid", "VC Runtime 安装器签名无效");
+  assert.match(
+    signature.subject,
+    /(?:^|,\s*)CN=Microsoft Corporation(?:,|$)/,
+    "安装器必须由 Microsoft Corporation 签名",
+  );
+  assert.equal(signature.version, vcRuntime.version, "VC Runtime 安装器版本不符");
+}
+
+function installVcRuntime(onProgress: (evidence: Record<string, unknown>) => void) {
+  const installer = "C:\\input\\vc_redist.x64.exe";
+  const evidence: Record<string, unknown> = {
+    ...vcRuntime,
+    ...verifyVcRuntime(readFileSync(installer)),
+  };
+  onProgress(evidence);
+  const script = String.raw`
+$ErrorActionPreference = 'Stop'
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+$path = 'C:\input\vc_redist.x64.exe'
+$signature = Get-AuthenticodeSignature -LiteralPath $path
+[ordered]@{
+  status = [string]$signature.Status
+  subject = $signature.SignerCertificate.Subject
+  thumbprint = $signature.SignerCertificate.Thumbprint
+  version = (Get-Item -LiteralPath $path).VersionInfo.FileVersion
+} | ConvertTo-Json -Compress
+`;
+  const result = observeCommand(
+    "powershell.exe",
+    [
+      "-NoProfile",
+      "-NonInteractive",
+      "-EncodedCommand",
+      Buffer.from(script, "utf16le").toString("base64"),
+    ],
+    30_000,
+  );
+  evidence.verification = redactObservation(result);
+  onProgress(evidence);
+  assert.ok(!result.error && result.status === 0, "无法验证 VC Runtime 安装器签名");
+  const signature = JSON.parse(result.stdout);
+  evidence.signature = signature;
+  onProgress(evidence);
+  verifyVcRuntimeSignature(signature);
+  const installation = observeCommand(installer, vcRuntimeInstallArgs, 180_000);
+  evidence.installation = redactObservation(installation);
+  evidence.rebootRequired = installation.status === 3010;
+  onProgress(evidence);
+  assert.ok(
+    !installation.error && (installation.status === 0 || installation.status === 3010),
+    "VC Runtime 安装失败",
+  );
+}
+
 export function verifyNodeZip(
   bytes: Buffer,
   sums: string,
@@ -63,14 +144,14 @@ function containerName(input: string) {
   return `ziwei-windows-${createHash("sha256").update(input).digest("hex").slice(0, 16)}`;
 }
 
-export function windowsContainerArgs(input: string, output: string) {
+export function windowsContainerArgs(input: string, output: string, withVcRuntime = false) {
   // Docker's --mount parser reserves commas even when argv preserves spaces.
   assert.ok(!input.includes(",") && !output.includes(","), "挂载路径不能包含逗号");
   return [
     "run",
     "--rm",
     "--name",
-    containerName(input),
+    containerName(output),
     "--isolation=process",
     "--mount",
     `type=bind,src=${input},dst=C:\\input,readonly`,
@@ -88,7 +169,12 @@ export function windowsContainerArgs(input: string, output: string) {
     "-NoProfile",
     "-NonInteractive",
     "-EncodedCommand",
-    Buffer.from(windowsBootstrap, "utf16le").toString("base64"),
+    Buffer.from(
+      withVcRuntime
+        ? windowsBootstrap.replace("--inside-container", "--inside-container --with-vc-runtime")
+        : windowsBootstrap,
+      "utf16le",
+    ).toString("base64"),
   ];
 }
 
@@ -177,11 +263,12 @@ export async function verifyWindowsConsumers(
     throw new AggregateError(failures, "Windows 包管理器验收失败，详见各分支报告");
 }
 
-async function consumeInsideContainer() {
+async function consumeInsideContainer(withVcRuntime: boolean) {
   const report: Record<string, unknown> = {
     passed: false,
     stage: "runtime-preflight",
     baseline: windowsBaseline,
+    scenario: withVcRuntime ? "vc-runtime" : "baseline",
   };
   const path = "C:\\output\\consumer.json";
   try {
@@ -190,6 +277,15 @@ async function consumeInsideContainer() {
     assert.equal(process.version, `v${windowsBaseline.nodeVersion}`);
     report.runtimeBefore = runtimeInventory();
     save(path, report);
+    if (withVcRuntime) {
+      report.stage = "vc-runtime-install";
+      installVcRuntime((evidence) => {
+        report.vcRuntime = evidence;
+        save(path, report);
+      });
+      report.runtimeAfterInstall = runtimeInventory();
+      save(path, report);
+    }
     const preparePnpm = () => {
       const pnpmVersion = readJson(join(root, "package.json")).devEngines.packageManager.version;
       const npmCli = join(dirname(process.execPath), "node_modules/npm/bin/npm-cli.js");
@@ -410,14 +506,71 @@ function dockerDiagnostics() {
   };
 }
 
-async function runContainer(directory: string, output: string) {
+type ScenarioCheck = { name: "baseline" | "vc-runtime"; passed: boolean; error?: string };
+
+/** A failed baseline must neither hide treatment evidence nor become a passing gate. */
+export async function verifyWindowsScenarios(
+  compareVcRuntime: boolean,
+  run: (withVcRuntime: boolean) => Promise<boolean>,
+  onProgress: (checks: readonly ScenarioCheck[]) => void,
+) {
+  const checks: ScenarioCheck[] = [];
+  for (const withVcRuntime of compareVcRuntime ? [false, true] : [false]) {
+    const check: ScenarioCheck = { name: withVcRuntime ? "vc-runtime" : "baseline", passed: false };
+    checks.push(check);
+    onProgress(checks);
+    try {
+      check.passed = await run(withVcRuntime);
+    } catch (error) {
+      check.error = error instanceof Error ? error.message : String(error);
+    } finally {
+      onProgress(checks);
+    }
+  }
+  assert.ok(
+    checks.every((check) => check.passed),
+    "Windows 容器验收失败，请查看各组保留的报告",
+  );
+}
+
+function runOneContainer(input: string, output: string, withVcRuntime: boolean) {
+  const report: Record<string, unknown> = { scenario: withVcRuntime ? "vc-runtime" : "baseline" };
+  const stdout = openSync(join(output, "container.stdout.log"), "wx");
+  const stderr = openSync(join(output, "container.stderr.log"), "wx");
+  try {
+    const result = spawnSync("docker", windowsContainerArgs(input, output, withVcRuntime), {
+      stdio: ["ignore", stdout, stderr],
+      timeout: 600_000,
+    });
+    report.exit = { status: result.status, signal: result.signal, error: result.error?.message };
+    assert.ok(!result.error && result.status === 0, "Windows 容器验收失败，请查看保留的日志");
+    assert.equal(readJson(join(output, "consumer.json")).passed, true, "缺少成功的消费端报告");
+    return true;
+  } finally {
+    closeSync(stdout);
+    closeSync(stderr);
+    // A timed-out Docker client can leave its container alive. Target only this scenario.
+    const cleanup = spawnSync("docker", ["rm", "--force", containerName(output)], {
+      stdio: "ignore",
+      timeout: 30_000,
+    });
+    // A nonzero status can also mean --rm already removed a finished container.
+    report.cleanup = {
+      status: cleanup.status,
+      signal: cleanup.signal,
+      error: cleanup.error?.message,
+    };
+    save(join(output, "container.json"), report);
+  }
+}
+
+async function runContainer(directory: string, output: string, compareVcRuntime: boolean) {
   assert.equal(process.platform, "win32", "此实验要求 Windows Docker 宿主");
   assert.equal(process.arch, "x64", "此实验仅覆盖原生 Windows x64");
   // Keep every run's evidence; never overwrite a prior result.
   mkdirSync(output);
   const temporary = mkdtempSync(join(tmpdir(), "ziwei-windows-container-"));
   const report: Record<string, unknown> = { passed: false, baseline: windowsBaseline };
-  let started = false;
   try {
     report.stage = "docker-preflight";
     const diagnostics: {
@@ -485,51 +638,54 @@ async function runContainer(directory: string, output: string) {
     assert.equal(image.Os, "windows");
     assert.equal(image.Architecture, "amd64");
     report.image = { id: image.Id, digests: image.RepoDigests, osVersion: image.OsVersion };
-    report.stage = "container";
-    const stdout = openSync(join(output, "container.stdout.log"), "wx");
-    const stderr = openSync(join(output, "container.stderr.log"), "wx");
-    try {
-      started = true;
-      const result = spawnSync("docker", windowsContainerArgs(temporary, output), {
-        stdio: ["ignore", stdout, stderr],
-        timeout: 600_000,
-      });
-      report.exit = { status: result.status, signal: result.signal, error: result.error?.message };
-      assert.ok(!result.error && result.status === 0, "Windows 容器验收失败，请查看保留的日志");
-    } finally {
-      closeSync(stdout);
-      closeSync(stderr);
-    }
-    assert.equal(readJson(join(output, "consumer.json")).passed, true, "缺少成功的消费端报告");
+    await verifyWindowsScenarios(
+      compareVcRuntime,
+      async (withVcRuntime) => {
+        const name = withVcRuntime ? "vc-runtime" : "baseline";
+        const scenarioOutput = compareVcRuntime ? join(output, name) : output;
+        if (compareVcRuntime) mkdirSync(scenarioOutput);
+        // Download only after baseline evidence has been saved. Never execute on the host.
+        if (withVcRuntime) {
+          report.stage = "vc-runtime-material";
+          save(join(output, "experiment.json"), report);
+          const bytes = Buffer.from(await (await download(vcRuntime.url)).arrayBuffer());
+          report.vcRuntime = { ...vcRuntime, ...verifyVcRuntime(bytes) };
+          writeFileSync(join(temporary, "vc_redist.x64.exe"), bytes);
+        }
+        report.stage = "container";
+        save(join(output, "experiment.json"), report);
+        return runOneContainer(temporary, scenarioOutput, withVcRuntime);
+      },
+      (checks) => {
+        report.scenarios = checks;
+        save(join(output, "experiment.json"), report);
+      },
+    );
     report.passed = true;
     report.stage = "complete";
   } catch (error) {
     report.error = error instanceof Error ? error.message : String(error);
     throw error;
   } finally {
-    if (started) {
-      // A timed-out Docker client can leave its container alive. Target only this run.
-      const cleanup = spawnSync("docker", ["rm", "--force", containerName(temporary)], {
-        stdio: "ignore",
-        timeout: 30_000,
-      });
-      // A nonzero status can also mean --rm already removed a finished container.
-      report.cleanup = {
-        status: cleanup.status,
-        signal: cleanup.signal,
-        error: cleanup.error?.message,
-      };
-    }
     save(join(output, "experiment.json"), report);
     rmSync(temporary, { recursive: true, force: true });
   }
 }
 
 if (import.meta.main) {
-  if (process.argv[2] === "--inside-container") await consumeInsideContainer();
-  else {
-    const [directory, output] = process.argv.slice(2);
+  if (process.argv[2] === "--inside-container") {
+    assert.ok(
+      process.argv.length <= 4 && (!process.argv[3] || process.argv[3] === "--with-vc-runtime"),
+      "未知容器参数",
+    );
+    await consumeInsideContainer(process.argv[3] === "--with-vc-runtime");
+  } else {
+    const [directory, output, option] = process.argv.slice(2);
     assert.ok(directory && output, "需要完整批次目录和新的结果目录");
-    await runContainer(resolve(directory), resolve(output));
+    assert.ok(
+      process.argv.length <= 5 && (!option || option === "--compare-vc-runtime"),
+      "未知 Windows 实验参数",
+    );
+    await runContainer(resolve(directory), resolve(output), option === "--compare-vc-runtime");
   }
 }

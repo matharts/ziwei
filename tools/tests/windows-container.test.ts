@@ -10,11 +10,131 @@ import {
   observeCommand,
   redactDiagnostic,
   verifyNodeZip,
+  verifyVcRuntime,
+  verifyVcRuntimeSignature,
+  verifyWindowsScenarios,
+  vcRuntime,
+  vcRuntimeInstallArgs,
   waitForWindowsDocker,
   windowsBaseline,
   windowsBootstrap,
   windowsContainerArgs,
 } from "../../packages/ziwei/tools/windows-container.ts";
+
+test("VC Runtime material is pinned and its signature must belong to Microsoft", () => {
+  assert.equal(new URL(vcRuntime.url).hostname, "download.visualstudio.microsoft.com");
+  assert.match(vcRuntime.sha256, /^[a-f0-9]{64}$/);
+  const bytes = Buffer.from("installer checksum fixture");
+  const sha256 = createHash("sha256").update(bytes).digest("hex");
+  assert.equal(verifyVcRuntime(bytes, sha256).sha256, sha256);
+  assert.throws(() => verifyVcRuntime(Buffer.from("changed"), sha256), /固定摘要/);
+  assert.throws(() => verifyVcRuntime(bytes), /固定摘要/);
+  const signature = {
+    status: "Valid",
+    subject: "CN=Microsoft Corporation, O=Microsoft Corporation, C=US",
+    version: vcRuntime.version,
+  };
+  verifyVcRuntimeSignature(signature);
+  for (const invalid of [
+    { ...signature, status: "NotSigned" },
+    { ...signature, status: "HashMismatch" },
+    { ...signature, subject: "CN=Example, O=Microsoft Corporation" },
+    { ...signature, version: "0.0.0.0" },
+  ])
+    assert.throws(() => verifyVcRuntimeSignature(invalid));
+  assert.deepEqual(vcRuntimeInstallArgs, [
+    "/install",
+    "/quiet",
+    "/norestart",
+    "/log",
+    "C:\\output\\vc-runtime-install.log",
+  ]);
+});
+
+test("Runtime comparison finishes treatment after a failed baseline without passing the gate", async () => {
+  const calls: boolean[] = [];
+  const records: string[] = [];
+  await assert.rejects(
+    verifyWindowsScenarios(
+      true,
+      async (withRuntime) => {
+        calls.push(withRuntime);
+        return withRuntime;
+      },
+      (checks) => records.push(JSON.stringify(checks)),
+    ),
+    /Windows 容器验收失败/,
+  );
+  assert.deepEqual(calls, [false, true]);
+  assert.deepEqual(JSON.parse(records.at(-1)!), [
+    { name: "baseline", passed: false },
+    { name: "vc-runtime", passed: true },
+  ]);
+});
+
+test("Runtime comparison retains startup failures and never skips the other scenario", async () => {
+  const calls: boolean[] = [];
+  const records: string[] = [];
+  await assert.rejects(
+    verifyWindowsScenarios(
+      true,
+      async (withRuntime) => {
+        calls.push(withRuntime);
+        if (!withRuntime) throw new Error("container fixture failure");
+        return false;
+      },
+      (checks) => records.push(JSON.stringify(checks)),
+    ),
+    /Windows 容器验收失败/,
+  );
+  assert.deepEqual(calls, [false, true]);
+  assert.match(records.at(-1)!, /container fixture failure/);
+  assert.equal(JSON.parse(records.at(-1)!)[1].passed, false);
+});
+
+test("The default scenario never installs a runtime and comparison requires both checks", async () => {
+  const calls: boolean[] = [];
+  await verifyWindowsScenarios(
+    false,
+    async (withRuntime) => {
+      calls.push(withRuntime);
+      return true;
+    },
+    () => {},
+  );
+  assert.deepEqual(calls, [false]);
+  await assert.rejects(
+    verifyWindowsScenarios(
+      true,
+      async (withRuntime) => !withRuntime,
+      () => {},
+    ),
+  );
+  await verifyWindowsScenarios(
+    true,
+    async () => true,
+    () => {},
+  );
+});
+
+test("Comparison containers share the baseline image but have distinct state and output", () => {
+  const baseline = windowsContainerArgs("C:\\input", "C:\\results\\baseline");
+  const treatment = windowsContainerArgs("C:\\input", "C:\\results\\vc-runtime", true);
+  assert.ok(baseline.includes(windowsBaseline.image));
+  assert.ok(treatment.includes(windowsBaseline.image));
+  assert.notEqual(
+    baseline[baseline.indexOf("--name") + 1],
+    treatment[treatment.indexOf("--name") + 1],
+  );
+  assert.doesNotMatch(
+    Buffer.from(baseline.at(-1)!, "base64").toString("utf16le"),
+    /--with-vc-runtime/,
+  );
+  assert.match(
+    Buffer.from(treatment.at(-1)!, "base64").toString("utf16le"),
+    /--inside-container --with-vc-runtime/,
+  );
+});
 
 const ready = {
   status: 0,
@@ -279,6 +399,7 @@ test("Windows experiment failures are retained and cannot bypass the final CI ch
   const job = workflow.split("  windows-clean-consumer:\n")[1]!.split("\n  quality:")[0]!;
   assert.match(job, /needs: node-distribution/);
   assert.match(job, /runs-on: windows-2025/);
+  assert.match(job, /mise run check:node:windows -- .* --compare-vc-runtime/);
   assert.match(job, /name: node-distribution-\$\{\{ github\.run_attempt \}\}/);
   assert.match(job, /if: \$\{\{ !cancelled\(\) \}\}/);
   assert.doesNotMatch(job, /continue-on-error/);

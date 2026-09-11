@@ -1,6 +1,6 @@
 # Windows 干净消费环境研究
 
-核查日期：2026-09-10。状态：二进制静态核查与方案研究；研究阶段没有运行 Windows 来宾测试、修改链接方式或 CI、创建云资源、发布包。后续获准实现的 x64 CI 实验见文末，仍未实机验收。下文将实测材料、官方事实、方案判断和待执行验收分开记录。
+初始核查日期：2026-09-10。状态：二进制静态核查与方案研究；研究阶段没有运行 Windows 来宾测试、修改链接方式或 CI、创建云资源、发布包。2026-09-11 后续获准的 x64 CI 实验已在干净容器复现加载失败，运行库对照见文末；尚未通过完整干净环境验收。下文将历史材料、官方事实、后续实测和待执行验收分开记录。
 
 ## 结论与当前边界
 
@@ -148,4 +148,8 @@ GitHub larger runner 的自定义镜像可从干净 OS base image 生成，但�
 
 两次任务的 runner 镜像分别为 `20260824.214.3` 和 `20260907.229.1`，官方清单中的 Docker 版本分别为 [29.1.5](https://github.com/actions/runner-images/blob/win25-vs2026/20260824.214/images/windows/Windows2025-VS2026-Readme.md) 与 [29.7.2](https://github.com/actions/runner-images/blob/win25-vs2026/20260907.229/images/windows/Windows2025-VS2026-Readme.md)。镜像变化不是根因证明；需要同一任务内的服务、连接目标和 daemon 事件证据。新增预检保留探测前后诊断与最多 120 秒的就绪探测记录，不自动重启或降级。等待和失败传播由本地回归检查，Windows 行为仍待新 CI 实测；详细边界见 [Windows x64 容器实验](../architecture/node-distribution-proposal.md#windows-x64-干净容器实验待远端验收)。
 
-诊断提交 `00d961e` 的 [CI 34559509252](https://github.com/matharts/ziwei/actions/runs/34559509252) 已记录 Docker／HNS／vmcompute 均运行、daemon 完成初始化且监听本地 named pipe；Docker 29.7.2 首次 `info` 在约 4 秒内返回。该次失败是诊断脱敏先于解析、改坏 JSON 的回归，不是 Docker 无响应。修复改为原始数据参与控制流、脱敏副本进入报告；原先超时的原因仍未确认，Windows 容器内的加载也尚未验收。
+诊断提交 `00d961e` 的 [CI 34559509252](https://github.com/matharts/ziwei/actions/runs/34559509252) 已记录 Docker／HNS／vmcompute 均运行、daemon 完成初始化且监听本地 named pipe；Docker 29.7.2 首次 `info` 在约 4 秒内返回。该次失败是诊断脱敏先于解析、改坏 JSON 的回归，不是 Docker 无响应。修复改为原始数据参与控制流、脱敏副本进入报告；原先超时的原因仍未确认。
+
+提交 `0efe848` 的 [CI 34561101352](https://github.com/matharts/ziwei/actions/runs/34561101352) 首次 `docker info` 用时 7123 ms，固定容器随后成功启动。npm 已完成平台包安装、514560 字节及 SHA-256 校验，在真实 `.node` 导入时出现 `The specified module could not be found.`；pnpm 12.3.4 在独立分支仍以 `0xC0000135` 启动失败。同批 x64 `.node` 摘要为 `b0ba58cca4bc29a46fc582ed4a61605b1b679968eae08134b7eadf09fc4e898f`，直接导入 `VCRUNTIME140.dll`；容器仍只有 `_clr0400` 变体和 UCRT，没有该同名文件。其余 18 项任务通过；这证明加载失败已复现，不是 optional 包未安装，尚不等于补齐 DLL 后一定通过。
+
+用户随后授权同镜像、同产物、仅补齐官方 VC Runtime 的对照。`--compare-vc-runtime` 使用两个全新容器、独立结果目录，先保留不安装运行库的基线，再安装固定 Microsoft x64 Redistributable `14.51.36247.0`（SHA-256 `843068991daaa1f73ad9f6239bce4d0f6a07a51f18c37ea2a867e9beca71295c`）；安装前必须通过 Microsoft Authenticode 与版本检查，不在宿主执行、不重启、不改链接方式。对照结果尚待新 CI；即使对照通过，原基线失败仍保留，不据此修改默认部署前提。
