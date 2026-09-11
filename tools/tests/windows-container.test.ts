@@ -189,6 +189,8 @@ test("Docker host diagnosis is read-only and queries only targeted service and e
 
 if (process.platform === "win32") {
   test("Windows Docker diagnostic script returns service, process and event evidence", () => {
+    // Validate the script output independently of the production 10-second collection budget.
+    // Cold PowerShell startup and event-log queries can take longer on shared Windows runners.
     const result = observeCommand(
       "powershell.exe",
       [
@@ -197,7 +199,7 @@ if (process.platform === "win32") {
         "-EncodedCommand",
         Buffer.from(dockerDiagnosticsScript, "utf16le").toString("base64"),
       ],
-      10_000,
+      30_000,
     );
     assert.equal(result.error, undefined);
     assert.equal(result.status, 0, result.stderr);
