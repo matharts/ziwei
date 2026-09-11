@@ -10,7 +10,13 @@ const machines = {
   "x86_64-unknown-linux-gnu": { machine: 62, suffix: "linux-x64-gnu" },
   "aarch64-unknown-linux-gnu": { machine: 183, suffix: "linux-arm64-gnu" },
 } as const;
-type GnuTarget = keyof typeof machines;
+const macosTargets = {
+  "x86_64-apple-darwin": { machine: 0x1000007, subtype: 3, suffix: "darwin-x64" },
+  "aarch64-apple-darwin": { machine: 0x100000c, subtype: 0, suffix: "darwin-arm64" },
+} as const;
+type MacosTarget = keyof typeof macosTargets;
+// Node 24.15.0's documented baseline, not a claim of testing that macOS release.
+const macosDeploymentCeiling = 0x0d0500;
 type Digest = { bytes: number; sha256: string };
 const digest = (bytes: Buffer): Digest => ({
   bytes: bytes.length,
@@ -56,8 +62,11 @@ function readVersionInfo(binary: Buffer) {
   }
 }
 
-/** Inspect the actual GNU tarballs of an assembled cohort, without rebuilding them. */
-export function verifyGnuArtifacts(directory: string, inspect = readVersionInfo) {
+/** Read only fixed archive entries, checking both tarball and binary identities first. */
+function readArtifactBinaries<T extends string>(
+  directory: string,
+  targets: Record<T, { suffix: string }>,
+) {
   const source = JSON.parse(
     readFileSync(fileURLToPath(new URL("../package.json", import.meta.url)), "utf8"),
   );
@@ -65,6 +74,9 @@ export function verifyGnuArtifacts(directory: string, inspect = readVersionInfo)
   assert.equal(batch.schemaVersion, 1);
   assert.equal(batch.name, source.name);
   assert.equal(batch.version, source.version);
+  assert.match(batch.batch?.commit, /^[a-f0-9]{40}$/, "产物批次 commit 无效");
+  assert.match(batch.batch?.runId, /^[1-9]\d*$/, "产物批次 runId 无效");
+  assert.match(batch.batch?.runAttempt, /^[1-9]\d*$/, "产物批次 runAttempt 无效");
   for (const [field, variable] of [
     ["commit", "GITHUB_SHA"],
     ["runId", "GITHUB_RUN_ID"],
@@ -80,20 +92,31 @@ export function verifyGnuArtifacts(directory: string, inspect = readVersionInfo)
     sha256: string;
   }[] = batch.platforms;
   assert.deepEqual(platforms.map(({ target }) => target).sort(), [...source.napi.targets].sort());
-  return (Object.keys(machines) as GnuTarget[]).map((target) => {
+  return (Object.keys(targets) as T[]).map((target) => {
     const platform = platforms.find((item) => item.target === target);
     assert.ok(platform, `完整批次缺少 ${target}`);
     assert.equal(platform.tarball, `${target}.tgz`);
     const path = join(directory, platform.tarball);
-    assert.ok(lstatSync(path).isFile(), "GNU 归档必须为普通文件");
+    assert.ok(lstatSync(path).isFile(), "产物归档必须为普通文件");
     const tarball = readFileSync(path);
     assert.deepEqual(digest(tarball), { bytes: platform.bytes, sha256: platform.sha256 });
     const binary = execFileSync(
       "tar",
-      ["-xOzf", "-", `package/${source.napi.binaryName}.${machines[target].suffix}.node`],
+      ["-xOzf", "-", `package/${source.napi.binaryName}.${targets[target].suffix}.node`],
       { input: tarball, timeout: 30_000, maxBuffer: 16 * 1024 * 1024 },
     );
     assert.deepEqual(digest(binary), platform.binaryDigest);
+    return {
+      target,
+      binary,
+      batch: batch.batch as { commit: string; runId: string; runAttempt: string },
+    };
+  });
+}
+
+/** Inspect the actual GNU tarballs of an assembled cohort, without rebuilding them. */
+export function verifyGnuArtifacts(directory: string, inspect = readVersionInfo) {
+  return readArtifactBinaries(directory, machines).map(({ target, binary }) => {
     assert.ok(binary.length >= 64, "GNU 二进制的 ELF header 不完整");
     assert.deepEqual(
       binary.subarray(0, 6),
@@ -104,6 +127,114 @@ export function verifyGnuArtifacts(directory: string, inspect = readVersionInfo)
     assert.equal(binary.readUInt16LE(18), machines[target].machine, "GNU 产物 CPU 不匹配");
     return { target, versions: verifyGlibcVersions(inspect(binary)) };
   });
+}
+
+/** Inspect thin little-endian Rust dylibs; not a general Mach-O loader or symbol audit. */
+export function inspectMacosBinary(binary: Buffer, target: MacosTarget) {
+  const expected = macosTargets[target];
+  assert.ok(expected, "未知 macOS 目标");
+  assert.ok(binary.length >= 32, "Mach-O header 不完整");
+  assert.equal(binary.readUInt32LE(0), 0xfeedfacf, "需要单架构 little-endian Mach-O 64 产物");
+  assert.equal(binary.readUInt32LE(4), expected.machine, "macOS 产物 CPU 不匹配");
+  assert.equal(binary.readUInt32LE(8), expected.subtype, "macOS 产物 CPU subtype 不匹配");
+  assert.equal(binary.readUInt32LE(12), 6, "需要 Mach-O dylib 产物");
+  const count = binary.readUInt32LE(16);
+  const end = 32 + binary.readUInt32LE(20);
+  assert.ok(
+    end <= binary.length && count > 0 && count <= (end - 32) / 8,
+    "Mach-O load commands 范围无效",
+  );
+  const dependencies: string[] = [];
+  const rpaths: string[] = [];
+  const versions: { minimumOs: number; sdk: number }[] = [];
+  let cursor = 32;
+  for (let index = 0; index < count; index++) {
+    assert.ok(cursor + 8 <= end, "Mach-O load command header 越界");
+    const command = binary.readUInt32LE(cursor);
+    const size = binary.readUInt32LE(cursor + 4);
+    assert.ok(size >= 8 && size % 8 === 0 && cursor + size <= end, "Mach-O load command 大小无效");
+    // Strings are offsets within this command, not file offsets or arbitrary binary text.
+    const path = (headerSize: number) => {
+      assert.ok(size >= headerSize, "Mach-O 路径命令不完整");
+      const offset = binary.readUInt32LE(cursor + 8);
+      assert.ok(offset >= headerSize && offset < size, "Mach-O 路径偏移越界");
+      const start = cursor + offset;
+      const terminator = binary.indexOf(0, start);
+      assert.ok(terminator > start && terminator < cursor + size, "Mach-O 路径缺少终止符");
+      const bytes = binary.subarray(start, terminator);
+      assert.ok(
+        bytes.every((byte) => byte >= 0x20 && byte <= 0x7e),
+        "Mach-O 路径必须为 ASCII",
+      );
+      return bytes.toString("ascii");
+    };
+    if ([0xc, 0x80000018, 0x8000001f, 0x20, 0x80000023].includes(command)) {
+      // Ordinary, weak, re-exported, lazy and upward dylib dependencies all matter.
+      dependencies.push(path(24));
+    } else if (command === 0x8000001c) {
+      rpaths.push(path(12));
+    } else if (command === 0x32) {
+      assert.ok(size >= 24, "Mach-O build version 不完整");
+      assert.equal(binary.readUInt32LE(cursor + 8), 1, "Mach-O 平台必须为 macOS");
+      assert.equal(size, 24 + binary.readUInt32LE(cursor + 20) * 8, "Mach-O build tools 数量无效");
+      versions.push({
+        minimumOs: binary.readUInt32LE(cursor + 12),
+        sdk: binary.readUInt32LE(cursor + 16),
+      });
+    } else if (command === 0x24) {
+      assert.equal(size, 16, "Mach-O minimum version 大小无效");
+      versions.push({
+        minimumOs: binary.readUInt32LE(cursor + 8),
+        sdk: binary.readUInt32LE(cursor + 12),
+      });
+    } else {
+      assert.ok(
+        ![0x25, 0x2f, 0x30, 0x27, 0xe, 0x6, 0x10].includes(command),
+        "不支持的 Mach-O 平台或加载命令",
+      );
+      // LC_ID_DYLIB names this module, not a library it loads; its build path is not a dependency.
+    }
+    cursor += size;
+  }
+  assert.equal(cursor, end, "Mach-O load commands 长度不匹配");
+  assert.equal(versions.length, 1, "需要唯一的 macOS 最低系统版本命令");
+  const version = versions[0]!;
+  assert.ok(
+    version.minimumOs >>> 16 >= 10 && version.minimumOs <= macosDeploymentCeiling,
+    "Mach-O 最低系统标记无效或超过 13.5.0 检查上限",
+  );
+  assert.equal(rpaths.length, 0, "macOS 产物不得依赖 RPATH 搜索路径");
+  assert.ok(dependencies.length > 0, "macOS 产物缺少系统动态库依赖");
+  for (const dependency of dependencies) {
+    assert.ok(
+      (dependency.startsWith("/usr/lib/") ||
+        dependency.startsWith("/System/Library/Frameworks/")) &&
+        dependency
+          .split("/")
+          .slice(1)
+          .every((part) => part !== "" && part !== "." && part !== ".."),
+      `macOS 产物含非系统动态库路径：${dependency}`,
+    );
+  }
+  const formatVersion = (value: number) =>
+    `${value >>> 16}.${(value >>> 8) & 0xff}.${value & 0xff}`;
+  return {
+    deploymentCeiling: formatVersion(macosDeploymentCeiling),
+    minimumOs: formatVersion(version.minimumOs),
+    sdk: formatVersion(version.sdk),
+    dependencies,
+    rpaths,
+  };
+}
+
+/** Gate both macOS tarballs in the complete cohort, independently of the host CPU. */
+export function verifyMacosArtifacts(directory: string) {
+  return readArtifactBinaries(directory, macosTargets).map(({ target, binary, batch }) => ({
+    target,
+    batch,
+    ...digest(binary),
+    ...inspectMacosBinary(binary, target),
+  }));
 }
 
 /** Inspect our MSVC PE32+ x64 DLLs, not arbitrary PE variants or runtime-loaded libraries. */
@@ -222,7 +353,10 @@ export function recordWindowsCrt(
 }
 
 if (import.meta.main) {
-  if (process.argv[2] === "--windows-crt") {
+  if (process.argv[2] === "--macos") {
+    assert.equal(process.argv.length, 4, "用法：mise run check:node:macos -- <完整交付目录>");
+    console.log(JSON.stringify(verifyMacosArtifacts(resolve(process.argv[3]!)), null, 2));
+  } else if (process.argv[2] === "--windows-crt") {
     assert.equal(
       process.argv.length,
       6,

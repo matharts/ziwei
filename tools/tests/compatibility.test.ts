@@ -10,13 +10,137 @@ import { test } from "@rstest/core";
 import type { TestContext } from "@rstest/core";
 
 import {
+  inspectMacosBinary,
   inspectWindowsX64Imports,
   recordWindowsCrt,
   verifyGlibcVersions,
   verifyGnuArtifacts,
+  verifyMacosArtifacts,
 } from "../../packages/ziwei/tools/compatibility.ts";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
+
+// Minimal load commands exercise the gate; these bytes are not runnable addons.
+function macosBinary(arm64 = false, commands?: Buffer[]) {
+  const version = Buffer.alloc(arm64 ? 24 : 16);
+  version.writeUInt32LE(arm64 ? 0x32 : 0x24);
+  version.writeUInt32LE(version.length, 4);
+  if (arm64) version.writeUInt32LE(1, 8);
+  version.writeUInt32LE(arm64 ? 0x0b0000 : 0x0a0d00, arm64 ? 12 : 8);
+  version.writeUInt32LE(0x0f0500, arm64 ? 16 : 12);
+  const body = Buffer.concat(commands ?? [version, macosPath(0xc, "/usr/lib/libSystem.B.dylib")]);
+  const header = Buffer.alloc(32);
+  header.writeUInt32LE(0xfeedfacf);
+  header.writeUInt32LE(arm64 ? 0x100000c : 0x1000007, 4);
+  header.writeUInt32LE(arm64 ? 0 : 3, 8);
+  header.writeUInt32LE(6, 12);
+  header.writeUInt32LE(commands?.length ?? 2, 16);
+  header.writeUInt32LE(body.length, 20);
+  return Buffer.concat([header, body]);
+}
+
+function macosPath(command: number, path: string) {
+  const start = command === 0x8000001c ? 12 : 24;
+  const bytes = Buffer.alloc(Math.ceil((start + Buffer.byteLength(path) + 1) / 8) * 8);
+  bytes.writeUInt32LE(command);
+  bytes.writeUInt32LE(bytes.length, 4);
+  bytes.writeUInt32LE(start, 8);
+  bytes.write(path, start);
+  return bytes;
+}
+
+test("macOS gate reads both version commands without treating SDK or install ID as requirements", () => {
+  for (const arm64 of [false, true]) {
+    const binary = macosBinary(arm64);
+    const version = binary.subarray(32, arm64 ? 56 : 48);
+    const result = inspectMacosBinary(
+      macosBinary(arm64, [
+        version,
+        macosPath(0xd, "/build/target/libziwei_node.dylib"),
+        macosPath(0xc, "/usr/lib/libSystem.B.dylib"),
+      ]),
+      arm64 ? "aarch64-apple-darwin" : "x86_64-apple-darwin",
+    );
+    assert.equal(result.minimumOs, arm64 ? "11.0.0" : "10.13.0");
+    assert.equal(result.sdk, "15.5.0");
+    assert.deepEqual(result.dependencies, ["/usr/lib/libSystem.B.dylib"]);
+    assert.deepEqual(result.rpaths, []);
+  }
+  const ceiling = macosBinary();
+  ceiling.writeUInt32LE(0x0d0500, 40);
+  assert.equal(inspectMacosBinary(ceiling, "x86_64-apple-darwin").minimumOs, "13.5.0");
+});
+
+test("macOS gate rejects non-system dependencies in all dylib loading forms and any rpath", () => {
+  const version = macosBinary().subarray(32, 48);
+  for (const command of [0xc, 0x80000018, 0x8000001f, 0x20, 0x80000023]) {
+    for (const path of [
+      "/opt/homebrew/lib/libextra.dylib",
+      "/usr/local/lib/libextra.dylib",
+      "@rpath/libextra.dylib",
+      "@loader_path/libextra.dylib",
+      "relative.dylib",
+      "/usr/lib/../../tmp/libextra.dylib",
+      "/usr/lib//libextra.dylib",
+    ])
+      assert.throws(() =>
+        inspectMacosBinary(
+          macosBinary(false, [version, macosPath(command, path)]),
+          "x86_64-apple-darwin",
+        ),
+      );
+  }
+  for (const path of ["/usr/lib", "@loader_path", "/opt/homebrew/lib"])
+    assert.throws(
+      () =>
+        inspectMacosBinary(
+          macosBinary(false, [version, macosPath(0x8000001c, path)]),
+          "x86_64-apple-darwin",
+        ),
+      /RPATH/,
+    );
+});
+
+test("macOS gate fails closed on malformed headers, commands and deployment versions", () => {
+  for (const mutate of [
+    (b: Buffer) => b.writeUInt32LE(0xcafebabe),
+    (b: Buffer) => b.writeUInt32LE(0xcffaedfe),
+    (b: Buffer) => b.writeUInt32LE(0x100000c, 4),
+    (b: Buffer) => b.writeUInt32LE(8, 8),
+    (b: Buffer) => b.writeUInt32LE(2, 12),
+    (b: Buffer) => b.writeUInt32LE(0, 16),
+    (b: Buffer) => b.writeUInt32LE(0xffffffff, 16),
+    (b: Buffer) => b.writeUInt32LE(0xffffffff, 20),
+    (b: Buffer) => b.writeUInt32LE(1, 36),
+    (b: Buffer) => b.writeUInt32LE(0x0d0501, 40),
+    (b: Buffer) => b.writeUInt32LE(0, 40),
+    (b: Buffer) => b.writeUInt32LE(1, 40),
+    (b: Buffer) => b.writeUInt32LE(0x25, 32),
+    (b: Buffer) => b.writeUInt32LE(0, 56),
+    (b: Buffer) => b.fill(65, 72),
+    (b: Buffer) => b.writeUInt32LE(1, 16),
+  ]) {
+    const binary = macosBinary();
+    mutate(binary);
+    assert.throws(() => inspectMacosBinary(binary, "x86_64-apple-darwin"), {
+      name: "AssertionError",
+    });
+  }
+  const version = macosBinary().subarray(32, 48);
+  assert.throws(() =>
+    inspectMacosBinary(macosBinary(false, [version, version]), "x86_64-apple-darwin"),
+  );
+  for (const [offset, value] of [
+    [40, 2],
+    [52, 1],
+    [12, 8],
+  ]) {
+    const binary = macosBinary(true);
+    binary.writeUInt32LE(value!, offset!);
+    assert.throws(() => inspectMacosBinary(binary, "aarch64-apple-darwin"));
+  }
+  assert.throws(() => inspectMacosBinary(Buffer.alloc(16), "x86_64-apple-darwin"));
+});
 
 test("Windows CRT acceptance reuses inspected bytes and dynamic comparison is opt-in", () => {
   const workflow = readFileSync(join(root, ".github/workflows/ci.yml"), "utf8");
@@ -187,7 +311,11 @@ test("glibc gate fails closed for absent, private, unknown or malformed requirem
     assert.throws(() => verifyGlibcVersions(output));
 });
 
-function fixture(t: TestContext, alterBinary: (binary: Buffer) => Buffer = (binary) => binary) {
+function fixture(
+  t: TestContext,
+  alterBinary: (binary: Buffer) => Buffer = (binary) => binary,
+  kind: "gnu" | "macos" = "gnu",
+) {
   const directory = mkdtempSync(join(tmpdir(), "ziwei-gnu-contract-"));
   t.onTestFinished(() => rmSync(directory, { recursive: true, force: true }));
   const source = JSON.parse(readFileSync(join(root, "packages/ziwei/package.json"), "utf8"));
@@ -197,17 +325,26 @@ function fixture(t: TestContext, alterBinary: (binary: Buffer) => Buffer = (bina
   });
   const platforms = source.napi.targets.map((target: string) => ({ target }));
   const binaries: Buffer[] = [];
-  for (const [target, suffix, machine] of [
-    ["x86_64-unknown-linux-gnu", "linux-x64-gnu", 62],
-    ["aarch64-unknown-linux-gnu", "linux-arm64-gnu", 183],
-  ] as const) {
+  const targets =
+    kind === "macos"
+      ? ([
+          ["x86_64-apple-darwin", "darwin-x64", 0x1000007],
+          ["aarch64-apple-darwin", "darwin-arm64", 0x100000c],
+        ] as const)
+      : ([
+          ["x86_64-unknown-linux-gnu", "linux-x64-gnu", 62],
+          ["aarch64-unknown-linux-gnu", "linux-arm64-gnu", 183],
+        ] as const);
+  for (const [target, suffix, machine] of targets) {
     const packageDirectory = join(directory, target, "package");
     mkdirSync(packageDirectory, { recursive: true });
     // Header-only bytes test the archive boundary, never real compatibility or loading.
-    const binary = Buffer.alloc(64);
-    binary.set([0x7f, 0x45, 0x4c, 0x46, 2, 1]);
-    binary.writeUInt16LE(3, 16);
-    binary.writeUInt16LE(machine, 18);
+    const binary = kind === "macos" ? macosBinary(machine === 0x100000c) : Buffer.alloc(64);
+    if (kind === "gnu") {
+      binary.set([0x7f, 0x45, 0x4c, 0x46, 2, 1]);
+      binary.writeUInt16LE(3, 16);
+      binary.writeUInt16LE(machine, 18);
+    }
     const stored = alterBinary(binary);
     binaries.push(stored);
     writeFileSync(join(packageDirectory, `${source.napi.binaryName}.${suffix}.node`), stored);
@@ -237,6 +374,110 @@ function fixture(t: TestContext, alterBinary: (binary: Buffer) => Buffer = (bina
   save();
   return { directory, batch, binaries, save };
 }
+
+test("macOS inspection and CLI bind both architectures to the original cohort and binary digests", (t) => {
+  const { directory, batch, binaries } = fixture(t, undefined, "macos");
+  const result = verifyMacosArtifacts(directory);
+  assert.deepEqual(
+    result.map((r) => r.target),
+    ["x86_64-apple-darwin", "aarch64-apple-darwin"],
+  );
+  result.forEach((r, index) => {
+    assert.deepEqual(r.batch, batch.batch);
+    assert.equal(r.sha256, createHash("sha256").update(binaries[index]!).digest("hex"));
+    assert.equal(r.bytes, binaries[index]!.length);
+  });
+  assert.deepEqual(
+    JSON.parse(
+      execFileSync(
+        process.execPath,
+        [join(root, "packages/ziwei/tools/compatibility.ts"), "--macos", directory],
+        { encoding: "utf8" },
+      ),
+    ),
+    result,
+  );
+});
+
+test("macOS gate rejects tampered or cross-labelled artifacts even with otherwise valid metadata", (t) => {
+  const { directory, batch, save } = fixture(t, undefined, "macos");
+  const original = structuredClone(batch.platforms);
+  for (const mutate of [
+    () => batch.platforms.pop(),
+    () => batch.platforms.push(batch.platforms[0]),
+    () => {
+      batch.platforms.find((p: { target: string }) => p.target === "x86_64-apple-darwin").tarball =
+        "../outside.tgz";
+    },
+    () => {
+      batch.platforms.find((p: { target: string }) => p.target === "x86_64-apple-darwin").sha256 =
+        "0".repeat(64);
+    },
+    () => {
+      batch.platforms.find(
+        (p: { target: string }) => p.target === "x86_64-apple-darwin",
+      ).binaryDigest.sha256 = "0".repeat(64);
+    },
+  ]) {
+    batch.platforms = structuredClone(original);
+    mutate();
+    save();
+    assert.throws(() => verifyMacosArtifacts(directory));
+  }
+  const wrongCpu = fixture(t, () => macosBinary(true), "macos");
+  assert.throws(() => verifyMacosArtifacts(wrongCpu.directory), /CPU 不匹配/);
+});
+
+test("macOS artifact evidence requires a valid batch identity and respects the current CI commit", (t) => {
+  const { directory, batch, save } = fixture(t, undefined, "macos");
+  const original = structuredClone(batch.batch);
+  for (const field of ["commit", "runId", "runAttempt"] as const) {
+    batch.batch = { ...original, [field]: "" };
+    save();
+    assert.throws(() => verifyMacosArtifacts(directory));
+  }
+  batch.batch = original;
+  save();
+  assert.throws(() =>
+    execFileSync(
+      process.execPath,
+      [join(root, "packages/ziwei/tools/compatibility.ts"), "--macos", directory],
+      {
+        env: {
+          ...process.env,
+          GITHUB_SHA: original.commit === "b".repeat(40) ? "c".repeat(40) : "b".repeat(40),
+        },
+        stdio: "pipe",
+      },
+    ),
+  );
+});
+
+test("macOS CI audits and tests the downloaded cohort under the minimum Node without rebuilding", () => {
+  const workflow = readFileSync(join(root, ".github/workflows/ci.yml"), "utf8");
+  const registry = workflow
+    .split("  registry-consumers:")[1]!
+    .split("  windows-clean-consumer:")[0]!;
+  const audit = registry
+    .split("- name: Audit macOS binaries from the complete cohort")[1]!
+    .split("- name:")[0]!;
+  const minimum = registry
+    .split("- name: macOS minimum Node consumers of the same complete cohort")[1]!
+    .split("- name:")[0]!;
+  assert.match(audit, /if: endsWith\(matrix.target, '-apple-darwin'\)/);
+  assert.match(audit, /mise run check:node:macos -- "\$\{cohorts\[0\]\}"/);
+  assert.match(minimum, /if: endsWith\(matrix.target, '-apple-darwin'\)/);
+  assert.match(minimum, /mise run --tool node@24\.15\.0 check:node:registry -- "\$artifacts"/);
+  assert.match(minimum, /a.equal\(process.version,"v24.15.0"\)/);
+  assert.match(minimum, /a.equal\(process.arch,/);
+  assert.match(
+    registry,
+    /macos-compatibility-\$\{\{ github.run_attempt \}\}-\$\{\{ matrix.target \}\}/,
+  );
+  assert.doesNotMatch(registry, /mise run (?:build:|pack:|check:node:minimum)|continue-on-error/);
+  const mise = readFileSync(join(root, "mise.toml"), "utf8");
+  assert.match(mise, /\[tasks\."check:node:macos"\][\s\S]*?compatibility\.ts --macos/);
+});
 
 test("GNU inspection receives exactly the hashed archive bytes for both architectures", (t) => {
   const { directory, binaries } = fixture(t);

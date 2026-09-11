@@ -158,6 +158,22 @@ GNU 构建要求 Linux x64／arm64；指定目标沿用 `CARGO_BUILD_TARGET`。�
 
 上述提交已完成 GNU 构建、实际产物符号检查，以及双架构 glibc 2.28／Node 24.15.0 的同批运行验收。该结论仅对应列明的提交、批次和环境；后续改动须重新经过同样门禁。容器共享宿主内核，不能据此承诺最低 Linux 内核或全部旧发行版。
 
+## macOS 兼容性门禁
+
+macOS x64／arm64 注册表任务消费完整汇总的同一批 tarball，先执行 `check:node:macos`，保留当前 Node 版本的合同，再追加 Node 24.15.0 的 npm／pnpm 验收。这里增加产物检查与最低 Node 覆盖，不改变 Rust 编译参数，也不把现有 macOS runner 当作最低系统环境。
+
+- **产物身份**：复用 GNU 门禁的归档校验边界，核对完整目标集、commit／run／attempt、tarball 与二进制摘要。仅将确定的 `.node` 条目读入内存，不重建、重新打包或修改交付文件。两个架构均检查，与检查机的 CPU 无关。
+- **Mach-O 检查**：要求单架构 little-endian 64 位 dylib，以及对应的通用 x64／arm64 CPU subtype；检查 load commands 的边界、对齐和数量。最低系统信息必须来自唯一的 `LC_VERSION_MIN_MACOSX` 或 macOS 的 `LC_BUILD_VERSION`，SDK 版本只记录，不当成运行要求。系统标记不得超过 13.5.0，这是参照 [Node 24.15.0 平台表](https://github.com/nodejs/node/blob/v24.15.0/BUILDING.md#platform-list) 设置的检查上限，不是本项目已验证支持 macOS 13.5 的声明。
+- **加载路径**：检查普通、弱、re-export、lazy 和 upward 动态库依赖，仅允许规范的 `/usr/lib/` 或 `/System/Library/Frameworks/` 绝对路径。当前包不捆绑其他 dylib，因而拒绝 RPATH 以及 `@rpath`／`@loader_path`、Homebrew 等非系统依赖。`LC_ID_DYLIB` 是模块自身的 install name，不作为被加载依赖；字段含义以 [Apple Mach-O 定义](https://github.com/apple-oss-distributions/xnu/blob/main/EXTERNAL_HEADERS/mach-o/loader.h) 为依据。
+- **运行验收与证据**：显式选择 Node 24.15.0 并核对实际 CPU，随后复用注册表任务的安装、ESM／require、建盘、查询及缺失／损坏负例。任何失败均使对应注册表任务和最终门禁失败。`macos-compatibility-<attempt>-<target>` 保存带二进制摘要及批次身份的审计 JSON 和最低 Node 消费日志；失败时原始 CI 日志仍保留，审计未完成时不将空输出视为成功报告。
+
+```sh
+mise run check:node:macos -- <包含 batch.json 的完整交付目录>
+mise run --tool node@24.15.0 check:node:registry -- <同一完整交付目录>
+```
+
+静态门禁不检查全部系统符号可用性、递归动态依赖、运行时主动加载、代码签名或完整 CPU 指令集下限；版本标记合格与当前 runner 加载通过，都不能替代目标 macOS 环境实测。它也不改变 Node 对已停止维护操作系统的支持政策。新门禁的远端通过状态须对应实际执行的提交与 CI，不沿用以前仅有常规注册表测试的结果。
+
 ## Windows x64 干净容器验收
 
 现有 Windows 双架构 runner 继续验证实际包消费；`Windows x64 clean consumers` 额外检查不继承宿主开发软件的消费环境。正式门禁区分 Ziwei 的运行要求与 pnpm 自身的先决条件，不增加最低 Windows 版本承诺。

@@ -70,7 +70,7 @@ Oxfmt 读取根 [.editorconfig](../../.editorconfig)：TypeScript 和 JSON 使�
 
 最低版本统一为 Node `>=24.15.0`：内置 TypeScript 类型擦除在 24.12.0 稳定，`require(ESM)` 在 24.15.0 稳定，见 [Node TypeScript](https://nodejs.org/docs/latest-v24.x/api/typescript.html) 与 [require(ESM)](https://nodejs.org/docs/latest-v24.x/api/modules.html#loading-ecmascript-modules-using-require)。
 
-这是项目支持门槛，不表示更早版本无法执行生成的 JS。mise 开发版本固定 24.21.0；`check:node:minimum` 额外运行 24.15.0，CI 只在 Linux 执行此版本检查。
+这是项目支持门槛，不表示更早版本无法执行生成的 JS。mise 开发版本固定 24.21.0；`check:node:minimum` 在 Linux CI 运行最低版本的完整工程检查。macOS 双架构的最低版本消费验收直接复用封存包与注册表任务，不调用会重新构建的聚合检查。
 
 手写源码、测试、Worker、配置和工具全部使用 `.ts`；Node 直接执行工具的可擦除 TS 语法，保留 `.ts` 导入扩展名，不依赖 tsx。根 `tsconfig.json` 严格检查这些文件，并启用 `erasableSyntaxOnly`、`verbatimModuleSyntax`；`mise run check:typescript` 需在产品构建后运行。
 
@@ -85,6 +85,8 @@ CI 的 `capture:node` 在目标消费端通过后封存实际测试的 tarball�
 musl 使用 `CARGO_BUILD_TARGET` 指定目标，运行 `mise run build:node:musl`。此任务锁定 Zig／cargo-zigbuild 并复用原生与 TS 构建；`build:node:native --cross-compile` 将选项传给 napi，不传入 `--` 后的 Cargo 参数。普通 `build:node` 不需要交叉链接工具链。
 
 GNU CI 使用 `build:node:gnu`，在 Linux x64／arm64 上经 `--use-napi-cross` 构建，再执行 `test:node` 与 `check:node:types`。完整汇总上传前运行 `check:node:glibc -- <完整交付目录>`，需要 GNU `readelf`，拒绝超过 glibc 2.28 的版本需求；随后同批 tarball 在实际 glibc 2.28／最低 Node 容器中复用注册表合同。构建任务本身不代表最低环境验收已通过；具体边界见 [GNU 验收目标](../architecture/node-distribution-proposal.md#gnu-glibc-228-验收目标)。
+
+`check:node:macos -- <完整交付目录>` 直接检查两个 macOS tarball 的 Mach-O 元数据，无需 Apple 工具链。macOS 注册表任务先审计同批产物，再分别以开发版本和最低 Node 运行既有 npm／pnpm 消费合同；审计结果与最低 Node 日志按目标保存。系统标记上限和依赖路径约束只构成静态门禁，最低 macOS 版本仍需真实环境验收，见 [macOS 兼容性门禁](../architecture/node-distribution-proposal.md#macos-兼容性门禁)。
 
 `check:node` 同时覆盖原有自包含包和新的无二进制主包／平台包。后者用 Node 随附 npm 离线安装本地 tarball，override 仅存在于临时消费端；仓库依赖管理继续使用 pnpm。正常 runner 从已安装包检查声明，musl 在对应 CPU 的 Alpine 运行同一消费端夹具、在构建机检查声明。
 
