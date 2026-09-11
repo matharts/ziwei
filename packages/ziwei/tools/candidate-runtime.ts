@@ -26,6 +26,16 @@ import {
 } from "./candidate.ts";
 
 const execute = promisify(execFile);
+export function runCandidateCommand(
+  command: string,
+  args: string[],
+  options: { timeout: number; maxBuffer?: number },
+) {
+  // Docker proxies SIGTERM to its container, which may ignore it. Kill the CLI at
+  // the deadline, then let the owner's finally block forcibly remove the container.
+  return execute(command, args, { ...options, killSignal: "SIGKILL" });
+}
+
 const root = fileURLToPath(new URL("../../..", import.meta.url));
 const save = (path: string, value: unknown) =>
   writeFileSync(path, JSON.stringify(value, null, 2) + "\n");
@@ -194,7 +204,7 @@ export async function runCandidateExperiment(
   const temporary = mkdtempSync(join(tmpdir(), "ziwei-candidate-runtime-"));
   const failures: unknown[] = [];
   try {
-    const info = await execute(
+    const info = await runCandidateCommand(
       "docker",
       ["info", "--format", "{{json .OSType}} {{json .Architecture}}"],
       { timeout: 10_000 },
@@ -206,14 +216,14 @@ export async function runCandidateExperiment(
     );
     report.docker = info.stdout.trim();
     const platform = candidateTargets[target];
-    await execute(
+    await runCandidateCommand(
       "docker",
       ["pull", "--platform", `linux/${platform.dockerArch}`, candidateImage],
       { timeout: 300_000, maxBuffer: 4 * 1024 * 1024 },
     );
     const image = JSON.parse(
       (
-        await execute(
+        await runCandidateCommand(
           "docker",
           [
             "image",
@@ -307,7 +317,8 @@ export async function runCandidateExperiment(
         };
         const args = candidateDockerArgs(container);
         try {
-          const result = await execute("docker", args, {
+          console.log(`candidate consumer: ${target}, Node ${nodeVersion}`);
+          const result = await runCandidateCommand("docker", args, {
             timeout: 900_000,
             maxBuffer: 4 * 1024 * 1024,
           });
@@ -323,8 +334,10 @@ export async function runCandidateExperiment(
             const probeName = `ziwei-candidate-probe-${randomUUID()}`;
             const probe: Record<string, unknown> = { mode };
             item[mode] = probe;
+            save(reportPath, report);
+            console.log(`candidate diagnostic: ${target}, Node ${nodeVersion}, ${mode}`);
             try {
-              const result = await execute(
+              const result = await runCandidateCommand(
                 "docker",
                 candidateDockerArgs({ ...container, name: probeName, mode }),
                 { timeout: 30_000, maxBuffer: 1024 * 1024 },
@@ -348,7 +361,9 @@ export async function runCandidateExperiment(
               });
             } finally {
               try {
-                await execute("docker", ["rm", "--force", probeName], { timeout: 15_000 });
+                await runCandidateCommand("docker", ["rm", "--force", probeName], {
+                  timeout: 15_000,
+                });
                 probe.cleanup = "removed";
               } catch (cleanupError) {
                 const stderr = (cleanupError as { stderr?: string }).stderr ?? "";
@@ -358,6 +373,7 @@ export async function runCandidateExperiment(
                   probe.cleanupError =
                     cleanupError instanceof Error ? cleanupError.message : String(cleanupError);
               }
+              save(reportPath, report);
             }
           }
           throw error;
@@ -376,7 +392,7 @@ export async function runCandidateExperiment(
       } finally {
         // Removes only this invocation's uniquely named container; never touches unrelated ones.
         try {
-          await execute("docker", ["rm", "--force", name], { timeout: 15_000 });
+          await runCandidateCommand("docker", ["rm", "--force", name], { timeout: 15_000 });
           item.cleanup = "removed";
         } catch (error) {
           const stderr = (error as { stderr?: string }).stderr ?? "";

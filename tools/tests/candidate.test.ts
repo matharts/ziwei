@@ -21,6 +21,7 @@ import {
   candidateDockerArgs,
   candidateImage,
   candidateRuntimes,
+  runCandidateCommand,
   verifyDownload,
 } from "../../packages/ziwei/tools/candidate-runtime.ts";
 import {
@@ -39,6 +40,21 @@ const root = fileURLToPath(new URL("../..", import.meta.url));
 const source = JSON.parse(readFileSync(join(root, "packages/ziwei/package.json"), "utf8"));
 const batch: Batch = { commit: "a".repeat(40), runId: "123", runAttempt: "2" };
 const targets = ["powerpc64le-unknown-linux-gnu", "s390x-unknown-linux-gnu"] as const;
+
+test("candidate command deadlines terminate a child that ignores SIGTERM", async () => {
+  await assert.rejects(
+    runCandidateCommand(
+      process.execPath,
+      ["-e", "process.on('SIGTERM', () => {}); setTimeout(() => {}, 2000);"],
+      { timeout: 500 },
+    ),
+    (error: Error & { signal?: string }) => {
+      assert.equal(error.signal, "SIGKILL");
+      return true;
+    },
+  );
+}, 10_000);
+
 const receipt = (target: CandidateTarget): CandidateReceipt => ({
   schemaVersion: 1,
   kind: "node-candidate",

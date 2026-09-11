@@ -203,6 +203,8 @@ Node 候选的最低与开发 Node 测试均消费同一已封存 addon，不重
 
 控制器在失败后增加独立诊断：保持镜像、二进制、用户和隔离限制不变，从 `/tmp` 直接以 pnpm 为容器入口执行 `--version`，与 Node 子进程路径对照；第二次单独启用 `QEMU_STRACE` 留下系统调用轨迹。每个探针限制 30 秒、1 MiB 输出，使用独立容器名并清理；结果只附加到失败记录，不代替原消费结果、不使验收转绿。QEMU 用户态使用其自带的系统调用追踪，而非依赖客体 `ptrace` 的 strace。[QEMU 说明](https://www.qemu.org/docs/master/user/main.html#command-line-options)
 
+诊断提交 `32bdd39` 的[候选运行 `34645062105`](https://github.com/matharts/ziwei/actions/runs/34645062105) 中，s390x 再次完整通过，ppc64le 长时间未完成，运行被主动停止，不记作完成验证。检查发现控制器的默认超时只发送 `SIGTERM`；Docker 默认把信号转发给容器，目标进程可能忽略。真实子进程回归证明：忽略该信号后，超时不保证返回；改用 `SIGKILL` 终止本次 CLI 后才进入现有按名称强制清理容器的 `finally`。候选控制器统一使用此硬超时，并在消费与诊断阶段输出进度、增量保存报告。109 项工具测试通过；这修复诊断边界，不代表修复 pnpm 的原始崩溃。[Docker 信号代理](https://docs.docker.com/reference/cli/docker/container/run/)
+
 ### 2026-09-11：初轮实现
 
 - 核对当时的 manifest、CLI 3.9.0 安装源码及 npm 注册表中的 `gitHead`；初轮源码证据固定到该发布提交，不把 `main` 当作已安装行为。
