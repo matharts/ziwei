@@ -10,7 +10,7 @@ Rust 命令通过 `mise` 执行：直接调用使用 `rtk mise exec -- <command>
 
 ### Node 版本与职责
 
-Node 开发统一从仓库根使用 mise 任务，完整命令、工作目录和执行顺序只定义在 [mise.toml](../../mise.toml)；根及 `packages/ziwei/package.json` 不再包含开发 scripts。mise 安装并选择工具链；根 [package.json](../../package.json) 的 `devEngines` 校验 Node `>=24.15.0` 与 pnpm `12.3.4`，两者均为 `onFail: "error"`。
+Node 开发统一从仓库根使用 mise 任务，完整命令、工作目录和执行顺序只定义在 [mise.toml](../../mise.toml)；根及 `packages/ziwei/package.json` 不再包含开发 scripts。mise 安装并选择工具链；根 [package.json](../../package.json) 的 `devEngines` 校验 Node `>=24.15.0` 与 pnpm `12.4.1`，两者均为 `onFail: "error"`。
 
 pnpm 由 mise 安装，只有 macOS x64 使用 `npm:pnpm` 后端，因为当前 Aqua 后端排除该平台。npm 安装仅允许 pnpm 自身的脚本将占位入口替换为平台二进制。其余平台使用 Aqua 原生可执行入口；Windows 的 npm `.cmd` shim 无法保留复杂参数。工具别名仍为 `pnpm`，不改变 workspace 包管理器或开发版本约束。
 
