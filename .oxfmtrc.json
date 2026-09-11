@@ -18,5 +18,11 @@
     "sortSideEffects": false
   },
   "sortPackageJson": true,
-  "ignorePatterns": ["**/node_modules/**", "**/dist/**", "**/native/**", "**/target/**"]
+  "ignorePatterns": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/native/**",
+    "**/generated/**",
+    "**/target/**"
+  ]
 }

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, truncateSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,6 +10,8 @@ import { test } from "@rstest/core";
 import type { TestContext } from "@rstest/core";
 
 import {
+  inspectGnuBinary,
+  inspectGnuCandidate,
   inspectMacosBinary,
   inspectWindowsImports,
   recordWindowsCrt,
@@ -417,6 +419,239 @@ const versionInfo = (versions: string[]) =>
   versions.map((version) => `  0x000010: Name: ${version} Flags: none Version: 2`).join("\n");
 const accepted = versionInfo(["GLIBC_2.2.5", "GLIBC_2.17", "GLIBC_2.28", "GCC_4.2.0"]);
 
+const gnuCases = [
+  { target: "x86_64-unknown-linux-gnu", bits: 64, endian: "little", machine: 62, flags: 0 },
+  { target: "aarch64-unknown-linux-gnu", bits: 64, endian: "little", machine: 183, flags: 0 },
+  {
+    target: "armv7-unknown-linux-gnueabihf",
+    bits: 32,
+    endian: "little",
+    machine: 40,
+    flags: 0x05000400,
+  },
+  { target: "powerpc64le-unknown-linux-gnu", bits: 64, endian: "little", machine: 21, flags: 2 },
+  { target: "s390x-unknown-linux-gnu", bits: 64, endian: "big", machine: 22, flags: 0 },
+] as const;
+type GnuCase = (typeof gnuCases)[number];
+
+// ABI-derived header/table fixtures are not runnable addons or platform support evidence.
+function gnuBinary(layout: GnuCase) {
+  const binary = Buffer.alloc(layout.bits === 64 ? 64 : 52);
+  binary.set([
+    0x7f,
+    0x45,
+    0x4c,
+    0x46,
+    layout.bits === 64 ? 2 : 1,
+    layout.endian === "little" ? 1 : 2,
+    1,
+  ]);
+  const write16 = (value: number, offset: number) =>
+    layout.endian === "little"
+      ? binary.writeUInt16LE(value, offset)
+      : binary.writeUInt16BE(value, offset);
+  const write32 = (value: number, offset: number) =>
+    layout.endian === "little"
+      ? binary.writeUInt32LE(value, offset)
+      : binary.writeUInt32BE(value, offset);
+  write16(3, 16);
+  write16(layout.machine, 18);
+  write32(1, 20);
+  write32(layout.flags, layout.bits === 64 ? 48 : 36);
+  write16(binary.length, layout.bits === 64 ? 52 : 40);
+  return binary;
+}
+
+function gnuTables(layout: GnuCase) {
+  const wide = layout.bits === 64;
+  const header = gnuBinary(layout);
+  const program = header.length;
+  const section = program + (wide ? 56 : 32);
+  const sectionEntry = section + (wide ? 64 : 40);
+  const payload = sectionEntry + (wide ? 64 : 40);
+  const binary = Buffer.concat([header, Buffer.alloc(payload + 8 - header.length)]);
+  const write16 = (value: number, offset: number) =>
+    layout.endian === "little"
+      ? binary.writeUInt16LE(value, offset)
+      : binary.writeUInt16BE(value, offset);
+  const write32 = (value: number, offset: number) =>
+    layout.endian === "little"
+      ? binary.writeUInt32LE(value, offset)
+      : binary.writeUInt32BE(value, offset);
+  const writeWord = (value: bigint, offset: number) =>
+    wide
+      ? layout.endian === "little"
+        ? binary.writeBigUInt64LE(value, offset)
+        : binary.writeBigUInt64BE(value, offset)
+      : write32(Number(value), offset);
+  writeWord(BigInt(program), wide ? 32 : 28);
+  writeWord(BigInt(section), wide ? 40 : 32);
+  write16(wide ? 56 : 32, wide ? 54 : 42);
+  write16(1, wide ? 56 : 44);
+  write16(wide ? 64 : 40, wide ? 58 : 46);
+  write16(2, wide ? 60 : 48);
+  write32(1, program);
+  writeWord(BigInt(payload), program + (wide ? 8 : 4));
+  writeWord(8n, program + (wide ? 32 : 16));
+  writeWord(8n, program + (wide ? 40 : 20));
+  write32(1, sectionEntry + 4);
+  writeWord(BigInt(payload), sectionEntry + (wide ? 24 : 16));
+  writeWord(8n, sectionEntry + (wide ? 32 : 20));
+  return { binary, program, section, sectionEntry, write16, write32, writeWord };
+}
+
+for (const layout of gnuCases) {
+  const { target, bits, endian, machine, flags } = layout;
+  test(`GNU ELF gate validates ${target} header and encoded program/section ranges`, () => {
+    assert.deepEqual(inspectGnuBinary(gnuBinary(layout), target), { bits, endian, machine, flags });
+    const { binary, sectionEntry, write32, writeWord } = gnuTables(layout);
+    assert.deepEqual(inspectGnuBinary(binary, target), { bits, endian, machine, flags });
+    binary[7] = 3; // GNU OSABI is also valid.
+    write32(8, sectionEntry + 4); // SHT_NOBITS occupies memory, not file bytes.
+    writeWord(bits === 64 ? 1n << 60n : 0xffffffffn, sectionEntry + (bits === 64 ? 32 : 20));
+    assert.deepEqual(inspectGnuBinary(binary, target), { bits, endian, machine, flags });
+  });
+
+  test(`GNU ELF gate rejects invalid ${target} layout before out-of-bounds reads`, () => {
+    const wide = bits === 64;
+    type Tables = ReturnType<typeof gnuTables>;
+    for (const mutate of [
+      ({ binary }: Tables) => {
+        binary[0] = 0;
+      },
+      ({ binary }: Tables) => {
+        binary[4] = wide ? 1 : 2;
+      },
+      ({ binary }: Tables) => {
+        binary[5] = endian === "little" ? 2 : 1;
+      },
+      ({ binary }: Tables) => {
+        binary[6] = 2;
+      },
+      ({ binary }: Tables) => {
+        binary[7] = 9;
+      },
+      ({ write16 }: Tables) => write16(2, 16),
+      ({ write16 }: Tables) => write16(0xffff, 18),
+      ({ write32 }: Tables) => write32(2, 20),
+      ({ write16 }: Tables) => write16(0, wide ? 52 : 40),
+      ({ writeWord }: Tables) => writeWord(1n, wide ? 32 : 28),
+      ({ write16 }: Tables) => write16(1, wide ? 54 : 42),
+      ({ write16 }: Tables) => write16(0xffff, wide ? 56 : 44),
+      ({ write16 }: Tables) => write16(0, wide ? 56 : 44),
+      ({ binary, writeWord }: Tables) => writeWord(BigInt(binary.length), wide ? 40 : 32),
+      ({ write16 }: Tables) => write16(1, wide ? 58 : 46),
+      ({ write16 }: Tables) => write16(0, wide ? 60 : 48),
+      ({ write16 }: Tables) => write16(0xff00, wide ? 60 : 48),
+      ({ write16 }: Tables) => write16(2, wide ? 62 : 50),
+      ({ program, writeWord }: Tables) => writeWord(BigInt(program), wide ? 40 : 32),
+      ({ binary, program, writeWord }: Tables) =>
+        writeWord(BigInt(binary.length), program + (wide ? 8 : 4)),
+      ({ program, writeWord }: Tables) => writeWord(7n, program + (wide ? 40 : 20)),
+      ({ binary, sectionEntry, writeWord }: Tables) =>
+        writeWord(BigInt(binary.length), sectionEntry + (wide ? 24 : 16)),
+      ({ sectionEntry, writeWord }: Tables) =>
+        writeWord(0xffffffffn, sectionEntry + (wide ? 32 : 20)),
+    ]) {
+      const fixture = gnuTables(layout);
+      mutate(fixture);
+      assert.throws(() => inspectGnuBinary(fixture.binary, target), { name: "AssertionError" });
+    }
+    const { binary, section, writeWord } = gnuTables(layout);
+    for (const length of [0, 20, wide ? 63 : 51, section + 1, binary.length - 1]) {
+      assert.throws(() => inspectGnuBinary(binary.subarray(0, length), target), {
+        name: "AssertionError",
+      });
+    }
+    if (wide) {
+      writeWord(1n << 60n, 40);
+      assert.throws(() => inspectGnuBinary(binary, target), /超出文件范围/);
+    }
+  });
+}
+
+test("GNU ELF gate rejects ambiguous ARM floating-point and PPC64 ABI flags", () => {
+  for (const flags of [0, 0x04000400, 0x06000400, 0x05000000, 0x05000200, 0x05000600]) {
+    const binary = gnuBinary(gnuCases[2]);
+    binary.writeUInt32LE(flags, 36);
+    assert.throws(() => inspectGnuBinary(binary, gnuCases[2].target));
+  }
+  for (const flags of [0, 1, 3]) {
+    const binary = gnuBinary(gnuCases[3]);
+    binary.writeUInt32LE(flags, 48);
+    assert.throws(() => inspectGnuBinary(binary, gnuCases[3].target), /ELFv2/);
+  }
+  // @ts-expect-error Runtime boundary rejects unknown target identities as well.
+  assert.throws(() => inspectGnuBinary(gnuBinary(gnuCases[0]), "constructor"), /未知 GNU 目标/);
+});
+
+test("GNU candidate probe records exact bytes without manufacturing a sealed cohort", (t) => {
+  const directory = mkdtempSync(join(tmpdir(), "ziwei-gnu-candidate-contract-"));
+  t.onTestFinished(() => rmSync(directory, { recursive: true, force: true }));
+  const path = join(directory, "addon.node");
+  for (const layout of gnuCases.slice(2)) {
+    const binary = gnuTables(layout).binary;
+    writeFileSync(path, binary);
+    const result = inspectGnuCandidate(layout.target, path, (actual) => {
+      assert.deepEqual(actual, binary);
+      return accepted;
+    });
+    assert.deepEqual(result, {
+      target: layout.target,
+      verification: "static",
+      bytes: binary.length,
+      sha256: createHash("sha256").update(binary).digest("hex"),
+      elf: {
+        bits: layout.bits,
+        endian: layout.endian,
+        machine: layout.machine,
+        flags: layout.flags,
+      },
+      versions: ["GLIBC_2.2.5", "GLIBC_2.17", "GLIBC_2.28"],
+    });
+    assert.deepEqual(readFileSync(path), binary);
+    assert.throws(
+      () =>
+        inspectGnuCandidate(layout.target, path, () => {
+          throw new Error("readelf failed");
+        }),
+      /readelf failed/,
+    );
+    assert.throws(
+      () => inspectGnuCandidate(layout.target, path, () => versionInfo(["GLIBC_2.34"])),
+      /超过 glibc 2.28/,
+    );
+    assert.throws(() => inspectGnuCandidate(layout.target, directory), /普通文件/);
+    binary[5] = layout.endian === "little" ? 2 : 1;
+    writeFileSync(path, binary);
+    assert.throws(
+      () =>
+        inspectGnuCandidate(layout.target, path, () => {
+          throw new Error("must not inspect");
+        }),
+      /字节序不匹配/,
+    );
+  }
+  for (const target of ["constructor", "x86_64-unknown-linux-gnu", "aarch64-linux-android"]) {
+    assert.throws(() => inspectGnuCandidate(target, path), /GNU 候选目标/);
+  }
+  const cli = join(root, "packages/ziwei/tools/compatibility.ts");
+  for (const args of [
+    [],
+    [gnuCases[2].target],
+    [gnuCases[2].target, path, "extra"],
+    ["constructor", path],
+    [gnuCases[2].target, directory],
+    [gnuCases[2].target, path],
+  ]) {
+    assert.throws(() =>
+      execFileSync(process.execPath, [cli, "--gnu-candidate", ...args], { stdio: "pipe" }),
+    );
+  }
+  truncateSync(path, 16 * 1024 * 1024 + 1);
+  assert.throws(() => inspectGnuCandidate(gnuCases[2].target, path), /16 MiB/);
+});
+
 test("glibc gate compares numeric requirements and ignores unrelated symbol definitions", () => {
   assert.deepEqual(verifyGlibcVersions(accepted), ["GLIBC_2.2.5", "GLIBC_2.17", "GLIBC_2.28"]);
   assert.deepEqual(verifyGlibcVersions(versionInfo(["GLIBC_2.9", "GLIBC_2.9"])), ["GLIBC_2.9"]);
@@ -491,12 +726,7 @@ function fixture(
         ? macosBinary(machine === 0x100000c)
         : kind === "windows"
           ? windowsBinary(["KERNEL32.dll", "VCRUNTIME140.dll"], ["MSVCP140.dll"], machine)
-          : Buffer.alloc(64);
-    if (kind === "gnu") {
-      binary.set([0x7f, 0x45, 0x4c, 0x46, 2, 1]);
-      binary.writeUInt16LE(3, 16);
-      binary.writeUInt16LE(machine, 18);
-    }
+          : gnuBinary(machine === 183 ? gnuCases[1] : gnuCases[0]);
     const stored = alterBinary(binary);
     binaries.push(stored);
     writeFileSync(join(packageDirectory, `${source.napi.binaryName}.${suffix}.node`), stored);

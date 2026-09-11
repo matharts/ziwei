@@ -304,6 +304,12 @@
 | D-265 | 使用同批完整交付包，在八种已纳入验收的运行环境中验证 npm／pnpm 无 overrides 的自动平台安装。夹具仅提供本机只读 registry metadata 与原始 tarball，冷缓存冻结安装并检查实际二进制及失败路径；不增加发布接口或依赖，不修改包的 private、版本、公开 API 或平台范围。 | 2026-09-10 用户要求提交推送并进入下一步；实现与验收状态见 [隔离注册表安装验收](node-distribution-proposal.md#隔离注册表安装验收) |
 | D-266 | GNU x64／arm64 分发以 glibc 2.28 为验收目标。GNU 构建使用 napi-rs 官方 `--use-napi-cross`，保留当前 Rust 工具链和 musl Zig 路径；完整汇总后检查实际 GNU tarball 的摘要、ELF 架构及版本需求，再在同架构 glibc 2.28／Node 24.15.0 环境复用同批 npm／pnpm 消费端合同。不改变八目标、包名、公开 API 或 private；运行通过前不宣称兼容，不推导最低内核承诺。 | 2026-09-10 用户确认并授权实现；提交 `7e6ecc2` 的 [CI](https://github.com/matharts/ziwei/actions/runs/34490975361) 全部通过，GNU 双架构的实际 tarball 通过符号门禁和 glibc 2.28／Node 24.15.0 npm／pnpm 消费端验收 |
 
+#### 新宿主与完整目标
+
+| ID | 决策 | 状态 |
+| --- | --- | --- |
+| D-267 | 另外七个原生候选目标与 Wasm／浏览器均属于必做交付范围。新增独立 `bindings/wasm`（`ziwei-wasm`）与 `packages/ziwei-wasm`（`@matharts/ziwei-wasm`），单向依赖唯一核心；采用 wasm-bindgen、无 WASI 的单线程目标，显式 initialize 返回 ready runtime，再同步调用完整建盘与查询。Wasm 命盘提供幂等 dispose、GC 兜底，保持 Node API 不变。新候选先独立编译、审计与宿主验收，不预先进入八目标分发；移动原生验收不能用浏览器 Wasm 替代。所有包继续 private，不授权提交、推送或发布。 | 2026-09-11 用户明确补齐七候选和 Wasm／浏览器，并要求并发执行；实现与实际验证进度见[交付计划](cross-platform-delivery-plan.md)，未验收部分继续保留，不标记完整交付 |
+
 ## 暂缓决策
 
 | ID | 决策 | 状态 |

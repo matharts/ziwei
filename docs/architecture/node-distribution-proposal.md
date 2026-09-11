@@ -1,18 +1,44 @@
 # Node 原生二进制分发提案
 
-状态：2026-09-10 首批分发结构（D-263）、八目标独立分发验收、同批完整汇总（D-264）与无需 overrides 的隔离注册表安装验收（D-265）均已通过 CI，另七个仍为候选。D-266 的 GNU 构建、符号门禁与双架构 glibc 2.28／最低 Node 用户态验收也已通过。主包与平台包均未发布；该用户态实测不覆盖最低内核、全部旧系统或公共注册表分发。
+状态：2026-09-11 首批八目标的独立分发（D-263）、同批完整汇总（D-264）与隔离注册表安装验收（D-265）均已通过，Node 24.15.0 与 24.21.0 的消费路径已覆盖全部八目标。GNU 双架构 glibc 2.28（D-266）、macOS 双架构、Windows 双架构与 musl 双架构的兼容性门禁均通过下述同批 CI。另七个目标仍为候选，主包与平台包均未发布；最低 Node 验收不等于最低操作系统、干净 Windows arm64 或公共注册表分发已验证。
 
 ## 当前事实
 
-- 提交 `7e6ecc2e9021e12c340f74f8eb4a6006e184dbc9` 的 [CI 全部通过](https://github.com/matharts/ziwei/actions/runs/34490975361)（attempt 1，19 个任务）：GNU 双架构通过新交叉构建；完整交付 tarball 的必需 GLIBC 符号最高版本分别为 x64 的 2.14、arm64 的 2.17，均通过 2.28 上限检查。同一完整批次在实际 glibc 2.28／Node 24.15.0 的 x64、arm64 容器中，各通过 npm／pnpm 的正常、禁用 optional、缺失与损坏共八个场景；原有八目标注册表验收及最终门禁也通过。较低的符号版本不降低项目的 glibc 2.28 验收目标。
+- 提交 `6c228cc0fb4342464c9af6727473c50f1fd8e227` 的 [CI 34606151790](https://github.com/matharts/ziwei/actions/runs/34606151790)（attempt 1）共 20 个任务全部通过，包括八目标构建／分发、完整汇总、八个注册表任务、Windows x64 干净容器与最终 `verify`。以下总览只对应这一提交和批次，不自动外推至后续产物。
+- 完整交付物为 `node-distribution-1`（artifact ID `10266116947`）。下载后已重新计算九个 tarball 与八个 `.node` 的大小／SHA-256，均与 `batch.json` 一致；macOS、Windows arm64、Windows x64 CRT 报告与受检二进制对应同一批次，musl 报告中的批次和镜像摘要也已核对。
+- [主包配置](../../packages/ziwei/package.json)声明八个首批目标，仍为 `private: true`。源码 manifest 不引用尚未发布的平台依赖；`optionalDependencies` 仅在暂存区生成，保持 workspace 冻结安装可用。当前仅有[检查工作流](../../.github/workflows/ci.yml)，没有发布工作流。
+- 保留[自包含本地包测试](../../packages/ziwei/test/package.test.ts)和[分发测试](../../packages/ziwei/test/distribution.test.ts)：真正打包和离线安装无二进制主包与本机平台包，检查加载、公开 API、声明和失败路径。平台包元数据由锁定的 napi-rs `NapiCli.createNpmDirs` 生成；元数据夹具不作为各平台的运行证据。
 
+### 首批兼容性验收总览
+
+八目标均保留 Node 24.21.0 的 npm／pnpm 注册表验收。Node 24.15.0 的实际验收环境与边界如下；每个目标均通过正常安装、禁用 optional、平台包缺失、integrity 不符四类场景，两个包管理器合计八个场景，八目标共 64 个最低 Node 场景。
+
+| 目标 | Node 24.15.0 实际验收环境 | 产物检查与边界 |
+| --- | --- | --- |
+| Linux GNU x64／arm64 | 同架构 AlmaLinux 8.10 容器，实际 glibc 2.28 | 完整批次通过 GLIBC 2.28 符号上限检查；容器不证明最低内核或全部旧发行版可用 |
+| Linux musl x64／arm64 | 固定摘要的 Node Alpine 镜像；实际 Alpine 3.23.4、musl 1.2.5 | 核对实际 CPU、Node 与已加载 musl loader；不推导最低 Alpine／musl／内核版本 |
+| macOS x64／arm64 | 对应 CPU 的 macOS runner，记录的 Darwin 内核均为 24.6.0 | 同批 Mach-O 架构、部署标记与依赖路径检查通过；不是 macOS 13.5 实机验收 |
+| Windows x64 MSVC | 固定摘要的 Server Core LTSC 2025；npm 在无额外 VC Runtime 容器中运行，pnpm 在安装指定运行库的另一容器中运行 | 交付 `.node` 普通与延迟导入均无 VC Runtime DLL；pnpm 的运行库条件不等于 addon 的要求，也不证明最低 Windows 或 Windows 11 干净环境 |
+| Windows arm64 MSVC | Windows 11 arm64 runner，记录的系统版本为 10.0.26200 | 同批 ARM64 PE 审计通过，仍导入 `VCRUNTIME140.dll`；runner 有预装运行库，不是干净环境验收 |
+
+各组最低 Node 证据均来自上述 run、attempt 1，不能混用其他批次：
+
+- GNU：`Complete Node distribution` 的符号检查日志，以及两个 GNU `Registry` 任务中的 glibc 2.28／最低 Node 消费日志。
+- macOS：两个 `macos-compatibility-1-<target>`，各含同批审计 JSON 与八个最低 Node 场景日志；Windows arm64：`windows-arm64-compatibility-1`，含 PE 审计与八个场景日志。
+- Windows x64：`windows-crt-1` 保存静态产物与审计；`windows-clean-consumer-1` 保存 `npm-clean`、`pnpm-runtime` 两组独立报告，分别通过四个场景。两组均通过才构成正式验收。
+- musl：两个 `musl-compatibility-1-<target>`，各含 `image.json`、`runtime.json`、输入 `batch.json` 与八个场景的 `consumer.log`。两架构的 RepoDigests 均匹配索引摘要 `sha256:d1b3b4da11eefd5941e7f0b9cf17783fc99d9c6fc34884a665f40a06dbdfc94f`。
+
+这些结果证明所列环境中的安装与加载合同，不扩大 [Node 的 musl 支持分级](https://github.com/nodejs/docker-node#musl-builds-for-alpine)，也不把 Node-API ABI 稳定当作操作系统兼容承诺。Actions 证据会按工作流期限过期；本节保留批次与结论，过期后需重新验收，不能用新批次冒充原产物。
+
+### 历史验收记录
+
+以下记录保留各自提交的结果与问题，不作为当前产物的依赖清单。
+
+- 提交 `7e6ecc2e9021e12c340f74f8eb4a6006e184dbc9` 的 [CI 全部通过](https://github.com/matharts/ziwei/actions/runs/34490975361)（attempt 1，19 个任务）：GNU 双架构通过新交叉构建；完整交付 tarball 的必需 GLIBC 符号最高版本分别为 x64 的 2.14、arm64 的 2.17，均通过 2.28 上限检查。同一完整批次在实际 glibc 2.28／Node 24.15.0 的 x64、arm64 容器中，各通过 npm／pnpm 的正常、禁用 optional、缺失与损坏共八个场景；原有八目标注册表验收及最终门禁也通过。较低的符号版本不降低项目的 glibc 2.28 验收目标。
 - 提交 `2074662ca55bd891ab7941589bbf598e2b259643` 的 [CI 全部通过](https://github.com/matharts/ziwei/actions/runs/34453935225)（attempt 1）：八个平台分别通过 npm／pnpm 的正常安装、禁用 optional、平台包缺失及 integrity 不符，共 64 个消费端场景；完整汇总、原有检查和最终 `verify` 均通过。Windows 首次验收发现 Git Bash 的 GNU tar 将盘符误当远程地址，已改为从 stdin 读取已校验的归档字节，未改变测试环境或放宽断言。
 - 后续文档提交 `4bc46bce71db2f5f5fe5481b06f267978f661c94` 的 [CI 也全部通过](https://github.com/matharts/ziwei/actions/runs/34454666959)。对其完整交付包完成了[八目标静态兼容性审计](../engineering/node-binary-compatibility.md)：GNU 两目标均有必需的 `GLIBC_2.34` 引用；musl 动态依赖 libc，Windows 动态依赖 VC Runtime／UCRT。没有据此新增最低系统承诺或调整构建配置。
 - 提交 `b9266dc33f246cc18092bb50a3eb8f8100b8478b` 的 [CI 全部通过](https://github.com/matharts/ziwei/actions/runs/34451527198)（attempt 1）：八目标产物封存、完整汇总和最终门禁通过。下载最终交付物后，九个 tarball 的大小与 SHA-256 均匹配 `batch.json`。
 - 提交 `3d22b4b20503eed3df8857341e6acc007be2ed84` 的 [CI 已通过](https://github.com/matharts/ziwei/actions/runs/34419861484)（attempt 2）：六个原生 runner 通过完整测试与分发消费端合同，两个 musl 目标在对应架构的 Alpine 容器中通过分发消费端合同，质量检查与汇总门禁通过。Linux arm64 首次因 GitHub 证明校验接口 `502` 失败，同一提交重试通过；未关闭证明校验。
-- [主包配置](../../packages/ziwei/package.json)声明八个首批目标，仍为 `private: true`。源码 manifest 不引用尚未发布的平台依赖；`optionalDependencies` 仅在暂存区生成，保持 workspace 冻结安装可用。当前仅有[检查工作流](../../.github/workflows/ci.yml)，没有发布工作流。
-- 保留[自包含本地包测试](../../packages/ziwei/test/package.test.ts)，另增[分发测试](../../packages/ziwei/test/distribution.test.ts)：真正打包和离线安装无二进制主包与本机平台包，检查加载、公开 API、声明和失败路径。
-- 平台包元数据由锁定的 napi-rs `NapiCli.createNpmDirs` 生成；不是手写第二套 CPU／OS／libc 映射。八项目标的元数据夹具不作为八个平台的运行证据。
 
 ## Rolldown 对照与候选平台
 
@@ -43,7 +69,7 @@
 ### 不能直接照搬的兼容性承诺
 
 - Node `>=24.15.0` 保持不变。Node `v24.21.0` 的平台说明将 Android 列为不支持，Linux armv7 与 x64 musl 列为 Experimental；这些组合需要本项目单独的运行环境与验收，不能只凭 Rolldown 有平台包就宣称可用。[Node 24 平台说明](https://github.com/nodejs/node/blob/v24.21.0/BUILDING.md#platform-list)、[Android 说明](https://github.com/nodejs/node/blob/v24.21.0/BUILDING.md#android)
-- 最低系统版本取决于 Node、构建工具链、原生依赖和实际产物的共同约束。上述 Node 文档列出的 macOS 门槛为 13.5、Linux glibc x64／arm64 门槛为 2.28；它们不是本库已经验证的最低版本，也不能用更低的二进制编译目标覆盖运行时要求。
+- 最低系统版本取决于 Node、构建工具链、原生依赖和实际产物的共同约束。上述 Node 文档列出的 macOS 门槛为 13.5、Linux glibc x64／arm64 门槛为 2.28；本项目已实测 glibc 2.28 用户态环境，但尚未实测 macOS 13.5 或最低 Linux 内核。不能用更低的二进制编译目标覆盖运行时要求。
 - `.node` 的 ABI 稳定不覆盖操作系统、CPU、libc 和第三方运行时；CLI 能解析目标也不等于具备完整构建和发布路径。[napi-rs 兼容性说明](https://napi.rs/docs/more/support-compatibility)
 - Rolldown 的 WASI／浏览器路线单独记录，本轮不据此增加 Ziwei 的 Wasm adapter、自动回退或浏览器支持。需要时另行设计。
 
@@ -135,9 +161,9 @@ mise run check:node:registry -- <包含 batch.json 的完整交付目录>
 
 musl 构建使用 `build:node:musl`，以 napi-rs 支持的 `CARGO_BUILD_TARGET` 选择目标，复用原生与 TS 构建任务。mise 在该任务内锁定 Zig／cargo-zigbuild；原生任务的 `--cross-compile` 交给 napi-rs，后者为 musl 加入动态 CRT 参数。首轮 CI 已证明 Ubuntu 的 `musl-gcc` 路径缺少 `libgcc_s.so.1`，因此改用官方推荐的 Zig 路径，不链接宿主 glibc 的运行库。Alpine 仅包含运行时，声明在构建机检查，不复制 workspace 开发依赖。[napi-rs 交叉构建](https://napi.rs/docs/cross-build)
 
-首批八目标均已通过上述 CI 的真实独立分发验收，运行时为 Node 24.21.0；Linux x64 glibc 另通过最低 Node 24.15.0 检查。musl 消费端不运行依赖 glibc 的 TypeScript 编译器，声明在构建机检查。本机另完成 macOS arm64 分发验收和 Linux x64 musl 交叉构建，但没有本机 Docker 运行证据。
+首批八目标已通过 Node 24.21.0 的真实独立分发与注册表验收，并消费同批完整交付包通过 Node 24.15.0 检查，环境差异见[首批兼容性验收总览](#首批兼容性验收总览)。musl 消费端不运行依赖 glibc 的 TypeScript 编译器，声明在构建机检查。跨平台运行结论来自对应 CI，不以 macOS 本机检查替代。
 
-当前工作流包含同批产物上传／下载、`Complete Node distribution` 汇总和八平台 `Registry` 消费端任务，均纳入最终 `verify` 门禁。它们不替代单平台验收；失败或跳过均不能让最终门禁通过。上述通过状态对应当前事实中列明的提交与 CI 运行，不自动外推至后续改动。不存在发布工作流或 npm 发布。
+当前工作流包含同批产物上传／下载、`Complete Node distribution` 汇总、八平台 `Registry` 消费端任务和 `Windows x64 clean consumers`，均纳入最终 `verify` 门禁。它们不替代单平台验收；必需任务失败或跳过均不能让最终门禁通过，矩阵中不适用的步骤可按条件跳过。上述通过状态对应当前事实中列明的提交与 CI 运行，不自动外推至后续改动。不存在发布工作流或 npm 发布。
 
 全部产物验收后，才讨论发布身份、npm scope 权限、支持底线和人工发布审批。未来发布应使用已验收的同一批产物，先完成平台包再发布主包；部分失败先对账，不能把不同二进制覆盖到同一版本。[napi-rs 发布与恢复](https://napi.rs/docs/deep-dive/release#recover-from-a-partial-release)
 
@@ -252,4 +278,8 @@ mise run --tool node@24.15.0 check:node:registry -- <同一完整交付目录>
 
 ## 发布前剩余门槛
 
-GNU glibc 2.28 的同批验收已完成；[静态审计](../engineering/node-binary-compatibility.md)中其他平台的最低环境、内核与运行时依赖边界仍需实测。之后核验 npm scope 权限和正式发布流程并取得发布授权。其余七项逐一落实运行环境，WASI 另议。
+首批八目标的现有分发与最低 Node 消费验收已完成；这不等于发布条件全部满足。[历史静态审计](../engineering/node-binary-compatibility.md)保留旧批次事实，当前结论以本页总览为准。
+
+- **运行环境与支持声明**：Windows arm64 尚缺无预装开发工具／运行库的干净环境验收；Windows x64 的 Server Core 结果不替代 Windows 11 实测。最低 macOS、Windows、Alpine／musl、Linux 内核以及完整 CPU 指令集下限仍未验证，不写成已支持版本；递归依赖与运行时动态加载的未覆盖路径也不能仅凭静态审计排除。
+- **正式发布**：尚需核验 npm scope／包名权限，设计发布身份、审批、同批产物晋级与部分失败恢复流程，并取得发布授权。继续保留 `private: true`，不把隔离注册表验收当作公共 npm 分发或 provenance 已验证。
+- **完整交付范围**：2026-09-11 用户明确将其余七个原生候选目标及 Wasm／浏览器适配纳入必做范围，并要求并行推进，见[跨平台完整交付计划](cross-platform-delivery-plan.md)。候选仅表示尚未验收，不表示可延期；本页仍只声明已验收的首批八目标，不因范围扩大而提前增加平台依赖或支持承诺。

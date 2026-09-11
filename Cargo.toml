@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/ziwei", "bindings/node"]
+members = ["crates/ziwei", "bindings/node", "bindings/wasm"]
 default-members = ["crates/ziwei"]
 resolver = "3"
 

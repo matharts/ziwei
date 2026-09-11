@@ -1,0 +1,30 @@
+{
+  "name": "@matharts/ziwei-wasm",
+  "version": "1.0.0-dev.0",
+  "private": true,
+  "description": "WebAssembly bindings for the ziwei Rust engine",
+  "license": "MIT",
+  "files": [
+    "dist",
+    "README.md",
+    "AGENTS.md"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "devDependencies": {
+    "@matharts/ziwei": "workspace:*",
+    "@microsoft/api-extractor": "catalog:",
+    "@rslib/core": "catalog:",
+    "@rstest/core": "catalog:",
+    "playwright": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:"
+  }
+}

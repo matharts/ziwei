@@ -78,7 +78,7 @@
   <main class="frame">
     <p class="eyebrow">Architecture · Current Working Tree · 2026-09-07</p>
     <h1><span lang="en">ziwei</span> 当前架构</h1>
-    <p class="subtitle">一个 Rust 领域内核：两条建盘入口共享统一计算路径，返回不可变本命盘；星曜索引查询、宫干四化与按需大限／流年均已实现。Node/Wasm 绑定留待后续。</p>
+    <p class="subtitle">一个 Rust 领域内核：两条建盘入口共享统一计算路径，返回不可变本命盘；星曜索引查询、宫干四化与按需大限／流年均已实现。Node 与 Wasm 通过独立适配层调用同一核心。</p>
 
     <div class="diagram-scroll">
       <svg viewBox="0 0 1200 620" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="ziwei-architecture-title ziwei-architecture-desc">
@@ -123,7 +123,7 @@
         <text x="56" y="240" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">EXT</text>
         <text x="102" y="264" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist','Noto Sans SC','PingFang SC',sans-serif" text-anchor="middle">调用方 / 适配层</text>
         <text x="102" y="284" fill="#4f5d75" font-size="8" font-family="'Geist Mono',monospace" text-anchor="middle">Rust app</text>
-        <text x="102" y="300" fill="#7a8399" font-size="8" font-family="'Geist Mono',monospace" text-anchor="middle">future: N-API · Wasm</text>
+        <text x="102" y="300" fill="#7a8399" font-size="8" font-family="'Geist Mono',monospace" text-anchor="middle">Node-API · Wasm</text>
 
         <!-- Implemented public creation seam -->
         <rect x="224" y="220" width="168" height="104" rx="8" fill="#f5f5f5"/>

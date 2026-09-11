@@ -6,9 +6,33 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+const gnuTargets = {
+  "x86_64-unknown-linux-gnu": { machine: 62, bits: 64, endian: "little", suffix: "linux-x64-gnu" },
+  "aarch64-unknown-linux-gnu": {
+    machine: 183,
+    bits: 64,
+    endian: "little",
+    suffix: "linux-arm64-gnu",
+  },
+  "armv7-unknown-linux-gnueabihf": {
+    machine: 40,
+    bits: 32,
+    endian: "little",
+    suffix: "linux-arm-gnueabihf",
+  },
+  "powerpc64le-unknown-linux-gnu": {
+    machine: 21,
+    bits: 64,
+    endian: "little",
+    suffix: "linux-ppc64-gnu",
+  },
+  "s390x-unknown-linux-gnu": { machine: 22, bits: 64, endian: "big", suffix: "linux-s390x-gnu" },
+} as const;
+type GnuTarget = keyof typeof gnuTargets;
+// Candidate files are not members of the sealed release cohort.
 const machines = {
-  "x86_64-unknown-linux-gnu": { machine: 62, suffix: "linux-x64-gnu" },
-  "aarch64-unknown-linux-gnu": { machine: 183, suffix: "linux-arm64-gnu" },
+  "x86_64-unknown-linux-gnu": gnuTargets["x86_64-unknown-linux-gnu"],
+  "aarch64-unknown-linux-gnu": gnuTargets["aarch64-unknown-linux-gnu"],
 } as const;
 const macosTargets = {
   "x86_64-apple-darwin": { machine: 0x1000007, subtype: 3, suffix: "darwin-x64" },
@@ -192,17 +216,123 @@ function readArtifactBinaries<T extends string>(
   });
 }
 
+/** Inspect the supported GNU ELF layouts, not executable code or runtime compatibility. */
+export function inspectGnuBinary(binary: Buffer, target: GnuTarget) {
+  assert.ok(Object.hasOwn(gnuTargets, target), "未知 GNU 目标");
+  const expected = gnuTargets[target];
+  const wide = expected.bits === 64;
+  const headerSize = wide ? 64 : 52;
+  assert.ok(binary.length >= headerSize, "GNU 二进制的 ELF header 不完整");
+  assert.deepEqual(binary.subarray(0, 4), Buffer.from([0x7f, 0x45, 0x4c, 0x46]), "需要 ELF 产物");
+  assert.equal(binary[4], wide ? 2 : 1, "GNU 产物 ELF class 不匹配");
+  assert.equal(binary[5], expected.endian === "little" ? 1 : 2, "GNU 产物字节序不匹配");
+  assert.equal(binary[6], 1, "不支持的 ELF ident version");
+  assert.ok(binary[7] === 0 || binary[7] === 3, "GNU 产物 OS ABI 不匹配");
+  const u16 = (offset: number) =>
+    expected.endian === "little" ? binary.readUInt16LE(offset) : binary.readUInt16BE(offset);
+  const u32 = (offset: number) =>
+    expected.endian === "little" ? binary.readUInt32LE(offset) : binary.readUInt32BE(offset);
+  const word = (offset: number) =>
+    wide
+      ? expected.endian === "little"
+        ? binary.readBigUInt64LE(offset)
+        : binary.readBigUInt64BE(offset)
+      : BigInt(u32(offset));
+  assert.equal(u16(16), 3, "需要 ELF shared object");
+  assert.equal(u16(18), expected.machine, "GNU 产物 CPU 不匹配");
+  assert.equal(u32(20), 1, "不支持的 ELF version");
+  assert.equal(u16(wide ? 52 : 40), headerSize, "ELF header size 不匹配");
+  const flags = u32(wide ? 48 : 36);
+  if (target === "armv7-unknown-linux-gnueabihf") {
+    // AAELF32: EABI5; ET_DYN records the floating-point calling convention in e_flags.
+    assert.equal(flags >>> 24, 5, "ARM 产物需要 EABI5");
+    assert.equal(flags & 0x600, 0x400, "ARM 产物需要 hard-float 且不可声明 soft-float");
+  } else if (target === "powerpc64le-unknown-linux-gnu") {
+    assert.equal(flags & 3, 2, "PPC64LE 产物需要明确的 ELFv2 ABI");
+  }
+
+  const table = (offset: bigint, count: number, entrySize: number, size: number, name: string) => {
+    // Extended counts require section zero decoding; this narrow addon gate fails closed.
+    assert.notEqual(count, 0xffff, `${name} 不支持扩展计数`);
+    if (count === 0) {
+      assert.equal(offset, 0n, `${name} 零计数必须无偏移，不支持扩展计数`);
+    } else {
+      assert.equal(entrySize, size, `${name} entry size 不匹配`);
+      assert.ok(offset >= BigInt(headerSize), `${name} 与 ELF header 重叠`);
+      assert.ok(offset + BigInt(count * size) <= BigInt(binary.length), `${name} 超出文件范围`);
+    }
+    return { offset: Number(offset), count, size };
+  };
+  const program = table(
+    word(wide ? 32 : 28),
+    u16(wide ? 56 : 44),
+    u16(wide ? 54 : 42),
+    wide ? 56 : 32,
+    "ELF program table",
+  );
+  const section = table(
+    word(wide ? 40 : 32),
+    u16(wide ? 60 : 48),
+    u16(wide ? 58 : 46),
+    wide ? 64 : 40,
+    "ELF section table",
+  );
+  assert.ok(section.count < 0xff00, "ELF section table 不支持扩展计数");
+  const namesIndex = u16(wide ? 62 : 50);
+  assert.ok(namesIndex === 0 || namesIndex < section.count, "ELF section name index 超出范围");
+  if (program.count > 0 && section.count > 0) {
+    assert.ok(
+      program.offset + program.count * program.size <= section.offset ||
+        section.offset + section.count * section.size <= program.offset,
+      "ELF header tables 重叠",
+    );
+  }
+  const fileRange = (offset: bigint, size: bigint, name: string) =>
+    assert.ok(offset + size <= BigInt(binary.length), `${name} 超出文件范围`);
+  for (let i = 0; i < program.count; i++) {
+    const start = program.offset + i * program.size;
+    const fileSize = word(start + (wide ? 32 : 16));
+    fileRange(word(start + (wide ? 8 : 4)), fileSize, "ELF segment");
+    if (u32(start) === 1)
+      assert.ok(
+        fileSize <= word(start + (wide ? 40 : 20)),
+        "ELF LOAD segment 文件长度超过内存长度",
+      );
+  }
+  for (let i = 0; i < section.count; i++) {
+    const start = section.offset + i * section.size;
+    // NULL and NOBITS do not occupy bytes in the file; .bss may exceed file length.
+    if (u32(start + 4) !== 0 && u32(start + 4) !== 8) {
+      fileRange(word(start + (wide ? 24 : 16)), word(start + (wide ? 32 : 20)), "ELF section");
+    }
+  }
+  return { bits: expected.bits, endian: expected.endian, machine: expected.machine, flags };
+}
+
+/** Static candidate probe only: no batch receipt, package installation or support claim. */
+export function inspectGnuCandidate(target: string, path: string, inspect = readVersionInfo) {
+  assert.ok(
+    Object.hasOwn(gnuTargets, target) && !Object.hasOwn(machines, target),
+    "需要 GNU 候选目标",
+  );
+  const file = lstatSync(path);
+  assert.ok(file.isFile(), "候选二进制必须为普通文件");
+  assert.ok(file.size <= 16 * 1024 * 1024, "候选二进制超过 16 MiB 审计上限");
+  const binary = readFileSync(path);
+  const elf = inspectGnuBinary(binary, target as GnuTarget);
+  return {
+    target,
+    verification: "static" as const,
+    ...digest(binary),
+    elf,
+    versions: verifyGlibcVersions(inspect(binary)),
+  };
+}
+
 /** Inspect the actual GNU tarballs of an assembled cohort, without rebuilding them. */
 export function verifyGnuArtifacts(directory: string, inspect = readVersionInfo) {
   return readArtifactBinaries(directory, machines).map(({ target, binary }) => {
-    assert.ok(binary.length >= 64, "GNU 二进制的 ELF header 不完整");
-    assert.deepEqual(
-      binary.subarray(0, 6),
-      Buffer.from([0x7f, 0x45, 0x4c, 0x46, 2, 1]),
-      "需要 ELF64 little-endian 产物",
-    );
-    assert.equal(binary.readUInt16LE(16), 3, "需要 ELF shared object");
-    assert.equal(binary.readUInt16LE(18), machines[target].machine, "GNU 产物 CPU 不匹配");
+    inspectGnuBinary(binary, target);
     return { target, versions: verifyGlibcVersions(inspect(binary)) };
   });
 }
@@ -453,7 +583,12 @@ export function recordWindowsCrt(
 }
 
 if (import.meta.main) {
-  if (process.argv[2] === "--musl-runtime") {
+  if (process.argv[2] === "--gnu-candidate") {
+    assert.equal(process.argv.length, 5, "用法：--gnu-candidate <Rust-target> <二进制>");
+    console.log(
+      JSON.stringify(inspectGnuCandidate(process.argv[3]!, resolve(process.argv[4]!)), null, 2),
+    );
+  } else if (process.argv[2] === "--musl-runtime") {
     assert.equal(process.argv.length, 4, "用法：--musl-runtime <x64|arm64>");
     console.log(JSON.stringify(inspectMuslRuntime(process.argv[3]!), null, 2));
   } else if (process.argv[2] === "--macos") {

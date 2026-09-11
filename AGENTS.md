@@ -16,6 +16,8 @@
 
 - **Node 绑定**：修改 `bindings/node`、`packages/ziwei`、`tools/tests` 中的 Node 工程测试或 Node 测试配置时，读取 [Node 包约定](packages/ziwei/AGENTS.md)；涉及公开 API 时，再读取 [Node API 设计](docs/architecture/node-api-design.md)。
 
+- **Wasm／浏览器**：修改 `bindings/wasm` 或 `packages/ziwei-wasm` 时，读取 [Wasm 包约定](packages/ziwei-wasm/AGENTS.md)；涉及初始化、生命周期或分发时，再读取 [浏览器设计](docs/architecture/browser-adapter-design.md)。
+
 - **工程验证**：修改 Rust、TypeScript、开发工具、依赖、CI、打包配置或可执行文档示例时，读取 [工程验证](docs/agents/engineering.md)。mise 与 `devEngines` 的分工、Catalog 依赖管理、Rslib 构建和 Rstest 测试均由该文档导航到实际配置；版本与命令以配置为准。
 
 - **性能**：修改基准、开展性能优化或报告性能结论前，读取 [基准规范](docs/engineering/benchmarks.md)。

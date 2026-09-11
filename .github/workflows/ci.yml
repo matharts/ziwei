@@ -452,6 +452,35 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  wasm-browser:
+    name: Wasm and browser adapters
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
+        with:
+          install_args: rust node pnpm
+          cache: false
+      - name: Install development dependencies without changing the lockfile
+        run: mise exec -- pnpm install --frozen-lockfile
+      - name: Install Wasm target and browser engines
+        run: |
+          mise run setup:wasm
+          mise run setup:wasm:browsers -- --with-deps
+      - name: Build and verify actual Wasm, Node parity, browsers and installed package
+        run: mise run check:wasm
+      - name: Wasm target Clippy
+        run: |
+          mise exec -- rustup component add clippy
+          mise exec -- cargo clippy -p ziwei-wasm --target wasm32-unknown-unknown --locked -- -D warnings
+      - name: Minimum Rust Wasm target
+        run: |
+          mise exec rust@1.98.0 -- rustup target add wasm32-unknown-unknown
+          mise exec rust@1.98.0 -- cargo check -p ziwei-wasm --target wasm32-unknown-unknown --locked --target-dir target/msrv-wasm
+
   quality:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -495,7 +524,7 @@ jobs:
 
   # Keep a single stable check that cannot pass when a required job fails or skips.
   verify:
-    needs: [native-tests, musl-distribution, quality, node-distribution, registry-consumers, windows-clean-consumer]
+    needs: [native-tests, musl-distribution, quality, node-distribution, registry-consumers, windows-clean-consumer, wasm-browser]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 1
@@ -508,6 +537,7 @@ jobs:
           DISTRIBUTION_RESULT: ${{ needs.node-distribution.result }}
           REGISTRY_RESULT: ${{ needs.registry-consumers.result }}
           WINDOWS_CLEAN_RESULT: ${{ needs.windows-clean-consumer.result }}
+          WASM_RESULT: ${{ needs.wasm-browser.result }}
         run: |
           test "$NATIVE_RESULT" = success
           test "$MUSL_RESULT" = success
@@ -515,3 +545,4 @@ jobs:
           test "$DISTRIBUTION_RESULT" = success
           test "$REGISTRY_RESULT" = success
           test "$WINDOWS_CLEAN_RESULT" = success
+          test "$WASM_RESULT" = success

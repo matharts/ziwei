@@ -130,6 +130,16 @@ Node 侧统一使用锁定版本的 `@rstest/core`（JavaScript 框架，不是 
 
 测试使用独立 Node 子进程池。`ziwei` 的包入口与内部 native seam 显式交给 Node 加载，保留 ESM/CJS 单例身份与真实 `.node` 加载；关闭 Rspack 对 Worker 的打包改写，Worker 从原始夹具路径运行。配置仅用于测试，不进入 npm 分发包。安装与迁移依据 [Rstest 官方指引](https://rstest.rs/guide/start/agent-install.md)，字段以项目安装版本的类型和 CLI 为准。
 
+## Wasm 与浏览器验证
+
+Wasm 使用独立的 `bindings/wasm` 与 `packages/ziwei-wasm`，实现与浏览器合同见 [Wasm 包约定](../../packages/ziwei-wasm/AGENTS.md)。版本和命令以 [mise](../../mise.toml)、[Cargo manifest](../../bindings/wasm/Cargo.toml) 与 Catalog 为准；wasm-bindgen CLI 仅在胶水任务激活，须与 Rust 依赖精确匹配，普通 Node 构建不安装它。
+
+首次运行 `setup:wasm` 安装当前 Rust 的目标标准库，`setup:wasm:browsers` 安装测试浏览器；Linux CI 为浏览器补充系统依赖。`build:wasm` 顺序生成 release Wasm、web 胶水与资源指纹，再通过 Rslib 生成 ESM、声明和独立资源。手写文件全为 Rust／TS，`generated/` 与 `dist/` 均不提交或格式化。
+
+`check:wasm` 先构建 Node 差分参考，再构建 Wasm，运行独立 Rstest 配置与源码／消费端类型检查；只构建浏览器包时使用 `build:wasm`，不依赖 Node 构建。`test:wasm` 要求两包已构建。浏览器测试使用 Playwright Library 驱动真实 Chromium／Firefox／WebKit，仍由 Rstest 管理；不引入第二测试框架，不用 DOM 模拟替代运行验收。主 CI 的 `wasm-browser` 是必需检查；它不代表品牌 Safari、iOS 或 WebView 实机通过。
+
+新增候选原生平台通过[独立 CI](../../.github/workflows/native-candidates.yml)检查七目标核心可编译性，并构建、静态审计三个 GNU addon。`check:node:gnu-candidate` 接受 Rust target 和实际 `.node` 文件，需要 GNU readelf；它不读取或生成八目标批次，不代替目标 CPU／OS 的运行测试。当前支持声明和环境缺口见[候选矩阵](../engineering/native-candidate-platforms.md)。
+
 ## 按变更选择验证
 
 | 变更 | 验证范围 |

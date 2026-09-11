@@ -25,7 +25,7 @@ function fixture(t: TestContext) {
   for (const file of [".editorconfig", ".oxlintrc.json", ".oxfmtrc.json"]) {
     cpSync(join(root, file), join(directory, file));
   }
-  for (const folder of ["src", "native", "dist", "node_modules", "target"]) {
+  for (const folder of ["src", "native", "generated", "dist", "node_modules", "target"]) {
     mkdirSync(join(directory, folder));
     // Invalid generated code proves the ignore policy is effective for both tools.
     writeFileSync(
@@ -76,7 +76,7 @@ test("Oxfmt check is read-only and formatting leaves generated files untouched",
   assert.notEqual(readFileSync(source, "utf8"), unformatted);
   const checked = run("oxfmt", ["--check", "."]);
   assert.equal(checked.status, 0, checked.stdout + checked.stderr);
-  for (const folder of ["native", "dist", "node_modules", "target"]) {
+  for (const folder of ["native", "generated", "dist", "node_modules", "target"]) {
     assert.equal(readFileSync(join(directory, folder, "index.ts"), "utf8"), "export const = ;\n");
   }
 });

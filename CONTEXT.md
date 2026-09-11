@@ -118,6 +118,8 @@
 
 ### 宿主适配与工程
 
+- D-267 将另外七个候选原生目标与 Wasm／浏览器纳入必做范围，实施进度见[跨平台交付计划](docs/architecture/cross-platform-delivery-plan.md)。独立 `bindings/wasm` 与 `packages/ziwei-wasm` 共用唯一 Rust 核心；浏览器显式初始化后提供同步 API，独立 `dispose()` 管理 Wasm 命盘，不修改 Node 的公开接口。候选编译、静态审计、真实宿主运行和发布分别验收，Wasm 不能替代 Android／OpenHarmony 的原生验收。
+
 - D-266 将 GNU x64／arm64 的 glibc 2.28 设为分发验收目标；交叉构建、同批产物符号检查与最低用户态环境运行测试分别验证。它不改变领域 API、八目标范围或 Rust 工具链；通过状态以 [Node 分发设计](docs/architecture/node-distribution-proposal.md#gnu-glibc-228-验收目标) 中对应提交的证据为准，不用配置代替运行证明。
 
 - D-263 的[Node 分发设计](docs/architecture/node-distribution-proposal.md)将用户入口主包与原生产物包分开。首批八目标进入构建／验收配置，另七目标保留候选；平台包仅为分发产物，不是领域模块。源码 workspace 不依赖未发布平台包；独立暂存区按本次完整产物集生成精确版本依赖，主包不含 `.node`，所有包继续禁止发布。D-264 增加同一提交／run／attempt 的产物封存与全目标汇总；D-265 使用完整交付包验证 npm／pnpm 无 overrides 的自动平台安装，注册表仅为本机只读夹具。Actions 产物仅用于验收；平台配置、实测通过、完整汇总、隔离注册表安装与正式发布是不同状态。
@@ -130,7 +132,7 @@
 
 - Node.js/TypeScript 的完整宿主合同见 [适配设计](docs/architecture/node-api-design.md)（D-248～D-251）。D-253、D-255、D-256 已实现两个建盘入口、全部本命与限运查询、只读属性、ALL／派生方法、结构化错误和 `toJSON`。宿主 Natal 持有核心；`profile` 与 `palaces` 分别首次成功读取后冻结并按实例保存，其余查询不缓存、不依赖全盘快照，只转换请求范围。所有结果为独立只读数据，不改变 Rust 领域事实或生命周期；本机验证不等于跨平台或发布完成。
 
-- D-260 调整 D-257 的绑定位置与 Cargo 包名，保留 Rust／TypeScript 分离：Rust 绑定位于 `bindings/node`（Cargo 包 `ziwei-node`，Rust 标识符 `ziwei_node`），TypeScript 按 D-262 迁至 `packages/ziwei/src`（npm 包按 D-261 改为 `@matharts/ziwei`，禁止发布）。`crates/` 承载引擎，`bindings/` 按宿主组织 Rust 适配层；两者由根 Cargo workspace 管理。根 pnpm workspace 继续管理 `packages/*` 与共享锁文件，JS 包通过 Rust manifest 构建内部原生产物。Wasm 等适配在实施时加入 `bindings/`，分发合同另行确定；不创建空包，不改变核心职责与公开合同。
+- D-260 调整 D-257 的绑定位置与 Cargo 包名，保留 Rust／TypeScript 分离：Rust 绑定位于 `bindings/node`（Cargo 包 `ziwei-node`，Rust 标识符 `ziwei_node`），TypeScript 按 D-262 迁至 `packages/ziwei/src`（npm 包按 D-261 改为 `@matharts/ziwei`，禁止发布）。`crates/` 承载引擎，`bindings/` 按宿主组织 Rust 适配层；两者由根 Cargo workspace 管理。根 pnpm workspace 管理 `packages/*` 与共享锁文件；D-267 新增独立 Wasm adapter 与浏览器包，不创建空包或改变核心职责。
 
 - 保留 D-254 的对象模块职责：原生持有在 `bindings/node/src/natal.rs`，TS 包装在 `packages/ziwei/src/natal.ts`；入口分别为各自的 `lib.rs` 与 `index.ts`。D-256 已补齐查询，D-257 与 D-260 只迁移位置与包名，不改变原生生命周期、两个属性的缓存合同或核心职责。
 

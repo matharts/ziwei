@@ -2,9 +2,11 @@
 
 审计日期：2026-09-10。范围仅为下述已通过 CI 的同批八个 `.node`；这是静态依赖清单，不是最低系统支持承诺。本轮没有重新构建、修改链接参数、扩展平台或发布包。
 
+> 历史记录：本文固定于提交 `4bc46bc`，原始依赖、版本与摘要保持不变。后续 GNU 构建与 Windows x64 CRT 策略已调整，八目标最低 Node 消费验收也已补齐；当前批次与验证边界见[首批兼容性验收总览](../architecture/node-distribution-proposal.md#首批兼容性验收总览)。本文不能作为当前产物的依赖清单。
+
 ## 结论
 
-当前 Linux GNU x64／arm64 产物存在必需的 `GLIBC_2.34` 符号引用，不能直接交付给标准 glibc 2.28 环境。glibc 2.34 只是这批二进制的必要符号版本下限，尚未证明包含内核、运行库及 Node 的完整环境在该下限可用。
+该历史批次的 Linux GNU x64／arm64 产物存在必需的 `GLIBC_2.34` 符号引用，不能直接交付给标准 glibc 2.28 环境。glibc 2.34 只是这批二进制的必要符号版本下限，尚未证明包含内核、运行库及 Node 的完整环境在该下限可用。
 
 macOS 产物的部署标记低于当前 Node 运行时的系统要求，不能拿这些标记降低 npm 包门槛。Windows 产物动态依赖 VC Runtime／UCRT；musl 产物动态依赖 `libc.so`，不是自包含静态库。这些平台仍需要最低版本环境实测。
 
@@ -129,6 +131,6 @@ rtk proxy tar -xOzf "$audit_dir/x86_64-pc-windows-msvc.tgz" package/ziwei-native
 
 静态审计之后，用户已确认 D-266：以 glibc 2.28 作为 GNU 验收目标。后续构建与双层门禁见 [GNU glibc 2.28 验收目标](../architecture/node-distribution-proposal.md#gnu-glibc-228-验收目标)。本文仍只记录旧批次的静态事实，不能把它作为新工具链或 glibc 2.28 运行通过的证据。
 
-macOS、Windows、musl 同样需先确定仍受维护的目标环境，再复用完整交付包的安装与加载合同。容器可以检查较旧用户态库，但共享宿主内核，不能单独证明最低内核版本。
+后续已补齐 macOS 双架构、Windows 双架构与 musl 双架构的最低 Node 消费验收，具体环境和未覆盖范围见[当前分发结论](../architecture/node-distribution-proposal.md#首批兼容性验收总览)。这些结果属于后续批次，不改写本文历史数据；容器仍共享宿主内核，不能单独证明最低内核版本。
 
 本次没有验证最低内核、完整 CPU 指令集下限、递归依赖闭包、运行时动态加载的全部路径或旧系统行为，也没有证明 npm scope 权限、公开发布或 provenance。静态审计完成，不等于这些剩余事项已完成。

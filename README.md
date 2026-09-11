@@ -217,7 +217,8 @@ fn main() -> Result<(), ziwei::ZiweiError> {
 
 - **已支持**：十八星安星、宫位与星曜查询、生年四化、自化、宫干四化、大限与流年。
 - **Node.js / TypeScript**：[适配包](packages/ziwei/README.md)已实现已确认的完整 API：两类建盘、本命数据与查询、四化、按需大限／流年、身份派生方法、结构化错误及 JSON 输出；首批八种运行环境通过[分发验收](docs/architecture/node-distribution-proposal.md)，尚未发布。
-- **后续计划**：Node 注册表分发与最低系统兼容性验收、发布流程、Wasm 绑定；其余候选平台逐项确认。
+- **Wasm／浏览器**：独立 [适配包](packages/ziwei-wasm/README.md)提供显式初始化与同步建盘／查询，已通过本机三引擎和独立安装包测试，尚未发布；不据此外推品牌浏览器或移动设备支持。
+- **后续交付**：另外七个原生候选目标、浏览器部署与设备矩阵、剩余最低系统验收及发布流程；进度见[跨平台交付计划](docs/architecture/cross-platform-delivery-plan.md)。
 - **当前不包含**：解释与断语、连续飞化、流月、流日、流时。
 
 <details>

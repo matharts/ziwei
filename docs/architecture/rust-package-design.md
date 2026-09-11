@@ -2,7 +2,7 @@
 
 ## 状态与目的
 
-本文说明当前 Rust 核心与 Node 适配层的模块职责、数据归属和调用路径。核心与已确认的 Node API 均已实现；功能范围与待交付内容集中见 [README](../../README.md#范围)。
+本文说明 Rust 核心、Node 与 Wasm 适配层的模块职责、数据归属和调用路径。核心与 Node API 已实现，独立 Wasm／浏览器实现按 D-267 推进；功能范围与待交付内容集中见 [README](../../README.md#范围)。
 
 领域术语与不变量见 [`CONTEXT.md`](../../CONTEXT.md)，设计依据与修订关系见 [决策记录](v1-decision-map.md)。本文中的历史候选单独标注；源码若与已确认规则冲突，仍须核对决策，不能仅以源码覆盖规格。[架构图](ziwei-architecture.html) 是本文的简化视图。
 
@@ -29,13 +29,13 @@
 
 以下为当前架构约束的摘要。Node 的类型与行为合同见 [适配设计](node-api-design.md)；目录与包名的修订依据为 D-260～D-262。
 
-1. 根 workspace 包含 `crates/ziwei` 与 `bindings/node`，Cargo 包分别为 `ziwei` 与 `ziwei-node`；`default-members` 仍只选择核心 `ziwei`，开发工具保留独立 workspace。
+1. 根 workspace 包含 `crates/ziwei`、`bindings/node` 与 `bindings/wasm`，Cargo 包分别为 `ziwei`、`ziwei-node` 与 `ziwei-wasm`；`default-members` 仍只选择核心 `ziwei`，开发工具保留独立 workspace。
 
 2. 本命构建、按需大限/流年、只读查询同属 `ziwei`；它们不是独立 Cargo 包。
 
 3. `PalaceName` 是本命、大限与流年共用的唯一十二宫职领域类型；`Palace`、`Decade`、`Yearly` 各自管理自己的宫职及对应简、繁名称，不保留 `PalaceRole` 或 `PalaceScope`。
 
-4. Node.js/TypeScript 由 `bindings/node` 与 `packages/ziwei` 共同实现一个 adapter；未来 Wasm 单独实现。两者均单向依赖 `ziwei`；当前 Rust 绑定与 npm 分发包均禁止发布。
+4. Node 由 `bindings/node` 与 `packages/ziwei` 实现；Wasm／浏览器由 `bindings/wasm` 与 `packages/ziwei-wasm` 独立实现。两个 Rust adapter 均单向依赖 `ziwei`；绑定与 npm 包均禁止发布。
 
 5. 历法换算和解释/断语不属于 V1，不创建对应包。
 
@@ -57,7 +57,7 @@
 
 ### 只在真实 seam 处拆包
 
-Node-API 与 `wasm-bindgen` 的编译目标、错误模型、对象生命周期和序列化方式不同，适合在各自实施时拆为独立 adapter；当前仅 Node 已实现。
+Node-API 与 `wasm-bindgen` 的编译目标、错误模型、对象生命周期和序列化方式不同，因此实现为独立 adapter。两者不互相引入运行时依赖；Node 仅作为 Wasm 差分测试的开发依赖。
 
 相反，当前的本命计算、查询和期间计算共享同一个不可变 `Natal`，没有第二个实现，也没有独立运行时；把它们拆为 `core`、`query`、门面三层只会扩大 interface，降低 locality。
 
@@ -68,10 +68,10 @@ Node-API 与 `wasm-bindgen` 的编译目标、错误模型、对象生命周期�
 ```text
 上层 Rust 应用 ───────────────────────────► ziwei
 ziwei-node ────────────────────────────────► ziwei
-ziwei-wasm（后续） ────────────────────────► ziwei
+ziwei-wasm ────────────────────────────────► ziwei
 ```
 
-`ziwei-node` 与未来的 `ziwei-wasm` 之间也没有依赖关系。
+`ziwei-node` 与 `ziwei-wasm` 之间没有依赖关系。
 
 ## Workspace 形状
 
@@ -96,6 +96,7 @@ ziwei-wasm（后续） ───────────────────
 │       ├── benches/               # construction-120 与共享 read-path-512 负载
 │       └── examples/              # inspect 与独立读取基准运行器
 ├── bindings/                     # 按宿主组织 Rust 适配层
+│   ├── wasm/                     # Cargo 包 ziwei-wasm；输入、投影与 Wasm 持有
 │   └── node/                     # Cargo 包 ziwei-node
 │       ├── Cargo.toml
 │       ├── build.rs
@@ -105,6 +106,7 @@ ziwei-wasm（后续） ───────────────────
 │           ├── input.rs
 │           └── error.rs
 ├── packages/
+│   ├── ziwei-wasm/                # @matharts/ziwei-wasm；显式初始化、浏览器 ESM 与测试
 │   └── ziwei/                     # npm 包 @matharts/ziwei
 │       ├── package.json
 │       ├── tsconfig.json
@@ -151,7 +153,7 @@ ziwei-wasm（后续） ───────────────────
 
 D-260 按职责区分 `crates/`（Rust 引擎）、`bindings/`（各宿主的 Rust adapter）与 `packages/`（JavaScript／TypeScript 包）。新宿主的绑定在真正实施时加入 `bindings/<host>`，并加入根 Cargo workspace；新 npm 包由 `packages/*` 纳入 pnpm workspace。不为证明“多包”预先创建占位包，也不增加只有转发职责的 npm 原生包。
 
-Wasm 仍是独立 adapter，实施时可放入 `bindings/wasm`，其 JS 分发目录与加载合同届时确定，不能直接套用 Node 的加载方式。只有达到后文拆分门槛才创建新包；共享命例或根级测试也按实际复用需求迁移，不提前搬动核心测试。
+Wasm adapter 已按 D-267 落在 `bindings/wasm`，浏览器分发位于 `packages/ziwei-wasm`，采用显式初始化而非 Node 自动加载方式。其他宿主仍须达到后文拆分门槛；共享命例或根级测试按实际复用需求迁移，不提前搬动核心测试。
 
 ## 包职责
 
@@ -175,7 +177,7 @@ Wasm 仍是独立 adapter，实施时可放入 `bindings/wasm`，其 JS 分发�
 
 - 返回可匹配的领域错误，且不依赖绑定层错误类型。
 
-- 按 D-239，V1 Rust 错误合同为 `ZiweiError` 变体与载荷；Node 稳定错误码已按 D-251 在[宿主错误合同](node-api-design.md#8-错误合同)中确定，Wasm 合同仍由其实施阶段确定。计算追踪延期到 V1 之后，当前不提供追踪 API 或过程记录；具体边界见[适配合同](adapter-contract.md)。
+- 按 D-239，V1 Rust 错误合同为 `ZiweiError` 变体与载荷；Node 稳定错误码按 D-251 的[宿主错误合同](node-api-design.md#8-错误合同)转换，Wasm 按 D-267 对齐这些领域载荷，另行表示加载和释放错误。计算追踪延期到 V1 之后，当前不提供追踪 API 或过程记录；具体边界见[适配合同](adapter-contract.md)。
 
 它不负责：
 
@@ -207,9 +209,11 @@ Cargo 包名与 Rust import 名均为 `ziwei`。不能通过新增纯重导出�
 
 它不能内置规则表、重算宫位、修正核心结果，或创建第二套 `Natal` 结构。
 
-### `ziwei-wasm`（后续）
+### `ziwei-wasm` 与 `@matharts/ziwei-wasm`
 
-该 adapter 面向浏览器和其他 Wasm host。职责与 `ziwei-node` 相同，但实现可针对 `wasm-bindgen`、Wasm 对象生命周期和 Web 测试 runtime 调整。
+`bindings/wasm` 使用 `wasm-bindgen` 与 `wasm32-unknown-unknown`，只转换输入、结构化错误与独立结果；默认单线程，不依赖 Node/WASI。`packages/ziwei-wasm` 以显式 `initialize({ wasmUrl? })` 校验资源并返回 ready runtime，随后同步建盘和查询。生命周期、重试和浏览器合同见[浏览器设计](browser-adapter-design.md)。
+
+Wasm 命盘提供幂等 `dispose()`；释放后查询与已缓存属性均拒绝访问，先前返回的快照保持有效。生成胶水、资源指纹与 Wasm 同批构建，Rslib 输出单份 ESM 和公开声明，生成物不提交。构建和验收入口见[工程验证](../agents/engineering.md#wasm-与浏览器验证)。
 
 它同样不能包含领域规则。Wasm 不是 `ziwei` 的 feature：两者是不同 adapter，拥有不同的编译与测试约束。
 

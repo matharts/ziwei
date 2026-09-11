@@ -479,7 +479,7 @@ test("Windows acceptance failures are retained and cannot bypass the final CI ch
     fileURLToPath(new URL("../../.github/workflows/ci.yml", import.meta.url)),
     "utf8",
   );
-  const job = workflow.split("  windows-clean-consumer:\n")[1]!.split("\n  quality:")[0]!;
+  const job = workflow.split("  windows-clean-consumer:\n")[1]!.split(/\n  [\w-]+:\n/)[0]!;
   assert.match(job, /needs: node-distribution/);
   assert.match(job, /runs-on: windows-2025/);
   assert.match(job, /mise run check:node:windows -- /);
@@ -487,6 +487,7 @@ test("Windows acceptance failures are retained and cannot bypass the final CI ch
   assert.match(job, /name: node-distribution-\$\{\{ github\.run_attempt \}\}/);
   assert.match(job, /if: \$\{\{ !cancelled\(\) \}\}/);
   assert.doesNotMatch(job, /continue-on-error/);
-  assert.match(workflow, /needs: \[.*windows-clean-consumer\]/);
+  const verify = workflow.split("  verify:\n")[1]!;
+  assert.match(verify, /needs: \[[^\]\n]*\bwindows-clean-consumer\b[^\]\n]*\]/);
   assert.match(workflow, /test "\$WINDOWS_CLEAN_RESULT" = success/);
 });

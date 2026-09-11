@@ -1,0 +1,109 @@
+name: Native candidate checks
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-candidates-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  core-check:
+    name: Core target check (${{ matrix.target }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - armv7-unknown-linux-gnueabihf
+          - powerpc64le-unknown-linux-gnu
+          - s390x-unknown-linux-gnu
+          - x86_64-unknown-freebsd
+          - aarch64-unknown-linux-ohos
+          - aarch64-linux-android
+          - armv7-linux-androideabi
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
+        with:
+          install_args: rust
+          cache: false
+      - name: Install the target standard library
+        run: mise exec -- rustup target add "${{ matrix.target }}"
+      # cargo check does not link an addon, execute code or prove host runtime support.
+      - name: Check the Rust core only
+        run: mise exec -- cargo check -p ziwei --lib --all-features --target "${{ matrix.target }}" --locked
+
+  gnu-addon:
+    name: GNU candidate build and static audit (${{ matrix.target }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: armv7-unknown-linux-gnueabihf
+            suffix: linux-arm-gnueabihf
+          - target: powerpc64le-unknown-linux-gnu
+            suffix: linux-ppc64-gnu
+          - target: s390x-unknown-linux-gnu
+            suffix: linux-s390x-gnu
+    env:
+      CARGO_BUILD_TARGET: ${{ matrix.target }}
+      CANDIDATE_SUFFIX: ${{ matrix.suffix }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
+        with:
+          install_args: rust node pnpm
+          cache: false
+      - name: Install the target standard library
+        run: mise exec -- rustup target add "$CARGO_BUILD_TARGET"
+      - name: Install locked build dependencies
+        run: mise exec -- pnpm install --frozen-lockfile
+      - name: Build the GNU candidate with the existing cross toolchain
+        run: mise run build:node:gnu
+      - name: Audit the exact candidate bytes without loading or repacking
+        shell: bash
+        run: |
+          readelf --version
+          mkdir -p target/native-candidate
+          binary="ziwei-native.${CANDIDATE_SUFFIX}.node"
+          test -f "packages/ziwei/native/$binary"
+          cp "packages/ziwei/native/$binary" "target/native-candidate/$binary"
+          mise run check:node:gnu-candidate -- "$CARGO_BUILD_TARGET" "target/native-candidate/$binary" > target/native-candidate/audit.json
+      # These files never enter node-distribution or the release cohort.
+      - name: Preserve candidate files, including static audit failures
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: native-candidate-${{ github.sha }}-${{ github.run_attempt }}-${{ matrix.target }}
+          path: target/native-candidate/
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+
+  verify:
+    name: Require candidate compile and static checks
+    needs: [core-check, gnu-addon]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 1
+    steps:
+      - name: Require both candidate gates
+        env:
+          CORE_RESULT: ${{ needs.core-check.result }}
+          GNU_RESULT: ${{ needs.gnu-addon.result }}
+        run: |
+          test "$CORE_RESULT" = success
+          test "$GNU_RESULT" = success
