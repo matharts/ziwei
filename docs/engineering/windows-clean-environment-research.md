@@ -161,3 +161,5 @@ GitHub larger runner 的自定义镜像可从干净 OS base image 生成，但�
 提交 `99840fb` 的 [CI 34566054495](https://github.com/matharts/ziwei/actions/runs/34566054495) 已完成候选验收：静态二进制与封存包逐字节一致，607744 字节，相比动态基线增加 93184 字节（约 18.1%）；无普通或延迟 VC Runtime 导入。干净基线 npm 四个场景通过；pnpm 启动仍缺自身运行库，补齐后两者通过。旧实验总门禁仍失败，记录不修改。
 
 用户随后确认将 x64 addon 静态 CRT 设为本地／CI 共用构建入口的默认值，并将日常验收调整为两个独立必过场景：无额外运行库的 `npm-clean` 与具备运行库的 `pnpm-runtime`。原完整对照按需运行，动态构建由手动 CI 参数启用；正式策略不扩展 arm64 或 Windows 11 承诺，也不新增发布。具体入口、产物关联与验收边界见[静态 CRT 策略](../architecture/node-distribution-proposal.md#windows-x64-静态-crt)。
+
+提交 `133504d` 的 [CI 34567870581](https://github.com/matharts/ziwei/actions/runs/34567870581) 中，静态产物检查、常规平台验收及 `pnpm-runtime` 均通过；`npm-clean` 在运行库预检阶段失败，尚未执行 npm 消费测试。原因是扩大的 DLL 清单将固定 Server Core 镜像自带的 `msvcp110_win.dll`、`msvcp60.dll` 误判为额外安装的运行库；两组全新容器在安装前的清单完全相同。修复将这两个文件的 System32 路径与 SHA-256 固定到镜像基线，同时保留对摘要缺失、变更或非基线路径的拒绝。此前清单只采集部分运行库名称，不能将未列出这两个文件理解为它们不存在；本次不删除系统文件，也不改变镜像或安装条件。

@@ -40,6 +40,17 @@ export const windowsBaseline = {
     "mcr.microsoft.com/windows/servercore@sha256:e18a49cbc074dfaa8e106296d51cebd62bbf6effb999f134a5c48eed1c2334e1",
   nodeVersion: "24.15.0",
   nodeSha256: "cc5149eabd53779ce1e7bdc5401643622d0c7e6800ade18928a767e940bb0e62",
+  // OS components from both untouched containers in CI 34567870581, not added redistributables.
+  systemRuntimeDlls: [
+    {
+      path: "C:\\Windows\\System32\\msvcp110_win.dll",
+      sha256: "782e62872c751682bc220489b07db6b80820e3799416028630ad899fba113ae6",
+    },
+    {
+      path: "C:\\Windows\\System32\\msvcp60.dll",
+      sha256: "4b7d8e819274e42f4fd61a8f06ed6c8b5aaf9154a1881e2012da5a3200118b96",
+    },
+  ],
 } as const;
 
 export const vcRuntime = {
@@ -190,7 +201,9 @@ export function windowsContainerArgs(
   ];
 }
 
-function runtimeInventory() {
+type RuntimeInventory = { dlls: { path: string; sha256?: string }[]; developmentTools: string[] };
+
+function runtimeInventory(): RuntimeInventory {
   const script = String.raw`
 $ErrorActionPreference = 'Stop'
 $dlls = @(Get-ChildItem "$env:SystemRoot\System32" -File | Where-Object {
@@ -219,14 +232,19 @@ $system = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion'
   );
 }
 
-/** The pinned OS may contain CLR-specific variants, but no ordinary VC runtime. */
-export function verifyCleanWindowsRuntime(inventory: {
-  dlls: { path: string }[];
-  developmentTools: string[];
-}) {
+/** Preserve the pinned OS components while rejecting added VC redistributables. */
+export function verifyCleanWindowsRuntime(inventory: RuntimeInventory) {
   assert.deepEqual(inventory.developmentTools, [], "干净容器中不应存在开发工具链");
-  for (const { path } of inventory.dlls) {
+  for (const { path, sha256 } of inventory.dlls) {
     const name = path.split(/[\\/]/).at(-1)!;
+    const systemDll = windowsBaseline.systemRuntimeDlls.find(
+      (dll) => dll.path.split("\\").at(-1) === name.toLowerCase(),
+    );
+    if (systemDll) {
+      assert.equal(path.toLowerCase(), systemDll.path.toLowerCase(), "系统组件路径与固定基线不符");
+      assert.equal(sha256?.toLowerCase(), systemDll.sha256, "系统组件摘要与固定基线不符");
+      continue;
+    }
     assert.ok(
       /_clr0400\.dll$/i.test(name) ||
         !/^(?:vcruntime|msvcp|msvcr|concrt|vcomp|vcamp)\d.*\.dll$/i.test(name),
@@ -371,7 +389,13 @@ async function consumeInsideContainer(scenario: WindowsScenario) {
     );
     if (scenario === "npm-clean") {
       verifyCleanWindowsRuntime({
-        dlls: runtimes.flatMap((runtime) => runtime.sharedObjects.map((path) => ({ path }))),
+        dlls: runtimes.flatMap((runtime) =>
+          runtime.sharedObjects.map((path) => ({
+            path,
+            sha256: inventory.dlls.find((dll) => dll.path.toLowerCase() === path.toLowerCase())
+              ?.sha256,
+          })),
+        ),
         developmentTools: [],
       });
     }

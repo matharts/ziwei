@@ -59,6 +59,29 @@ test("Windows consumer selection cannot pass with an empty or duplicated manager
   }
 });
 
+test("Pinned Server Core system libraries are accepted only at their recorded path and hash", () => {
+  // Both fresh containers in CI 34567870581 contained these OS-shipped files before installation.
+  const dlls = [
+    {
+      path: "C:\\Windows\\System32\\msvcp110_win.dll",
+      sha256: "782E62872C751682BC220489B07DB6B80820E3799416028630AD899FBA113AE6",
+    },
+    {
+      path: "C:\\Windows\\System32\\msvcp60.dll",
+      sha256: "4B7D8E819274E42F4FD61A8F06ED6C8B5AAF9154A1881E2012DA5A3200118B96",
+    },
+  ];
+  verifyCleanWindowsRuntime({ developmentTools: [], dlls });
+  for (const dll of dlls) {
+    for (const changed of [
+      { ...dll, sha256: "0".repeat(64) },
+      { ...dll, sha256: undefined },
+      { ...dll, path: dll.path.replace("System32", "Temp") },
+    ])
+      assert.throws(() => verifyCleanWindowsRuntime({ developmentTools: [], dlls: [changed] }));
+  }
+});
+
 test("VC Runtime material is pinned and its signature must belong to Microsoft", () => {
   assert.equal(new URL(vcRuntime.url).hostname, "download.visualstudio.microsoft.com");
   assert.match(vcRuntime.sha256, /^[a-f0-9]{64}$/);
