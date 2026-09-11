@@ -144,4 +144,6 @@ GitHub larger runner 的自定义镜像可从干净 OS base image 生成，但�
 
 该批 pnpm 12.3.4 二进制的 SHA-256 为 `19acb40343170a98e3c610c1c2c379d0a6f0721ea6c4dd6d1737429fad63a12e`，与官方包提取结果相同；其 PE 导入包含 `VCRUNTIME140.dll`。容器记录的 System32 清单只有 `_clr0400` 变体及 UCRT，没有同名的 `VCRUNTIME140.dll`。这与缺失运行库的启动错误一致，但尚未通过补充运行库的对照实验验证，不调整链接方案。
 
-后续修复将 npm／pnpm 验收隔离：先完成 npm 分支，再准备并检查 pnpm；每个分支单独记录阶段、结果和错误，任一失败仍使 CI 失败。修复已补本地真实消费端回归，尚待新提交的 Windows CI 实测。详细操作与证据边界见 [Windows x64 容器实验](../architecture/node-distribution-proposal.md#windows-x64-干净容器实验待远端验收)。
+后续修复将 npm／pnpm 验收隔离：先完成 npm 分支，再准备并检查 pnpm；每个分支单独记录阶段、结果和错误，任一失败仍使 CI 失败。提交 `45c196c` 的 [CI 34557451358](https://github.com/matharts/ziwei/actions/runs/34557451358) 中，常规验收通过，但宿主首次 `docker info` 超时，尚未启动容器，不能据此评价分支隔离后的真实加载结果。
+
+两次任务的 runner 镜像分别为 `20260824.214.3` 和 `20260907.229.1`，官方清单中的 Docker 版本分别为 [29.1.5](https://github.com/actions/runner-images/blob/win25-vs2026/20260824.214/images/windows/Windows2025-VS2026-Readme.md) 与 [29.7.2](https://github.com/actions/runner-images/blob/win25-vs2026/20260907.229/images/windows/Windows2025-VS2026-Readme.md)。镜像变化不是根因证明；需要同一任务内的服务、连接目标和 daemon 事件证据。新增预检保留探测前后诊断与最多 120 秒的就绪探测记录，不自动重启或降级。等待和失败传播由本地回归检查，Windows 行为仍待新 CI 实测；详细边界见 [Windows x64 容器实验](../architecture/node-distribution-proposal.md#windows-x64-干净容器实验待远端验收)。

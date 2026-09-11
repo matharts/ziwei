@@ -6,11 +6,187 @@ import { fileURLToPath } from "node:url";
 import { test } from "@rstest/core";
 
 import {
+  dockerDiagnosticsScript,
+  observeCommand,
+  redactDiagnostic,
   verifyNodeZip,
+  waitForWindowsDocker,
   windowsBaseline,
   windowsBootstrap,
   windowsContainerArgs,
 } from "../../packages/ziwei/tools/windows-container.ts";
+
+const ready = {
+  status: 0,
+  signal: null,
+  stdout: JSON.stringify({ OSType: "windows", Architecture: "x86_64", ServerVersion: "fixture" }),
+  stderr: "",
+  elapsedMs: 1,
+};
+const timedOut = {
+  status: null,
+  signal: "SIGTERM",
+  stdout: "",
+  stderr: "",
+  elapsedMs: 10_000,
+  error: { code: "ETIMEDOUT", message: "spawnSync docker ETIMEDOUT" },
+};
+
+test("Docker readiness preserves an initial timeout and accepts later readiness", async () => {
+  let calls = 0;
+  let clock = 0;
+  const attempts: unknown[] = [];
+  const host = await waitForWindowsDocker((attempt) => attempts.push(attempt), {
+    probe: () => (++calls === 1 ? timedOut : ready),
+    now: () => clock,
+    pause: async (ms) => {
+      clock += ms;
+    },
+  });
+  assert.equal(host.OSType, "windows");
+  assert.equal(calls, 2);
+  assert.equal(attempts.length, 2);
+});
+
+test("Docker readiness bounds the whole wait and clips the final probe to the remaining time", async () => {
+  let clock = 0;
+  const limits: number[] = [];
+  const attempts: unknown[] = [];
+  await assert.rejects(
+    waitForWindowsDocker((attempt) => attempts.push(attempt), {
+      probe: (timeoutMs) => {
+        limits.push(timeoutMs);
+        clock += timeoutMs;
+        return { ...timedOut, elapsedMs: timeoutMs };
+      },
+      now: () => clock,
+      pause: async (ms) => {
+        clock += ms;
+      },
+    }),
+    /120 秒内未就绪/,
+  );
+  assert.equal(clock, 120_000);
+  assert.equal(attempts.length, 10);
+  assert.ok(limits.every((limit) => limit > 0 && limit <= 10_000));
+
+  clock = 0;
+  limits.length = 0;
+  await assert.rejects(
+    waitForWindowsDocker(() => {}, {
+      probe: (timeoutMs) => {
+        limits.push(timeoutMs);
+        clock += Math.min(timeoutMs, 8_500);
+        return timedOut;
+      },
+      now: () => clock,
+      pause: async (ms) => {
+        clock += ms;
+      },
+    }),
+    /120 秒内未就绪/,
+  );
+  assert.equal(clock, 120_000);
+  assert.equal(limits.at(-1), 4_500);
+});
+
+test.each([
+  {
+    name: "missing executable",
+    response: { ...timedOut, error: { code: "ENOENT", message: "missing docker" } },
+    expected: /找不到 docker/,
+  },
+  {
+    name: "oversized output",
+    response: { ...timedOut, error: { code: "ENOBUFS", message: "buffer full" } },
+    expected: /输出超出限制/,
+  },
+  {
+    name: "wrong OS",
+    response: { ...ready, stdout: JSON.stringify({ OSType: "linux", Architecture: "x86_64" }) },
+    expected: /Windows Docker/,
+  },
+  {
+    name: "wrong architecture",
+    response: { ...ready, stdout: JSON.stringify({ OSType: "windows", Architecture: "aarch64" }) },
+    expected: /x64 Docker/,
+  },
+  { name: "invalid JSON", response: { ...ready, stdout: "not JSON" }, expected: /JSON/ },
+])("Docker readiness fails immediately for $name", async ({ response, expected }) => {
+  let calls = 0;
+  let observations = 0;
+  await assert.rejects(
+    waitForWindowsDocker(() => observations++, {
+      probe: () => {
+        calls++;
+        return response;
+      },
+      pause: async () => {
+        assert.fail("permanent failures must not retry");
+      },
+    }),
+    expected,
+  );
+  assert.equal(calls, 1);
+  assert.equal(observations, 1);
+});
+
+test("Docker diagnostics preserve process failures and timeouts without exposing credentials", () => {
+  const failure = observeCommand(
+    process.execPath,
+    ["--eval", 'process.stderr.write("token=fixture-secret"); process.exit(7)'],
+    5_000,
+  );
+  assert.equal(failure.status, 7);
+  assert.equal(failure.stderr, "token=<REDACTED>");
+  const timeout = observeCommand(process.execPath, ["--eval", "setInterval(() => {}, 1000)"], 150);
+  assert.equal(timeout.error?.code, "ETIMEDOUT");
+  assert.notEqual(timeout.status, 0);
+  assert.ok(timeout.elapsedMs >= 100 && timeout.elapsedMs < 5_000);
+  assert.equal(
+    redactDiagnostic("https://user:pass@example.com:2376/path?token=secret#fragment"),
+    "https://example.com:2376/path",
+  );
+  assert.doesNotMatch(
+    redactDiagnostic('Authorization: Bearer abc123 password="private"'),
+    /abc123|private/,
+  );
+});
+
+test("Docker host diagnosis is read-only and queries only targeted service and event sources", () => {
+  assert.match(dockerDiagnosticsScript, /'docker', 'hns', 'vmcompute'/);
+  assert.match(dockerDiagnosticsScript, /Get-Process -Name dockerd/);
+  assert.match(dockerDiagnosticsScript, /ProviderName = 'docker'/);
+  assert.match(dockerDiagnosticsScript, /-MaxEvents 30/);
+  assert.doesNotMatch(
+    dockerDiagnosticsScript,
+    /(?:Start|Restart|Stop|Set)-Service|CommandLine|Get-ChildItem Env:/,
+  );
+});
+
+if (process.platform === "win32") {
+  test("Windows Docker diagnostic script returns service, process and event evidence", () => {
+    const result = observeCommand(
+      "powershell.exe",
+      [
+        "-NoProfile",
+        "-NonInteractive",
+        "-EncodedCommand",
+        Buffer.from(dockerDiagnosticsScript, "utf16le").toString("base64"),
+      ],
+      10_000,
+    );
+    assert.equal(result.error, undefined);
+    assert.equal(result.status, 0, result.stderr);
+    const evidence = JSON.parse(result.stdout);
+    assert.deepEqual(
+      evidence.services.map((service: { name: string }) => service.name),
+      ["docker", "hns", "vmcompute"],
+    );
+    assert.ok(Array.isArray(evidence.processes));
+    assert.ok(Array.isArray(evidence.events));
+  });
+}
 
 test("Windows experiment pins its image and keeps Node aligned with the consumer minimum", () => {
   const source = JSON.parse(
