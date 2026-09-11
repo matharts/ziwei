@@ -88,6 +88,7 @@ export function candidateDockerArgs(input: {
   runtime: string;
   output: string;
   batch: ReturnType<typeof currentBatch>;
+  mode?: "consume" | "pnpm-version" | "pnpm-version-trace";
 }) {
   const platform = candidateTargets[candidateTarget(input.target)];
   const args = [
@@ -135,6 +136,18 @@ export function candidateDockerArgs(input: {
     `GITHUB_RUN_ATTEMPT=${input.batch.runAttempt}`,
   ])
     args.push("--env", value);
+  if (input.mode && input.mode !== "consume") {
+    if (input.mode === "pnpm-version-trace") args.push("--env", "QEMU_STRACE=1");
+    return [
+      ...args,
+      "--workdir",
+      "/tmp",
+      "--entrypoint",
+      "/runtime/pnpm",
+      candidateImage,
+      "--version",
+    ];
+  }
   return [
     ...args,
     "--workdir",
@@ -282,7 +295,7 @@ export async function runCandidateExperiment(
         // Copy only the selected official Node runtime and the verified target pnpm executable.
         cpSync(nodeRoot, join(versionRuntime, "node"), { recursive: true });
         copyFileSync(join(runtime, "pnpm"), join(versionRuntime, "pnpm"));
-        const args = candidateDockerArgs({
+        const container = {
           name,
           target,
           nodeVersion,
@@ -291,7 +304,8 @@ export async function runCandidateExperiment(
           runtime: versionRuntime,
           output: nodeOutput,
           batch,
-        });
+        };
+        const args = candidateDockerArgs(container);
         try {
           const result = await execute("docker", args, {
             timeout: 900_000,
@@ -303,6 +317,49 @@ export async function runCandidateExperiment(
           const failure = error as { stdout?: string; stderr?: string };
           writeFileSync(join(nodeOutput, "stdout.log"), failure.stdout ?? "");
           writeFileSync(join(nodeOutput, "stderr.log"), failure.stderr ?? "");
+          // Compare the same executable outside Node's child-process path. Diagnostic only:
+          // neither success nor failure here may replace the original consumer result.
+          for (const mode of ["pnpm-version", "pnpm-version-trace"] as const) {
+            const probeName = `ziwei-candidate-probe-${randomUUID()}`;
+            const probe: Record<string, unknown> = { mode };
+            item[mode] = probe;
+            try {
+              const result = await execute(
+                "docker",
+                candidateDockerArgs({ ...container, name: probeName, mode }),
+                { timeout: 30_000, maxBuffer: 1024 * 1024 },
+              );
+              Object.assign(probe, { code: 0, stdout: result.stdout, stderr: result.stderr });
+            } catch (probeError) {
+              const details = probeError as {
+                code?: number | string;
+                signal?: string;
+                killed?: boolean;
+                stdout?: string;
+                stderr?: string;
+              };
+              Object.assign(probe, {
+                error: probeError instanceof Error ? probeError.message : String(probeError),
+                code: details.code,
+                signal: details.signal,
+                killed: details.killed,
+                stdout: details.stdout ?? "",
+                stderr: details.stderr ?? "",
+              });
+            } finally {
+              try {
+                await execute("docker", ["rm", "--force", probeName], { timeout: 15_000 });
+                probe.cleanup = "removed";
+              } catch (cleanupError) {
+                const stderr = (cleanupError as { stderr?: string }).stderr ?? "";
+                if (stderr.includes(`No such container: ${probeName}`))
+                  probe.cleanup = "already-absent";
+                else
+                  probe.cleanupError =
+                    cleanupError instanceof Error ? cleanupError.message : String(cleanupError);
+              }
+            }
+          }
           throw error;
         }
         const consumer = JSON.parse(readFileSync(join(nodeOutput, "consumer.json"), "utf8"));

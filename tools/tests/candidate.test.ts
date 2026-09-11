@@ -272,6 +272,25 @@ for (const target of targets) {
     assert.ok(args.includes("ZIWEI_PNPM_BIN=/runtime/pnpm"));
     assert.ok(args.includes("ZIWEI_NPM_CLI=/runtime/node/lib/node_modules/npm/bin/npm-cli.js"));
     assert.equal(args.at(-1), "24.15.0");
+    for (const mode of ["pnpm-version", "pnpm-version-trace"] as const) {
+      const probe = candidateDockerArgs({ ...input, name: "owned-probe", mode });
+      assert.deepEqual(probe.slice(probe.indexOf("--workdir")), [
+        "--workdir",
+        "/tmp",
+        "--entrypoint",
+        "/runtime/pnpm",
+        candidateImage,
+        "--version",
+      ]);
+      assert.equal(probe[probe.indexOf("--name") + 1], "owned-probe");
+      assert.deepEqual(
+        probe.slice(0, probe.indexOf("--workdir")).filter((value) => value !== "owned-probe"),
+        [
+          ...args.slice(0, args.indexOf("--workdir")).filter((value) => value !== input.name),
+          ...(mode === "pnpm-version-trace" ? ["--env", "QEMU_STRACE=1"] : []),
+        ],
+      );
+    }
     assert.throws(() => candidateDockerArgs({ ...input, cohort: "/input,unexpected" }));
   });
 }

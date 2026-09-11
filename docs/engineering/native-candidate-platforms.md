@@ -1,6 +1,6 @@
 # 七个原生候选平台：宿主、构建与验收矩阵
 
-状态：2026-09-12，提交 `d8a30aa` 已首次运行 ppc64le／s390x 的独立 QEMU 消费任务。七目标核心检查、三项 GNU addon 交叉构建／静态审计及两个架构、两版 Node 的 npm 消费通过；pnpm 启动失败，完整候选验收仍未通过。七目标仍属于用户要求的完整交付范围。现有八目标结论沿用 [Node 分发设计](../architecture/node-distribution-proposal.md)，不在本文重做。
+状态：2026-09-12，提交 `87c5e66` 的七目标核心检查、三项 GNU addon 交叉构建／静态审计通过。s390x 已通过双 Node／双客户端的完整 QEMU 消费；ppc64le 的 npm 通过，pnpm 仍在版本探针崩溃，完整候选验收未通过。七目标仍属于用户要求的完整交付范围。现有八目标结论沿用 [Node 分发设计](../architecture/node-distribution-proposal.md)，不在本文重做。
 
 候选实现包含 [静态审计](../../packages/ziwei/tools/compatibility.ts)、[候选封存与消费](../../packages/ziwei/tools/candidate.ts)、[仿真控制器](../../packages/ziwei/tools/candidate-runtime.ts) 和独立的[候选 CI](../../.github/workflows/native-candidates.yml)。不改正式目标 manifest、依赖或公开 API，不安装本机 SDK、虚拟机或设备工具，不申请云资源，不发布。下文的实施路径与工期是项目建议，不是上游支持承诺。
 
@@ -196,6 +196,12 @@ Node 候选的最低与开发 Node 测试均消费同一已封存 addon，不重
 - 候选报告实际观察到 ppc64/LE 与 s390x/BE、Node 24.15.0／24.21.0、glibc 2.36。四组 npm 客户端全部通过正常及三种失败场景，包含公开包、双建盘入口、查询、错误、缓存、冻结和 Worker；这只是仿真用户态证据。
 - 四组 pnpm 均在 `--version` 阶段失败：s390x 的 `ERR_PNPM_BAD_CONFIG_DEP` 表明版本探针读取控制工程配置并尝试联网解析 pnpm；ppc64le 收到 `SIGSEGV`。两者都未进入 pnpm 安装或 Ziwei 加载验证，不归因于引擎。
 - 版本探针改在本次消费夹具的独立临时目录运行，仍严格核对 pnpm 12.4.1。以真实 pnpm 加载调用目录的无效 workspace 配置，已得到修复前失败、修复后通过的本地回归；不修改开发工程 `devEngines`，不启用外网或降低版本。该修复能否消除 ppc64le 崩溃，须等待同一新提交的远端结果。
+
+### 2026-09-12：目录隔离复验与 ppc64le 启动诊断
+
+[候选 CI `34643638388`](https://github.com/matharts/ziwei/actions/runs/34643638388) 对应 `87c5e66447866cd052fe00c470232c667af9457a`：s390x 在 Node 24.15.0／24.21.0 下的 npm、pnpm 全部通过；ppc64le 的 npm 仍通过，pnpm 仍在 `--version` 收到 `SIGSEGV`。下载的两目标报告已核对提交、run、attempt 与同批 receipt。此结果排除了调用目录污染作为 ppc64le 崩溃的充分解释，不能据此归因于引擎。
+
+控制器在失败后增加独立诊断：保持镜像、二进制、用户和隔离限制不变，从 `/tmp` 直接以 pnpm 为容器入口执行 `--version`，与 Node 子进程路径对照；第二次单独启用 `QEMU_STRACE` 留下系统调用轨迹。每个探针限制 30 秒、1 MiB 输出，使用独立容器名并清理；结果只附加到失败记录，不代替原消费结果、不使验收转绿。QEMU 用户态使用其自带的系统调用追踪，而非依赖客体 `ptrace` 的 strace。[QEMU 说明](https://www.qemu.org/docs/master/user/main.html#command-line-options)
 
 ### 2026-09-11：初轮实现
 
