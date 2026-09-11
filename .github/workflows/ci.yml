@@ -3,6 +3,12 @@ name: Rust core
 on:
   push:
   pull_request:
+  workflow_dispatch:
+    inputs:
+      compare_windows_crt:
+        description: Also build and retain the Windows x64 dynamic CRT baseline
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -54,8 +60,34 @@ jobs:
         run: mise exec -- pnpm install --frozen-lockfile
       - name: Node development runtime contracts
         run: mise run check:node:tools
+      # Optional diagnostic baseline; normal builds use the shared mise static policy.
+      - name: Record Windows x64 dynamic CRT baseline
+        if: matrix.target == 'x86_64-pc-windows-msvc' && inputs.compare_windows_crt == true
+        env:
+          CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS: -C target-feature=-crt-static
+        run: |
+          mise run build:node:native
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          mise run check:node:windows-crt -- dynamic packages/ziwei/native/ziwei-native.win32-x64-msvc.node target/windows-crt
+      - name: Record Windows x64 static CRT artifact
+        if: matrix.target == 'x86_64-pc-windows-msvc'
+        run: |
+          mise run build:node:native
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          mise run check:node:windows-crt -- static packages/ziwei/native/ziwei-native.win32-x64-msvc.node target/windows-crt
+      - name: Windows x64 static CRT integration and type contracts
+        if: matrix.target == 'x86_64-pc-windows-msvc'
+        env:
+          ZIWEI_NODE_ARTIFACTS: target/node-artifacts
+        # Reuse the inspected native bytes. check:node would build the DLL again.
+        run: |
+          mise run build:node:ts
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          mise run test:node
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          mise run check:node:types
       - name: Node adapter integration and type contracts
-        if: runner.os != 'Linux'
+        if: runner.os != 'Linux' && matrix.target != 'x86_64-pc-windows-msvc'
         env:
           ZIWEI_NODE_ARTIFACTS: target/node-artifacts
         run: mise run check:node
@@ -80,6 +112,15 @@ jobs:
         with:
           name: node-distribution-${{ github.run_attempt }}-${{ matrix.target }}
           path: target/node-artifacts/node-distribution-${{ github.run_attempt }}-${{ matrix.target }}/
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+      - name: Preserve Windows x64 CRT evidence
+        if: ${{ !cancelled() && matrix.target == 'x86_64-pc-windows-msvc' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: windows-crt-${{ github.run_attempt }}
+          path: target/windows-crt/
           if-no-files-found: error
           retention-days: 7
           compression-level: 0
@@ -222,6 +263,24 @@ jobs:
         with:
           install_args: node pnpm
           cache: false
+      - name: Audit macOS binaries from the complete cohort
+        if: endsWith(matrix.target, '-apple-darwin')
+        shell: bash
+        run: |
+          cohorts=(target/node-registry/ziwei-*)
+          test "${#cohorts[@]}" -eq 1
+          test -f "${cohorts[0]}/batch.json"
+          mkdir -p target/macos-compatibility
+          mise run check:node:macos -- "${cohorts[0]}" | tee target/macos-compatibility/audit.json
+      - name: Audit Windows arm64 binary from the complete cohort
+        if: matrix.target == 'aarch64-pc-windows-msvc'
+        shell: bash
+        run: |
+          cohorts=(target/node-registry/ziwei-*)
+          test "${#cohorts[@]}" -eq 1
+          test -f "${cohorts[0]}/batch.json"
+          mkdir -p target/windows-arm64-compatibility
+          mise run check:node:windows-arm64 -- "${cohorts[0]}" | tee target/windows-arm64-compatibility/audit.json
       - name: Clean npm and pnpm consumers of the same complete cohort
         if: ${{ !matrix.docker-platform }}
         shell: bash
@@ -229,6 +288,42 @@ jobs:
           for artifacts in target/node-registry/ziwei-*; do
             mise run check:node:registry -- "$artifacts"
           done
+      - name: macOS minimum Node consumers of the same complete cohort
+        if: endsWith(matrix.target, '-apple-darwin')
+        shell: bash
+        env:
+          EXPECTED_MACOS_TARGET: ${{ matrix.target }}
+        run: |
+          mise install node@24.15.0
+          mise exec node@24.15.0 -- node -e 'const a=require("node:assert/strict"); a.equal(process.platform,"darwin"); a.equal(process.version,"v24.15.0"); a.equal(process.arch,process.env.EXPECTED_MACOS_TARGET === "aarch64-apple-darwin" ? "arm64" : "x64"); console.log({node:process.version,arch:process.arch,kernel:require("node:os").release()})' | tee target/macos-compatibility/consumer.log
+          for artifacts in target/node-registry/ziwei-*; do
+            mise run --tool node@24.15.0 check:node:registry -- "$artifacts" | tee -a target/macos-compatibility/consumer.log
+          done
+      - name: Preserve macOS compatibility evidence
+        if: ${{ !cancelled() && endsWith(matrix.target, '-apple-darwin') }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: macos-compatibility-${{ github.run_attempt }}-${{ matrix.target }}
+          path: target/macos-compatibility/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Windows arm64 minimum Node consumers of the same complete cohort
+        if: matrix.target == 'aarch64-pc-windows-msvc'
+        shell: bash
+        run: |
+          mise install node@24.15.0
+          mise exec node@24.15.0 -- node -e 'const a=require("node:assert/strict"); a.equal(process.platform,"win32"); a.equal(process.version,"v24.15.0"); a.equal(process.arch,"arm64"); console.log({node:process.version,arch:process.arch,kernel:require("node:os").release()})' | tee target/windows-arm64-compatibility/consumer.log
+          for artifacts in target/node-registry/ziwei-*; do
+            mise run --tool node@24.15.0 check:node:registry -- "$artifacts" 2>&1 | tee -a target/windows-arm64-compatibility/consumer.log
+          done
+      - name: Preserve Windows arm64 compatibility evidence
+        if: ${{ !cancelled() && matrix.target == 'aarch64-pc-windows-msvc' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: windows-arm64-compatibility-${{ github.run_attempt }}
+          path: target/windows-arm64-compatibility/
+          if-no-files-found: error
+          retention-days: 7
       - name: Clean glibc 2.28 consumers with the minimum Node on the target CPU
         if: endsWith(matrix.target, '-linux-gnu')
         shell: bash
@@ -278,8 +373,54 @@ jobs:
               done
             '
 
+      - name: Minimum Node Alpine registry consumers on the target CPU
+        if: matrix.docker-platform
+        shell: bash
+        env:
+          DOCKER_PLATFORM: ${{ matrix.docker-platform }}
+          # Docker Hub index for 24.15.0-alpine3.23; both amd64 and arm64 checked 2026-09-11.
+          MUSL_IMAGE: node:24.15.0-alpine3.23@sha256:d1b3b4da11eefd5941e7f0b9cf17783fc99d9c6fc34884a665f40a06dbdfc94f
+        run: |
+          case "$DOCKER_PLATFORM" in
+            linux/amd64) expected_arch=x64; test "$(uname -m)" = x86_64 ;;
+            linux/arm64) expected_arch=arm64; test "$(uname -m)" = aarch64 ;;
+            *) exit 1 ;;
+          esac
+          cohorts=(target/node-registry/ziwei-*)
+          test "${#cohorts[@]}" -eq 1
+          test -f "${cohorts[0]}/batch.json"
+          mkdir -p target/musl-compatibility
+          docker pull --platform "$DOCKER_PLATFORM" "$MUSL_IMAGE"
+          docker image inspect "$MUSL_IMAGE" --format '{"id":{{json .Id}},"os":{{json .Os}},"architecture":{{json .Architecture}},"repoDigests":{{json .RepoDigests}}}' > target/musl-compatibility/image.json
+          docker run --rm --platform "$DOCKER_PLATFORM" \
+            --mount "type=bind,src=$PWD,dst=/work,readonly" \
+            --mount "type=bind,src=$PWD/target/musl-compatibility,dst=/evidence" \
+            -e EXPECTED_NODE_ARCH="$expected_arch" \
+            -e GITHUB_SHA -e GITHUB_RUN_ID -e GITHUB_RUN_ATTEMPT \
+            "$MUSL_IMAGE" sh -eu -c '
+              set -- /work/target/node-registry/ziwei-*
+              test "$#" -eq 1
+              test -f "$1/batch.json"
+              cp "$1/batch.json" /evidence/batch.json
+              node /work/packages/ziwei/tools/compatibility.ts --musl-runtime "$EXPECTED_NODE_ARCH" > /evidence/runtime.json
+              cat /evidence/runtime.json
+              pnpm_version=$(node -p "require(\"/work/package.json\").devEngines.packageManager.version")
+              npm install --prefix /tmp/pnpm-tool --ignore-scripts --no-audit --no-fund \
+                "@pnpm/exe.linux-${EXPECTED_NODE_ARCH}-musl@${pnpm_version}"
+              export ZIWEI_PNPM_BIN="/tmp/pnpm-tool/node_modules/@pnpm/exe.linux-${EXPECTED_NODE_ARCH}-musl/pnpm"
+              node /work/packages/ziwei/test/fixtures/registry-consumer.ts "$1"
+            ' 2>&1 | tee target/musl-compatibility/consumer.log
+      - name: Preserve musl minimum Node evidence
+        if: ${{ !cancelled() && matrix.docker-platform }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: musl-compatibility-${{ github.run_attempt }}-${{ matrix.target }}
+          path: target/musl-compatibility/
+          if-no-files-found: error
+          retention-days: 7
+
   windows-clean-consumer:
-    name: Windows x64 clean container experiment
+    name: Windows x64 clean consumers
     needs: node-distribution
     runs-on: windows-2025
     timeout-minutes: 30
@@ -295,14 +436,14 @@ jobs:
         with:
           install_args: node pnpm
           cache: false
-      - name: Consume the sealed cohort without host development tools or CRT installation
+      - name: Verify clean npm and runtime-equipped pnpm against the sealed cohort
         shell: pwsh
         run: |
           $cohorts = @(Get-ChildItem target/node-registry -Directory)
           if ($cohorts.Count -ne 1) { throw 'Expected exactly one complete cohort' }
           mise run check:node:windows -- $cohorts[0].FullName "$PWD/target/windows-clean-consumer"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Preserve Windows experiment evidence, including failures
+      - name: Preserve Windows consumer evidence, including failures
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:

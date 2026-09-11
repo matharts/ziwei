@@ -154,6 +154,7 @@ const tasks: Record<
 };
 
 type Probe = {
+  crtFlags?: string;
   version: string;
   executable: string;
   child: { version: string; executable: string };
@@ -201,7 +202,8 @@ function fixture(t: TestContext, { activated = true } = {}) {
       const child = spawnSync('node', ['-p', 'JSON.stringify({version: process.version, executable: process.execPath})'], {encoding: 'utf8'});
       if (child.status !== 0) process.exit(child.status ?? 1);
       console.log(JSON.stringify({version: process.version, executable: process.execPath,
-        child: JSON.parse(child.stdout), args: process.argv.slice(2), cwd: process.cwd()}));
+        child: JSON.parse(child.stdout), args: process.argv.slice(2), cwd: process.cwd(),
+        crtFlags: process.env.CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS}));
     `,
     );
     cliPaths[task] = cli;
@@ -238,6 +240,21 @@ function assertRuntime(row: Probe) {
   assert.equal(row.child.version, process.version);
   assert.equal(realpathSync.native(row.child.executable), realpathSync.native(process.execPath));
 }
+
+test("Node native task alone defaults x64 CRT to static and preserves explicit diagnostics", (t) => {
+  const { run, env } = fixture(t);
+  delete env.CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS;
+  const result = run(["run", "check:node"]);
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(
+    rows(result.stdout).map((row) => row.crtFlags),
+    ["-C target-feature=+crt-static", undefined, undefined, undefined],
+  );
+  env.CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS = "-C target-feature=-crt-static";
+  const diagnostic = run(["run", "build:node:native"]);
+  assert.equal(diagnostic.status, 0, diagnostic.stderr);
+  assert.equal(rows(diagnostic.stdout)[0]!.crtFlags, "-C target-feature=-crt-static");
+});
 
 for (const activated of [true, false]) {
   test(`mise tasks select Node and preserve command order (activation record: ${activated})`, (t) => {
