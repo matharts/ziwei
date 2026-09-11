@@ -98,10 +98,10 @@ test("complete artifact cohorts preserve tested bytes and reject mixed or damage
   assert.match(result, /artifact-contract-ok/);
 }, 120_000);
 
-test("npm and pnpm select the platform from a complete registry without overrides", () => {
+test("npm and pnpm select the platform without overrides and load it in a Worker", () => {
   const result = execFileSync(
     process.execPath,
-    [fileURLToPath(new URL("./fixtures/registry-contract.ts", import.meta.url))],
+    [fileURLToPath(new URL("./fixtures/registry-contract.ts", import.meta.url)), "--worker"],
     { ...options, timeout: 180_000 },
   );
   assert.equal(result.match(/registry-consumer-ok/g)?.length, 8);

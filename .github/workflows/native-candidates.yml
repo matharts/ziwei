@@ -82,6 +82,18 @@ jobs:
           test -f "packages/ziwei/native/$binary"
           cp "packages/ziwei/native/$binary" "target/native-candidate/$binary"
           mise run check:node:gnu-candidate -- "$CARGO_BUILD_TARGET" "target/native-candidate/$binary" > target/native-candidate/audit.json
+      - name: Seal a private runtime candidate without rebuilding the addon
+        if: ${{ matrix.target != 'armv7-unknown-linux-gnueabihf' }}
+        run: mise run pack:node:candidate -- --target "$CARGO_BUILD_TARGET" --input target/native-candidate --output target/native-candidate-bundle
+      - name: Preserve the runtime candidate from this exact build
+        if: ${{ success() && matrix.target != 'armv7-unknown-linux-gnueabihf' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: native-candidate-input-${{ github.sha }}-${{ github.run_attempt }}-${{ matrix.target }}
+          path: target/native-candidate-bundle/
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
       # These files never enter node-distribution or the release cohort.
       - name: Preserve candidate files, including static audit failures
         if: ${{ !cancelled() }}
@@ -93,17 +105,63 @@ jobs:
           retention-days: 7
           compression-level: 0
 
+  gnu-runtime:
+    name: Emulated GNU consumers (${{ matrix.target }})
+    needs: [gnu-addon]
+    runs-on: ubuntu-24.04
+    # Two bounded 15-minute consumers plus downloads, setup and evidence upload.
+    timeout-minutes: 50
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - powerpc64le-unknown-linux-gnu
+          - s390x-unknown-linux-gnu
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
+        with:
+          install_args: node pnpm
+          cache: false
+      - name: Install locked controller dependencies
+        run: mise exec -- pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: native-candidate-input-${{ github.sha }}-${{ github.run_attempt }}-${{ matrix.target }}
+          path: target/native-candidate-input
+      # Privilege is limited to binfmt registration on this disposable runner.
+      # The actual consumer containers have no network, no capabilities and read-only inputs.
+      - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
+        with:
+          image: tonistiigi/binfmt@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0
+          platforms: ppc64le,s390x
+          cache-image: false
+      - name: Verify both Node versions and package managers under emulation
+        run: mise run check:node:candidate -- --target "${{ matrix.target }}" --input target/native-candidate-input --output target/native-candidate-results
+      - name: Preserve emulation results, including failures
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: native-candidate-runtime-${{ github.sha }}-${{ github.run_attempt }}-${{ matrix.target }}
+          path: target/native-candidate-results/
+          if-no-files-found: error
+          retention-days: 7
+
   verify:
-    name: Require candidate compile and static checks
-    needs: [core-check, gnu-addon]
+    name: Require candidate compile, static and emulated checks
+    needs: [core-check, gnu-addon, gnu-runtime]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 1
     steps:
-      - name: Require both candidate gates
+      - name: Require all candidate gates
         env:
           CORE_RESULT: ${{ needs.core-check.result }}
           GNU_RESULT: ${{ needs.gnu-addon.result }}
+          RUNTIME_RESULT: ${{ needs.gnu-runtime.result }}
         run: |
           test "$CORE_RESULT" = success
           test "$GNU_RESULT" = success
+          test "$RUNTIME_RESULT" = success

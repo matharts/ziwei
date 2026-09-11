@@ -155,6 +155,7 @@ try {
     const consume = () =>
       verifyRegistry(staged.directory, {
         managers: npmOnly ? ["npm"] : ["npm", "pnpm"],
+        testWorker: process.argv.includes("--worker"),
         onRuntime: (runtime) => observations.push(runtime),
       });
     if (brokenNative) await assert.rejects(consume(), /Cannot find native binding/);

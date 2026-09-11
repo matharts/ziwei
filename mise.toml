@@ -165,6 +165,14 @@ run = [
 description = "验证 Node 开发入口、子进程运行时及 PATH 遮蔽；不运行排盘基准"
 run = "pnpm exec -- node node_modules/@rstest/core/bin/rstest.js --project node-tools"
 
+[tasks."pack:node:candidate"]
+description = "封存已有 ppc64le/s390x 候选与公共文件；不修改正式目标或发布"
+run = "pnpm exec -- node packages/ziwei/tools/candidate.ts --mode pack"
+
+[tasks."check:node:candidate"]
+description = "在 Linux x64 Docker/QEMU 中消费同批候选；只记录仿真证据"
+run = "pnpm exec -- node packages/ziwei/tools/candidate-runtime.ts"
+
 [tasks."check:typescript"]
 description = "严格检查 TypeScript 配置、测试和工具；需先构建 Node 包"
 run = "pnpm exec -- node node_modules/typescript/bin/tsc --project tsconfig.json"

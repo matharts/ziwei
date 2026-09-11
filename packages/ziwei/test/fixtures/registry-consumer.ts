@@ -14,8 +14,13 @@ const readJson = (path: string) => JSON.parse(readFileSync(path, "utf8"));
 const hash = (bytes: Buffer, algorithm = "sha256", encoding: "hex" | "base64" = "hex") =>
   createHash(algorithm).update(bytes).digest(encoding);
 type Scenario = "normal" | "omit-optional" | "missing" | "corrupted";
-type Receipt = { tarball: string; bytes: number; sha256: string };
-type Platform = Receipt & { target: string; name: string; binaryDigest: Omit<Receipt, "tarball"> };
+export type Receipt = { tarball: string; bytes: number; sha256: string };
+export type Platform = Receipt & {
+  target: string;
+  name: string;
+  binaryDigest: Omit<Receipt, "tarball">;
+};
+export type RegistryPackages = { main: Receipt; platforms: Platform[] };
 export type RuntimeObservation = {
   manager: "npm" | "pnpm";
   node: string;
@@ -39,6 +44,16 @@ function readCohort(directory: string) {
   }
   const platforms: Platform[] = batch.platforms;
   assert.deepEqual(platforms.map(({ target }) => target).sort(), [...source.napi.targets].sort());
+  return readRegistryPackages(directory, batch, source);
+}
+
+/** Shared transport checks; callers independently enforce release or candidate scope. */
+export function readRegistryPackages(
+  directory: string,
+  batch: RegistryPackages,
+  source: { name: string; version: string },
+) {
+  const platforms = batch.platforms;
   assert.equal(new Set(platforms.map(({ name }) => name)).size, platforms.length);
   const packages = [batch.main as Receipt, ...platforms].map((receipt) => {
     assert.equal(basename(receipt.tarball), receipt.tarball);
@@ -85,18 +100,30 @@ function readCohort(directory: string) {
 }
 
 /** Serve the immutable cohort locally; real clients resolve all optional dependencies. */
-export async function verifyRegistry(
-  directory: string,
+type RegistryOptions = {
+  managers?: readonly RuntimeObservation["manager"][];
+  onRuntime?: (runtime: RuntimeObservation) => void;
+  testWorker?: boolean;
+  commandTimeoutMs?: number;
+};
+
+export async function verifyRegistry(directory: string, options: RegistryOptions = {}) {
+  return consumeRegistry(readCohort(directory), options);
+}
+
+export async function consumeRegistry(
+  { packages, main, matching, platforms }: ReturnType<typeof readRegistryPackages>,
   {
     managers = ["npm", "pnpm"],
     onRuntime,
-  }: {
-    managers?: readonly RuntimeObservation["manager"][];
-    onRuntime?: (runtime: RuntimeObservation) => void;
-  } = {},
+    testWorker = false,
+    commandTimeoutMs = 45_000,
+  }: RegistryOptions = {},
 ) {
   assert.ok(managers.length > 0, "至少选择一个包管理器");
-  const { packages, main, matching, platforms } = readCohort(directory);
+  assert.ok(
+    Number.isInteger(commandTimeoutMs) && commandTimeoutMs > 0 && commandTimeoutMs <= 180_000,
+  );
   const temporary = mkdtempSync(join(tmpdir(), "ziwei-registry-consumer-"));
   const env = { ...process.env };
   env.XDG_CONFIG_HOME = join(temporary, "config");
@@ -117,7 +144,12 @@ export async function verifyRegistry(
   const pnpm = process.env.ZIWEI_PNPM_BIN ?? "pnpm";
   const expectedPnpm = readJson(fileURLToPath(new URL("../../../../package.json", import.meta.url)))
     .devEngines.packageManager.version;
-  const options = { env, encoding: "utf8" as const, timeout: 45_000, maxBuffer: 1024 * 1024 };
+  const options = {
+    env,
+    encoding: "utf8" as const,
+    timeout: commandTimeoutMs,
+    maxBuffer: 1024 * 1024,
+  };
   let scenario: Scenario = "normal";
   let url = "";
   const requested = new Set<string>();
@@ -304,6 +336,27 @@ export async function verifyRegistry(
             assert.throws(() => Ziwei.fromBirth(null), ZiweiError);
             const queried = Ziwei.fromParameters({gender:1,birthStem:0,birthBranch:0,birthMonth:1,ziweiBranch:2,birthHour:0});
             assert.equal(queried.decadeYears(0)[0].year, null);
+            if (${testWorker}) {
+              assert.equal(natal.palaces, natal.palaces);
+              assert.equal(natal.profile, natal.profile);
+              const { Worker } = await import('node:worker_threads');
+              const { once } = await import('node:events');
+              const worker = new Worker(\`
+                const { parentPort, workerData } = require('node:worker_threads');
+                const { Ziwei, ZiweiError } = require(workerData);
+                const a = Ziwei.fromBirth({gender:1,birthYear:1984,birthMonth:1,birthDay:6,birthHour:0});
+                const b = Ziwei.fromParameters({gender:1,birthStem:0,birthBranch:0,birthMonth:1,ziweiBranch:2,birthHour:0});
+                require('node:assert/strict').throws(() => Ziwei.fromBirth(null), ZiweiError);
+                parentPort.postMessage([a.toJSON(), b.toJSON()]);
+              \`, { eval: true, execArgv: [], workerData: require.resolve('@matharts/ziwei') });
+              try {
+                const [[snapshots], [exitCode]] = await Promise.all([
+                  once(worker, 'message'), once(worker, 'exit'),
+                ]);
+                assert.deepEqual(snapshots, [natal.toJSON(), queried.toJSON()]);
+                assert.equal(exitCode, 0);
+              } finally { await worker.terminate(); }
+            }
           }
           } finally {
             if (${Boolean(onRuntime)} && mode === 'normal') console.log(JSON.stringify({
