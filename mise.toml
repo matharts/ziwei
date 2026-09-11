@@ -80,6 +80,10 @@ run = "pnpm exec -- node packages/ziwei/tools/windows-container.ts"
 description = "检查 Windows x64 实际 PE 依赖并记录摘要与大小；动态模式仅供按需对照"
 run = "pnpm exec -- node packages/ziwei/tools/compatibility.ts --windows-crt"
 
+[tasks."check:node:windows-arm64"]
+description = "检查完整批次的 Windows ARM64 PE、导入依赖与摘要；不代表干净系统实测"
+run = "pnpm exec -- node packages/ziwei/tools/compatibility.ts --windows-arm64"
+
 [tasks."check:node:types"]
 description = "验证已构建 Node 包的 TypeScript 消费端合同"
 dir = "packages/ziwei"

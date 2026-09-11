@@ -272,6 +272,15 @@ jobs:
           test -f "${cohorts[0]}/batch.json"
           mkdir -p target/macos-compatibility
           mise run check:node:macos -- "${cohorts[0]}" | tee target/macos-compatibility/audit.json
+      - name: Audit Windows arm64 binary from the complete cohort
+        if: matrix.target == 'aarch64-pc-windows-msvc'
+        shell: bash
+        run: |
+          cohorts=(target/node-registry/ziwei-*)
+          test "${#cohorts[@]}" -eq 1
+          test -f "${cohorts[0]}/batch.json"
+          mkdir -p target/windows-arm64-compatibility
+          mise run check:node:windows-arm64 -- "${cohorts[0]}" | tee target/windows-arm64-compatibility/audit.json
       - name: Clean npm and pnpm consumers of the same complete cohort
         if: ${{ !matrix.docker-platform }}
         shell: bash
@@ -296,6 +305,23 @@ jobs:
         with:
           name: macos-compatibility-${{ github.run_attempt }}-${{ matrix.target }}
           path: target/macos-compatibility/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Windows arm64 minimum Node consumers of the same complete cohort
+        if: matrix.target == 'aarch64-pc-windows-msvc'
+        shell: bash
+        run: |
+          mise install node@24.15.0
+          mise exec node@24.15.0 -- node -e 'const a=require("node:assert/strict"); a.equal(process.platform,"win32"); a.equal(process.version,"v24.15.0"); a.equal(process.arch,"arm64"); console.log({node:process.version,arch:process.arch,kernel:require("node:os").release()})' | tee target/windows-arm64-compatibility/consumer.log
+          for artifacts in target/node-registry/ziwei-*; do
+            mise run --tool node@24.15.0 check:node:registry -- "$artifacts" 2>&1 | tee -a target/windows-arm64-compatibility/consumer.log
+          done
+      - name: Preserve Windows arm64 compatibility evidence
+        if: ${{ !cancelled() && matrix.target == 'aarch64-pc-windows-msvc' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: windows-arm64-compatibility-${{ github.run_attempt }}
+          path: target/windows-arm64-compatibility/
           if-no-files-found: error
           retention-days: 7
       - name: Clean glibc 2.28 consumers with the minimum Node on the target CPU

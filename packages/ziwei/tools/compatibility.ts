@@ -15,6 +15,11 @@ const macosTargets = {
   "aarch64-apple-darwin": { machine: 0x100000c, subtype: 0, suffix: "darwin-arm64" },
 } as const;
 type MacosTarget = keyof typeof macosTargets;
+const windowsTargets = {
+  "x86_64-pc-windows-msvc": { machine: 0x8664, suffix: "win32-x64-msvc" },
+  "aarch64-pc-windows-msvc": { machine: 0xaa64, suffix: "win32-arm64-msvc" },
+} as const;
+type WindowsTarget = keyof typeof windowsTargets;
 // Node 24.15.0's documented baseline, not a claim of testing that macOS release.
 const macosDeploymentCeiling = 0x0d0500;
 type Digest = { bytes: number; sha256: string };
@@ -237,8 +242,10 @@ export function verifyMacosArtifacts(directory: string) {
   }));
 }
 
-/** Inspect our MSVC PE32+ x64 DLLs, not arbitrary PE variants or runtime-loaded libraries. */
-export function inspectWindowsX64Imports(binary: Buffer) {
+/** Inspect our MSVC PE32+ DLLs, not ARM64EC/ARM64X or runtime-loaded libraries. */
+export function inspectWindowsImports(binary: Buffer, target: WindowsTarget) {
+  const expected = windowsTargets[target];
+  assert.ok(expected, "未知 Windows 目标");
   const range = (offset: number, size: number) => {
     assert.ok(offset >= 0 && size >= 0 && offset + size <= binary.length, "PE 文件范围越界");
   };
@@ -248,7 +255,7 @@ export function inspectWindowsX64Imports(binary: Buffer) {
   range(pe, 24);
   assert.ok(pe >= 64, "PE header 与 DOS header 重叠");
   assert.equal(binary.toString("ascii", pe, pe + 4), "PE\0\0", "需要 PE signature");
-  assert.equal(binary.readUInt16LE(pe + 4), 0x8664, "需要 Windows x64 产物");
+  assert.equal(binary.readUInt16LE(pe + 4), expected.machine, "Windows 产物 CPU 不匹配");
   assert.ok(binary.readUInt16LE(pe + 22) & 0x2000, "需要 PE DLL 产物");
   const count = binary.readUInt16LE(pe + 6);
   const optionalSize = binary.readUInt16LE(pe + 20);
@@ -312,6 +319,28 @@ export function inspectWindowsX64Imports(binary: Buffer) {
   return { imports: readImports(1, 20, 12), delayImports: readImports(13, 32, 4) };
 }
 
+function windowsCrtImports(dependencies: { imports: string[]; delayImports: string[] }) {
+  return [...new Set([...dependencies.imports, ...dependencies.delayImports])].filter((name) =>
+    /^(?:vcruntime|msvcp|msvcr|concrt|vcomp|vcamp)\d.*\.dll$/i.test(name),
+  );
+}
+
+/** Audit the sealed ARM64 bytes without changing or requiring a CRT linkage mode. */
+export function verifyWindowsArm64Artifact(directory: string) {
+  const target = "aarch64-pc-windows-msvc";
+  const [artifact] = readArtifactBinaries(directory, { [target]: windowsTargets[target] });
+  assert.ok(artifact);
+  const { binary, batch } = artifact;
+  const dependencies = inspectWindowsImports(binary, target);
+  return {
+    target,
+    batch,
+    ...digest(binary),
+    ...dependencies,
+    crtImports: windowsCrtImports(dependencies),
+  };
+}
+
 /** Keep failed candidates too. System/UCRT imports are not VC Redistributable imports. */
 export function recordWindowsCrt(
   mode: "dynamic" | "static",
@@ -320,10 +349,8 @@ export function recordWindowsCrt(
 ) {
   assert.ok(lstatSync(binaryPath).isFile(), "Windows 二进制必须为普通文件");
   const binary = readFileSync(binaryPath);
-  const dependencies = inspectWindowsX64Imports(binary);
-  const crtImports = [...new Set([...dependencies.imports, ...dependencies.delayImports])].filter(
-    (name) => /^(?:vcruntime|msvcp|msvcr|concrt|vcomp|vcamp)\d.*\.dll$/i.test(name),
-  );
+  const dependencies = inspectWindowsImports(binary, "x86_64-pc-windows-msvc");
+  const crtImports = windowsCrtImports(dependencies);
   const report = {
     target: "x86_64-pc-windows-msvc",
     mode,
@@ -356,6 +383,13 @@ if (import.meta.main) {
   if (process.argv[2] === "--macos") {
     assert.equal(process.argv.length, 4, "用法：mise run check:node:macos -- <完整交付目录>");
     console.log(JSON.stringify(verifyMacosArtifacts(resolve(process.argv[3]!)), null, 2));
+  } else if (process.argv[2] === "--windows-arm64") {
+    assert.equal(
+      process.argv.length,
+      4,
+      "用法：mise run check:node:windows-arm64 -- <完整交付目录>",
+    );
+    console.log(JSON.stringify(verifyWindowsArm64Artifact(resolve(process.argv[3]!)), null, 2));
   } else if (process.argv[2] === "--windows-crt") {
     assert.equal(
       process.argv.length,

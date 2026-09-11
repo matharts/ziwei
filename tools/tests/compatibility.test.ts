@@ -11,11 +11,12 @@ import type { TestContext } from "@rstest/core";
 
 import {
   inspectMacosBinary,
-  inspectWindowsX64Imports,
+  inspectWindowsImports,
   recordWindowsCrt,
   verifyGlibcVersions,
   verifyGnuArtifacts,
   verifyMacosArtifacts,
+  verifyWindowsArm64Artifact,
 } from "../../packages/ziwei/tools/compatibility.ts";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
@@ -162,12 +163,12 @@ test("Windows CRT acceptance reuses inspected bytes and dynamic comparison is op
 });
 
 // Synthetic PE descriptors test inspection only; CI must still load the real addon.
-function windowsBinary(imports: string[], delayImports: string[] = []) {
+function windowsBinary(imports: string[], delayImports: string[] = [], machine = 0x8664) {
   const binary = Buffer.alloc(0xc00);
   binary.write("MZ");
   binary.writeUInt32LE(0x80, 0x3c);
   binary.write("PE\0\0", 0x80);
-  binary.writeUInt16LE(0x8664, 0x84);
+  binary.writeUInt16LE(machine, 0x84);
   binary.writeUInt16LE(1, 0x86);
   binary.writeUInt16LE(240, 0x94);
   binary.writeUInt16LE(0x2000, 0x96);
@@ -196,16 +197,21 @@ function windowsBinary(imports: string[], delayImports: string[] = []) {
 }
 
 test("Windows inspection reads normal and delay imports without incidental string matches", () => {
-  const binary = windowsBinary(["KERNEL32.dll", "VCRUNTIME140.dll"], ["USER32.dll"]);
-  binary.write("msvcp140.dll", 0xb00);
-  assert.deepEqual(inspectWindowsX64Imports(binary), {
-    imports: ["KERNEL32.dll", "VCRUNTIME140.dll"],
-    delayImports: ["USER32.dll"],
-  });
-  assert.deepEqual(inspectWindowsX64Imports(windowsBinary([])), {
-    imports: [],
-    delayImports: [],
-  });
+  for (const [target, machine] of [
+    ["x86_64-pc-windows-msvc", 0x8664],
+    ["aarch64-pc-windows-msvc", 0xaa64],
+  ] as const) {
+    const binary = windowsBinary(["KERNEL32.dll", "VCRUNTIME140.dll"], ["USER32.dll"], machine);
+    binary.write("msvcp140.dll", 0xb00);
+    assert.deepEqual(inspectWindowsImports(binary, target), {
+      imports: ["KERNEL32.dll", "VCRUNTIME140.dll"],
+      delayImports: ["USER32.dll"],
+    });
+    assert.deepEqual(inspectWindowsImports(windowsBinary([], [], machine), target), {
+      imports: [],
+      delayImports: [],
+    });
+  }
 });
 
 test("Windows inspection fails closed for malformed or unsupported PE structures", () => {
@@ -213,7 +219,6 @@ test("Windows inspection fails closed for malformed or unsupported PE structures
     (b) => b.write("NO"),
     (b) => b.writeUInt32LE(0xfffffff0, 0x3c),
     (b) => b.write("NE", 0x80),
-    (b) => b.writeUInt16LE(0xaa64, 0x84),
     (b) => b.writeUInt16LE(0, 0x96),
     (b) => b.writeUInt16LE(0x10b, 0x98),
     (b) => b.writeUInt16LE(120, 0x94),
@@ -230,18 +235,30 @@ test("Windows inspection fails closed for malformed or unsupported PE structures
     (b) => b.writeUInt32LE(3, 0x300),
     (b) => b.writeUInt32LE(32, 0x98 + 116 + 13 * 8),
   ];
-  for (const mutate of mutations) {
-    const binary = windowsBinary(["KERNEL32.dll"], ["VCRUNTIME140.dll"]);
-    mutate(binary);
-    assert.throws(() => inspectWindowsX64Imports(binary), { name: "AssertionError" });
+  for (const [target, machine] of [
+    ["x86_64-pc-windows-msvc", 0x8664],
+    ["aarch64-pc-windows-msvc", 0xaa64],
+  ] as const) {
+    for (const mutate of mutations) {
+      const binary = windowsBinary(["KERNEL32.dll"], ["VCRUNTIME140.dll"], machine);
+      mutate(binary);
+      assert.throws(() => inspectWindowsImports(binary, target), { name: "AssertionError" });
+    }
+    // Neither cross-labelled CPUs nor ARM64EC/ARM64X are our native ARM64 target.
+    for (const wrong of [machine === 0xaa64 ? 0x8664 : 0xaa64, 0xa641, 0xa64e, 0x14c])
+      assert.throws(() => inspectWindowsImports(windowsBinary([], [], wrong), target), /CPU/);
+    assert.throws(() => inspectWindowsImports(Buffer.alloc(10), target), {
+      name: "AssertionError",
+    });
   }
-  assert.throws(() => inspectWindowsX64Imports(Buffer.alloc(10)), { name: "AssertionError" });
 });
 
 test("Windows CRT records exact binary evidence and rejects normal or delayed VC dependencies", (t) => {
   const directory = mkdtempSync(join(tmpdir(), "ziwei-crt-contract-"));
   t.onTestFinished(() => rmSync(directory, { recursive: true, force: true }));
   const path = join(directory, "addon.node");
+  writeFileSync(path, windowsBinary(["VCRUNTIME140.dll"], [], 0xaa64));
+  assert.throws(() => recordWindowsCrt("dynamic", path, directory), /CPU 不匹配/);
   const dynamic = windowsBinary(["KERNEL32.dll", "VCRUNTIME140.dll"]);
   writeFileSync(path, dynamic);
   const baseline = recordWindowsCrt("dynamic", path, directory);
@@ -314,9 +331,9 @@ test("glibc gate fails closed for absent, private, unknown or malformed requirem
 function fixture(
   t: TestContext,
   alterBinary: (binary: Buffer) => Buffer = (binary) => binary,
-  kind: "gnu" | "macos" = "gnu",
+  kind: "gnu" | "macos" | "windows" = "gnu",
 ) {
-  const directory = mkdtempSync(join(tmpdir(), "ziwei-gnu-contract-"));
+  const directory = mkdtempSync(join(tmpdir(), "ziwei-compatibility-contract-"));
   t.onTestFinished(() => rmSync(directory, { recursive: true, force: true }));
   const source = JSON.parse(readFileSync(join(root, "packages/ziwei/package.json"), "utf8"));
   const digest = (bytes: Buffer) => ({
@@ -331,15 +348,25 @@ function fixture(
           ["x86_64-apple-darwin", "darwin-x64", 0x1000007],
           ["aarch64-apple-darwin", "darwin-arm64", 0x100000c],
         ] as const)
-      : ([
-          ["x86_64-unknown-linux-gnu", "linux-x64-gnu", 62],
-          ["aarch64-unknown-linux-gnu", "linux-arm64-gnu", 183],
-        ] as const);
+      : kind === "windows"
+        ? ([
+            ["x86_64-pc-windows-msvc", "win32-x64-msvc", 0x8664],
+            ["aarch64-pc-windows-msvc", "win32-arm64-msvc", 0xaa64],
+          ] as const)
+        : ([
+            ["x86_64-unknown-linux-gnu", "linux-x64-gnu", 62],
+            ["aarch64-unknown-linux-gnu", "linux-arm64-gnu", 183],
+          ] as const);
   for (const [target, suffix, machine] of targets) {
     const packageDirectory = join(directory, target, "package");
     mkdirSync(packageDirectory, { recursive: true });
     // Header-only bytes test the archive boundary, never real compatibility or loading.
-    const binary = kind === "macos" ? macosBinary(machine === 0x100000c) : Buffer.alloc(64);
+    const binary =
+      kind === "macos"
+        ? macosBinary(machine === 0x100000c)
+        : kind === "windows"
+          ? windowsBinary(["KERNEL32.dll", "VCRUNTIME140.dll"], ["MSVCP140.dll"], machine)
+          : Buffer.alloc(64);
     if (kind === "gnu") {
       binary.set([0x7f, 0x45, 0x4c, 0x46, 2, 1]);
       binary.writeUInt16LE(3, 16);
@@ -374,6 +401,146 @@ function fixture(
   save();
   return { directory, batch, binaries, save };
 }
+
+test("Windows arm64 audit and CLI report the exact sealed bytes and both import tables", (t) => {
+  const { directory, batch, binaries } = fixture(t, undefined, "windows");
+  const result = verifyWindowsArm64Artifact(directory);
+  assert.deepEqual(result, {
+    target: "aarch64-pc-windows-msvc",
+    batch: batch.batch,
+    bytes: binaries[1]!.length,
+    sha256: createHash("sha256").update(binaries[1]!).digest("hex"),
+    imports: ["KERNEL32.dll", "VCRUNTIME140.dll"],
+    delayImports: ["MSVCP140.dll"],
+    crtImports: ["VCRUNTIME140.dll", "MSVCP140.dll"],
+  });
+  const cli = join(root, "packages/ziwei/tools/compatibility.ts");
+  assert.deepEqual(
+    JSON.parse(
+      execFileSync(process.execPath, [cli, "--windows-arm64", directory], { encoding: "utf8" }),
+    ),
+    result,
+  );
+  for (const args of [["--windows-arm64"], ["--windows-arm64", directory, "extra"]])
+    assert.throws(() => execFileSync(process.execPath, [cli, ...args], { stdio: "pipe" }));
+});
+
+test("Windows arm64 audit records CRT requirements without imposing the x64 static policy", (t) => {
+  const { directory } = fixture(
+    t,
+    () => windowsBinary(["KERNEL32.dll", "api-ms-win-crt-runtime-l1-1-0.dll"], [], 0xaa64),
+    "windows",
+  );
+  assert.deepEqual(verifyWindowsArm64Artifact(directory).crtImports, []);
+});
+
+test("Windows arm64 audit rejects incomplete, cross-labelled or tampered artifacts", (t) => {
+  const { directory, batch, save } = fixture(t, undefined, "windows");
+  const original = structuredClone(batch.platforms);
+  const arm64 = () =>
+    batch.platforms.find((p: { target: string }) => p.target === "aarch64-pc-windows-msvc");
+  for (const mutate of [
+    () => {
+      batch.platforms = batch.platforms.filter(
+        (p: { target: string }) => p.target !== "aarch64-pc-windows-msvc",
+      );
+    },
+    () => batch.platforms.push(arm64()),
+    () => {
+      arm64().tarball = "../outside.tgz";
+    },
+    () => {
+      arm64().sha256 = "0".repeat(64);
+    },
+    () => {
+      arm64().binaryDigest.sha256 = "0".repeat(64);
+    },
+  ]) {
+    batch.platforms = structuredClone(original);
+    mutate();
+    save();
+    assert.throws(() => verifyWindowsArm64Artifact(directory));
+  }
+  for (const machine of [0x8664, 0xa641, 0xa64e]) {
+    const wrongCpu = fixture(t, () => windowsBinary(["KERNEL32.dll"], [], machine), "windows");
+    assert.throws(() => verifyWindowsArm64Artifact(wrongCpu.directory), /CPU 不匹配/);
+  }
+  const truncated = fixture(t, (binary) => binary.subarray(0, 32), "windows");
+  assert.throws(() => verifyWindowsArm64Artifact(truncated.directory), /PE 文件范围越界/);
+});
+
+test("Windows arm64 audit rejects invalid batch identity and all mismatched CI identity fields", (t) => {
+  const { directory, batch, save } = fixture(t, undefined, "windows");
+  const original = structuredClone(batch.batch);
+  for (const field of ["commit", "runId", "runAttempt"] as const) {
+    batch.batch = { ...original, [field]: "" };
+    save();
+    assert.throws(() => verifyWindowsArm64Artifact(directory));
+  }
+  batch.batch = original;
+  save();
+  for (const [variable, value] of [
+    ["GITHUB_SHA", original.commit === "b".repeat(40) ? "c".repeat(40) : "b".repeat(40)],
+    ["GITHUB_RUN_ID", `${original.runId}1`],
+    ["GITHUB_RUN_ATTEMPT", `${original.runAttempt}1`],
+  ])
+    assert.throws(() =>
+      execFileSync(
+        process.execPath,
+        [join(root, "packages/ziwei/tools/compatibility.ts"), "--windows-arm64", directory],
+        { env: { ...process.env, [variable!]: value }, stdio: "pipe" },
+      ),
+    );
+});
+
+test("Windows arm64 CI gates the same cohort with minimum native Node and preserves evidence", () => {
+  const workflow = readFileSync(join(root, ".github/workflows/ci.yml"), "utf8");
+  const registry = workflow
+    .split("  registry-consumers:")[1]!
+    .split("  windows-clean-consumer:")[0]!;
+  const audit = registry
+    .split("- name: Audit Windows arm64 binary from the complete cohort")[1]!
+    .split("- name:")[0]!;
+  const minimum = registry
+    .split("- name: Windows arm64 minimum Node consumers of the same complete cohort")[1]!
+    .split("- name:")[0]!;
+  const evidence = registry
+    .split("- name: Preserve Windows arm64 compatibility evidence")[1]!
+    .split("- name:")[0]!;
+  for (const step of [audit, minimum]) {
+    assert.match(step, /if: matrix.target == 'aarch64-pc-windows-msvc'/);
+    assert.match(step, /shell: bash/);
+  }
+  assert.match(registry, /os: windows-11-arm\s+target: aarch64-pc-windows-msvc/);
+  assert.match(registry, /needs: node-distribution/);
+  assert.match(audit, /test "\$\{#cohorts\[@\]\}" -eq 1/);
+  assert.match(audit, /mise run check:node:windows-arm64 -- "\$\{cohorts\[0\]\}"/);
+  assert.match(minimum, /mise install node@24\.15\.0/);
+  assert.match(minimum, /mise exec node@24\.15\.0 -- node/);
+  assert.match(minimum, /a.equal\(process.platform,"win32"\)/);
+  assert.match(minimum, /a.equal\(process.version,"v24.15.0"\)/);
+  assert.match(minimum, /a.equal\(process.arch,"arm64"\)/);
+  assert.match(
+    minimum,
+    /mise run --tool node@24\.15\.0 check:node:registry -- "\$artifacts" 2>&1 \| tee -a/,
+  );
+  assert.match(evidence, /!cancelled\(\) && matrix.target == 'aarch64-pc-windows-msvc'/);
+  assert.match(evidence, /name: windows-arm64-compatibility-\$\{\{ github.run_attempt \}\}/);
+  assert.match(evidence, /path: target\/windows-arm64-compatibility\//);
+  assert.match(evidence, /if-no-files-found: error/);
+  assert.doesNotMatch(
+    registry,
+    /mise run (?:build:|pack:|check:node:minimum)|continue-on-error|crt-static/,
+  );
+  assert.match(workflow.split("  verify:")[1]!, /REGISTRY_RESULT.*needs.registry-consumers.result/);
+  assert.match(workflow.split("  verify:")[1]!, /test "\$REGISTRY_RESULT" = success/);
+  const mise = readFileSync(join(root, "mise.toml"), "utf8");
+  assert.match(
+    mise,
+    /\[tasks\."check:node:windows-arm64"\][\s\S]*?compatibility\.ts --windows-arm64/,
+  );
+  assert.doesNotMatch(mise, /CARGO_TARGET_AARCH64_PC_WINDOWS_MSVC_RUSTFLAGS/);
+});
 
 test("macOS inspection and CLI bind both architectures to the original cohort and binary digests", (t) => {
   const { directory, batch, binaries } = fixture(t, undefined, "macos");

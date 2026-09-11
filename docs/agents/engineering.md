@@ -70,7 +70,7 @@ Oxfmt 读取根 [.editorconfig](../../.editorconfig)：TypeScript 和 JSON 使�
 
 最低版本统一为 Node `>=24.15.0`：内置 TypeScript 类型擦除在 24.12.0 稳定，`require(ESM)` 在 24.15.0 稳定，见 [Node TypeScript](https://nodejs.org/docs/latest-v24.x/api/typescript.html) 与 [require(ESM)](https://nodejs.org/docs/latest-v24.x/api/modules.html#loading-ecmascript-modules-using-require)。
 
-这是项目支持门槛，不表示更早版本无法执行生成的 JS。mise 开发版本固定 24.21.0；`check:node:minimum` 在 Linux CI 运行最低版本的完整工程检查。macOS 双架构的最低版本消费验收直接复用封存包与注册表任务，不调用会重新构建的聚合检查。
+这是项目支持门槛，不表示更早版本无法执行生成的 JS。mise 开发版本固定 24.21.0；`check:node:minimum` 在 Linux CI 运行最低版本的完整工程检查。macOS 双架构与 Windows arm64 的最低版本消费验收直接复用封存包与注册表任务，不调用会重新构建的聚合检查。
 
 手写源码、测试、Worker、配置和工具全部使用 `.ts`；Node 直接执行工具的可擦除 TS 语法，保留 `.ts` 导入扩展名，不依赖 tsx。根 `tsconfig.json` 严格检查这些文件，并启用 `erasableSyntaxOnly`、`verbatimModuleSyntax`；`mise run check:typescript` 需在产品构建后运行。
 
@@ -95,6 +95,8 @@ GNU CI 使用 `build:node:gnu`，在 Linux x64／arm64 上经 `--use-napi-cross`
 `check:node:windows -- <完整交付目录> <新的结果目录>` 要求 Windows x64 Docker，使用固定 Server Core 镜像、Node ZIP 与同批 tarball。日常门禁分别运行 `npm-clean`（无额外 CRT、无 pnpm）与 `pnpm-runtime`（安装经摘要和 Microsoft 签名校验的运行库后运行 pnpm），两组必须均通过，报告独立保存。前者拒绝额外 VC Runtime 和开发工具链，并核对实际加载模块。`--compare-vc-runtime` 保留原来的完整对照，仅供按需诊断；其失败仍返回非零，不属于日常门禁。结果不能替代 arm64／Windows 11 验收，详见 [Windows x64 容器验收](../architecture/node-distribution-proposal.md#windows-x64-干净容器验收)。
 
 `build:node:native` 在任务内默认启用 x64 MSVC 静态 CRT，本地与 CI 共用；其他目标与独立 Cargo 命令不变。显式目标参数可用于动态诊断，但正式产物必须通过 `check:node:windows-crt` 的静态依赖检查。检查后的 DLL 不得重复构建；继续构建 TS、运行 Node 与类型合同，封存同一产物。手动 CI 参数 `compare_windows_crt` 才额外构建动态基线；日常只构建静态交付包。详见[静态 CRT 策略](../architecture/node-distribution-proposal.md#windows-x64-静态-crt)。
+
+`check:node:windows-arm64 -- <完整交付目录>` 审计封存 ARM64 PE 的架构、导入表和摘要，记录 CRT 依赖但不套用 x64 静态策略。现有 arm64 注册表任务追加最低 Node 消费检查并保存证据；有预装运行库的 runner 不代表干净系统，详见 [Windows arm64 兼容性门禁](../architecture/node-distribution-proposal.md#windows-arm64-兼容性门禁)。
 
 ### 依赖版本管理
 

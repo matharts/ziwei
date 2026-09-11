@@ -217,6 +217,22 @@ mise run check:node:windows -- <包含 batch.json 的完整交付目录> <新的
 
 Server Core 结果不能替代 Windows 11、arm64 或最低系统验收；双架构完整路径与官方依据见 [Windows 干净环境研究](../engineering/windows-clean-environment-research.md)。没有新增发布流程。
 
+## Windows arm64 兼容性门禁
+
+现有 `windows-11-arm` 注册表任务先运行 `check:node:windows-arm64`，再保留开发版本的消费测试并追加 Node 24.15.0 的 npm／pnpm 验收。它只消费同 commit／run／attempt 的完整交付包，不重新构建或打包，也不调整 arm64 的 CRT 链接方式。
+
+- **产物审计**：复用现有归档校验，核对完整目标集、批次、arm64 tarball 与二进制摘要。PE 解析器要求 ARM64（`0xaa64`）的 PE32+ DLL，拒绝 x64、ARM64EC、ARM64X 及截断或越界结构。普通和延迟导入从目录、section 和 descriptor 读取，不扫描任意字符串；延迟导入仅接受当前工具链使用的 RVA 形式。字段含义见 [Microsoft PE 格式](https://learn.microsoft.com/en-us/windows/win32/debug/pe-format)。
+- **运行库边界**：报告列出 `imports`、`delayImports` 与其中的 `crtImports`，允许保留当前动态 VC Runtime 依赖，不要求套用 x64 的静态策略。静态检查不证明这些 DLL 在用户机器上存在，也不验证递归依赖或运行时主动加载；现有 x64 静态检查仍固定检查 x64 产物。
+- **最低 Node 消费**：显式选择 Node 24.15.0，断言实际 `win32`／`arm64` 和 Node 版本，记录系统版本。复用同一注册表任务，在 npm／pnpm 下运行正常、禁用 optional、缺失及损坏四类场景，覆盖实际加载、ESM／require、建盘、查询和错误合同。预装开发工具及运行库的 GitHub runner 不是干净 Windows 环境；这个检查不承诺最低 Windows 版本，也不证明无需安装 VC Runtime。
+- **证据与门禁**：`windows-arm64-compatibility-<attempt>` 保存 `audit.json` 与最低 Node 的 `consumer.log`；审计报告含批次、二进制大小和 SHA-256。失败会使该注册表任务及最终 `verify` 失败，不使用 `continue-on-error`。未取消的失败任务仍尝试上传现有证据；审计未完成时，空输出不是有效报告，错误由 CI 日志保留。远端通过状态须对应本次实际执行的提交，不能沿用旧批次的通过结果。
+
+```sh
+mise run check:node:windows-arm64 -- <包含 batch.json 的完整交付目录>
+mise run --tool node@24.15.0 check:node:registry -- <同一完整交付目录>
+```
+
+产物审计可在其他宿主执行；上述注册表命令只验证执行它的实际平台。Windows arm64 的真实加载仍由对应 runner 验收，干净环境实测另行推进，不增加虚拟机、运行库安装或发布流程。[napi-rs 兼容性边界](https://napi.rs/docs/more/support-compatibility)
+
 ## 发布前剩余门槛
 
 GNU glibc 2.28 的同批验收已完成；[静态审计](../engineering/node-binary-compatibility.md)中其他平台的最低环境、内核与运行时依赖边界仍需实测。之后核验 npm scope 权限和正式发布流程并取得发布授权。其余七项逐一落实运行环境，WASI 另议。
