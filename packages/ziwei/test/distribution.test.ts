@@ -156,6 +156,30 @@ test.each([
   200_000,
 );
 
+test.each([
+  { manager: "npm", broken: false },
+  { manager: "pnpm", broken: false },
+  { manager: "npm", broken: true },
+  { manager: "pnpm", broken: true },
+])(
+  "Windows selected consumer runs only $manager and propagates native failure ($broken)",
+  ({ manager, broken }) => {
+    const result = execFileSync(
+      process.execPath,
+      [
+        fileURLToPath(new URL("./fixtures/registry-contract.ts", import.meta.url)),
+        `--windows-${manager}-only`,
+        ...(broken ? ["--broken-native"] : []),
+      ],
+      { ...options, timeout: 180_000 },
+    );
+    assert.equal(result.match(/registry-consumer-ok/g)?.length ?? 0, broken ? 0 : 4);
+    assert.match(result, /windows-selected-consumer-ok/);
+    assert.match(result, broken ? /registry-runtime-failure-ok/ : /registry-runtime-success-ok/);
+  },
+  200_000,
+);
+
 test("staging validates all eight target manifests and refuses incomplete or unknown sets", (t) => {
   const directory = mkdtempSync(join(tmpdir(), "ziwei-metadata-test-"));
   t.onTestFinished(() => rmSync(directory, { recursive: true, force: true }));
