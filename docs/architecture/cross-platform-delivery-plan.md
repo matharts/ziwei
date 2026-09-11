@@ -1,6 +1,6 @@
 # 跨平台完整交付计划
 
-状态：2026-09-12，`f38b0ea` 已验证 Wasm 工具安装修复；新增仿真的目录隔离修复 `87c5e66` 已让 s390x 完成双 Node／双客户端消费。ppc64le 的 npm 通过、pnpm 启动仍崩溃，候选总体验收未通过。其余七个原生候选平台、Wasm 与浏览器适配均属于完整交付目标。本文区分实现与实测状态，提交、推送和发布仍以用户授权为准。
+状态：2026-09-12，`f5961ab` 的[主 CI](https://github.com/matharts/ziwei/actions/runs/34646346959) 21 项任务全部通过，s390x 双 Node／双客户端仿真消费也通过。ppc64le 的 npm 通过，但 pnpm 直接启动仍触发空地址 `SIGSEGV`，候选总体验收未通过。其余七个原生候选平台、Wasm 与浏览器适配均属于完整交付目标。本文区分实现与实测状态，提交、推送和发布仍以用户授权为准。
 
 ## 范围与当前基线
 
@@ -151,4 +151,4 @@ Wasm 原始资源为 **124345 bytes**，SHA-256 为 `6c5d9ffbe51015c5dbcdc67f9e0
 
 用户已确认保持 Node 的 napi-rs 与浏览器的 wasm-bindgen 两条适配路径，不合并或迁移绑定。对照实验留在本地忽略目录，不进入分发包或本次提交；上述结果不改变平台支持声明。
 
-后续 `d8a30aa` 首次执行[ppc64le／s390x 仿真消费](../engineering/native-candidate-platforms.md#ppc64les390x-仿真消费)，暴露封存测试前置条件和 pnpm 启动问题。修复提交 `87c5e66` 的[候选 CI](https://github.com/matharts/ziwei/actions/runs/34643638388) 已使 s390x 完整通过，但 ppc64le 仍失败；当前增加同环境的直接启动与系统调用诊断，不把旧失败重标为通过。具体证据见[复验记录](../engineering/native-candidate-platforms.md#2026-09-12目录隔离复验与-ppc64le-启动诊断)。仿真不代替原生及最低系统检查；Android／OHOS 的具体 SDK Interface 和真实环境尚未确定。公共发布仍未授权。
+后续 `d8a30aa` 首次执行[ppc64le／s390x 仿真消费](../engineering/native-candidate-platforms.md#ppc64les390x-仿真消费)，暴露封存测试前置条件和 pnpm 启动问题。`87c5e66` 修复目录隔离，`32bdd39` 增加直接启动诊断，`f5961ab` 修复诊断超时边界。最新[候选 CI](https://github.com/matharts/ziwei/actions/runs/34646347068) 的 s390x 全部通过，但 ppc64le 仍因 pnpm 启动失败；直接启动也复现故障，已排除 Node 子进程调用是必要条件。具体证据与未确定的根因见[启动故障边界](../engineering/native-candidate-platforms.md#2026-09-12硬超时复验与启动故障边界)。仿真不代替原生及最低系统检查；Android／OHOS 的具体 SDK Interface 和真实环境尚未确定。公共发布仍未授权。

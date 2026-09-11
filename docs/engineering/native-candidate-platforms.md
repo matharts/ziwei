@@ -1,6 +1,6 @@
 # 七个原生候选平台：宿主、构建与验收矩阵
 
-状态：2026-09-12，提交 `87c5e66` 的七目标核心检查、三项 GNU addon 交叉构建／静态审计通过。s390x 已通过双 Node／双客户端的完整 QEMU 消费；ppc64le 的 npm 通过，pnpm 仍在版本探针崩溃，完整候选验收未通过。七目标仍属于用户要求的完整交付范围。现有八目标结论沿用 [Node 分发设计](../architecture/node-distribution-proposal.md)，不在本文重做。
+状态：2026-09-12，提交 `f5961ab` 的七目标核心检查、三项 GNU addon 交叉构建／静态审计通过。s390x 已通过双 Node／双客户端的完整 QEMU 消费；ppc64le 的 npm 通过，但同一 pnpm 二进制即使脱离 Node 子进程直接启动也会触发空地址 `SIGSEGV`。完整候选验收未通过，尚不能区分 pnpm 与 QEMU 的具体缺陷。七目标仍属于用户要求的完整交付范围。现有八目标结论沿用 [Node 分发设计](../architecture/node-distribution-proposal.md)，不在本文重做。
 
 候选实现包含 [静态审计](../../packages/ziwei/tools/compatibility.ts)、[候选封存与消费](../../packages/ziwei/tools/candidate.ts)、[仿真控制器](../../packages/ziwei/tools/candidate-runtime.ts) 和独立的[候选 CI](../../.github/workflows/native-candidates.yml)。不改正式目标 manifest、依赖或公开 API，不安装本机 SDK、虚拟机或设备工具，不申请云资源，不发布。下文的实施路径与工期是项目建议，不是上游支持承诺。
 
@@ -204,6 +204,19 @@ Node 候选的最低与开发 Node 测试均消费同一已封存 addon，不重
 控制器在失败后增加独立诊断：保持镜像、二进制、用户和隔离限制不变，从 `/tmp` 直接以 pnpm 为容器入口执行 `--version`，与 Node 子进程路径对照；第二次单独启用 `QEMU_STRACE` 留下系统调用轨迹。每个探针限制 30 秒、1 MiB 输出，使用独立容器名并清理；结果只附加到失败记录，不代替原消费结果、不使验收转绿。QEMU 用户态使用其自带的系统调用追踪，而非依赖客体 `ptrace` 的 strace。[QEMU 说明](https://www.qemu.org/docs/master/user/main.html#command-line-options)
 
 诊断提交 `32bdd39` 的[候选运行 `34645062105`](https://github.com/matharts/ziwei/actions/runs/34645062105) 中，s390x 再次完整通过，ppc64le 长时间未完成，运行被主动停止，不记作完成验证。检查发现控制器的默认超时只发送 `SIGTERM`；Docker 默认把信号转发给容器，目标进程可能忽略。真实子进程回归证明：忽略该信号后，超时不保证返回；改用 `SIGKILL` 终止本次 CLI 后才进入现有按名称强制清理容器的 `finally`。候选控制器统一使用此硬超时，并在消费与诊断阶段输出进度、增量保存报告。109 项工具测试通过；这修复诊断边界，不代表修复 pnpm 的原始崩溃。[Docker 信号代理](https://docs.docker.com/reference/cli/docker/container/run/)
+
+### 2026-09-12：硬超时复验与启动故障边界
+
+[候选运行 `34646347068`](https://github.com/matharts/ziwei/actions/runs/34646347068) 对应 `f5961ab44514866b734b69d1e9765b22f6d8beb1`，attempt 为 1，结论为失败：
+
+- 七项核心检查、三项 GNU 构建／静态审计及 s390x 双 Node／双客户端消费通过。ppc64le 的两版 Node 下 npm 通过，pnpm 仍在 `--version` 失败；未进入 pnpm 安装或 Ziwei 加载。
+- ppc64le 四个直接启动探针均未输出版本。无追踪与有追踪都先报告 `qemu: uncaught target signal 11`，随后由 30 秒硬超时终止 CLI；四个诊断容器和两个消费容器均记录清理成功。两个追踪均在 `sigaltstack` 调用后报告 `si_addr=NULL`，没有调用 Ziwei。
+- 这证明启动问题不以 Node 子进程调用为必要条件，但不能仅凭相邻系统调用判定 pnpm、Rust 运行时、glibc 或 QEMU 中哪一层有缺陷；轨迹中的 `ENOSYS` 也不单独作为根因。
+- pnpm 原始二进制为 47555344 bytes，SHA-256 为 `5e75d665ebf2d22a42ef136adcfc4822c939b060cad7cd0da9c6ccef77931b8f`，与固定官方归档一致。两目标的实验与消费报告已核对同一提交、run、attempt 和各自 receipt。
+
+同一代码提交的[主 CI `34646346959`](https://github.com/matharts/ziwei/actions/runs/34646346959) 21 项任务全部通过，包含正式八目标分发消费、Windows x64 干净容器和 Wasm／浏览器验证。该结果只对应此代码提交；后续仅同步文档的提交不重写已验收的 SHA。
+
+下一步应独立复现 pnpm／QEMU 启动问题并做单变量版本或环境对照；当前不修改引擎、跳过 pnpm、降低验收要求或扩大正式支持。未获得真机与最低系统证据前，s390x 也仍是候选。
 
 ### 2026-09-11：初轮实现
 
