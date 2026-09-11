@@ -292,13 +292,28 @@ export function observeCommand(
           "code" in result.error && typeof result.error.code === "string"
             ? result.error.code
             : undefined,
-        message: redactDiagnostic(result.error.message),
+        message: result.error.message,
       },
     }),
-    stdout: redactDiagnostic(result.stdout ?? ""),
-    stderr: redactDiagnostic(result.stderr ?? ""),
+    stdout: result.stdout ?? "",
+    stderr: result.stderr ?? "",
     elapsedMs: Math.round(performance.now() - start),
   };
+}
+
+function redactObservation(result: CommandObservation): CommandObservation {
+  return {
+    ...result,
+    ...(result.error && {
+      error: { ...result.error, message: redactDiagnostic(result.error.message) },
+    }),
+    stdout: redactDiagnostic(result.stdout),
+    stderr: redactDiagnostic(result.stderr),
+  };
+}
+
+function observeDiagnosticCommand(program: string, args: readonly string[], timeoutMs: number) {
+  return redactObservation(observeCommand(program, args, timeoutMs));
 }
 
 export async function waitForWindowsDocker(
@@ -315,7 +330,8 @@ export async function waitForWindowsDocker(
   while (now() < deadline) {
     const timeoutMs = Math.max(1, Math.floor(Math.min(10_000, deadline - now())));
     const result = probe(timeoutMs);
-    onAttempt({ ...result, attempt: ++attempt, timeoutMs });
+    // Reports contain redacted copies; parser/control flow always uses original command data.
+    onAttempt({ ...redactObservation(result), attempt: ++attempt, timeoutMs });
     if (now() > deadline) break;
     if (!result.error && result.status === 0) {
       const info = JSON.parse(result.stdout);
@@ -374,14 +390,14 @@ function dockerDiagnostics() {
         process.env[key] === undefined ? null : redactDiagnostic(process.env[key]),
       ]),
     ),
-    client: observeCommand("docker", ["--version"], 5_000),
-    context: observeCommand("docker", ["context", "show"], 5_000),
-    endpoint: observeCommand(
+    client: observeDiagnosticCommand("docker", ["--version"], 5_000),
+    context: observeDiagnosticCommand("docker", ["context", "show"], 5_000),
+    endpoint: observeDiagnosticCommand(
       "docker",
       ["context", "inspect", "--format", "{{json .Endpoints.docker.Host}}"],
       5_000,
     ),
-    host: observeCommand(
+    host: observeDiagnosticCommand(
       "powershell.exe",
       [
         "-NoProfile",

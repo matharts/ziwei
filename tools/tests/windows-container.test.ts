@@ -48,6 +48,28 @@ test("Docker readiness preserves an initial timeout and accepts later readiness"
   assert.equal(attempts.length, 2);
 });
 
+test("Docker readiness parses real command data before redacting report text", async () => {
+  const info = {
+    OSType: "windows",
+    Architecture: "x86_64",
+    Plugins: { Authorization: null },
+    diagnostic: "token=fixture-secret",
+  };
+  const records: string[] = [];
+  const host = await waitForWindowsDocker((attempt) => records.push(JSON.stringify(attempt)), {
+    probe: () =>
+      observeCommand(
+        process.execPath,
+        ["--eval", `process.stdout.write(${JSON.stringify(JSON.stringify(info))})`],
+        5_000,
+      ),
+  });
+  assert.equal(host.OSType, "windows");
+  assert.equal(host.Plugins.Authorization, null);
+  assert.equal(records.length, 1);
+  assert.doesNotMatch(records[0]!, /fixture-secret/);
+});
+
 test("Docker readiness bounds the whole wait and clips the final probe to the remaining time", async () => {
   let clock = 0;
   const limits: number[] = [];
@@ -131,14 +153,15 @@ test.each([
   assert.equal(observations, 1);
 });
 
-test("Docker diagnostics preserve process failures and timeouts without exposing credentials", () => {
+test("Command capture preserves failures and timeouts separately from diagnostic redaction", () => {
   const failure = observeCommand(
     process.execPath,
     ["--eval", 'process.stderr.write("token=fixture-secret"); process.exit(7)'],
     5_000,
   );
   assert.equal(failure.status, 7);
-  assert.equal(failure.stderr, "token=<REDACTED>");
+  assert.equal(failure.stderr, "token=fixture-secret");
+  assert.equal(redactDiagnostic(failure.stderr), "token=<REDACTED>");
   const timeout = observeCommand(process.execPath, ["--eval", "setInterval(() => {}, 1000)"], 150);
   assert.equal(timeout.error?.code, "ETIMEDOUT");
   assert.notEqual(timeout.status, 0);

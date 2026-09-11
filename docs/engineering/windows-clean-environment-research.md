@@ -147,3 +147,5 @@ GitHub larger runner 的自定义镜像可从干净 OS base image 生成，但�
 后续修复将 npm／pnpm 验收隔离：先完成 npm 分支，再准备并检查 pnpm；每个分支单独记录阶段、结果和错误，任一失败仍使 CI 失败。提交 `45c196c` 的 [CI 34557451358](https://github.com/matharts/ziwei/actions/runs/34557451358) 中，常规验收通过，但宿主首次 `docker info` 超时，尚未启动容器，不能据此评价分支隔离后的真实加载结果。
 
 两次任务的 runner 镜像分别为 `20260824.214.3` 和 `20260907.229.1`，官方清单中的 Docker 版本分别为 [29.1.5](https://github.com/actions/runner-images/blob/win25-vs2026/20260824.214/images/windows/Windows2025-VS2026-Readme.md) 与 [29.7.2](https://github.com/actions/runner-images/blob/win25-vs2026/20260907.229/images/windows/Windows2025-VS2026-Readme.md)。镜像变化不是根因证明；需要同一任务内的服务、连接目标和 daemon 事件证据。新增预检保留探测前后诊断与最多 120 秒的就绪探测记录，不自动重启或降级。等待和失败传播由本地回归检查，Windows 行为仍待新 CI 实测；详细边界见 [Windows x64 容器实验](../architecture/node-distribution-proposal.md#windows-x64-干净容器实验待远端验收)。
+
+诊断提交 `00d961e` 的 [CI 34559509252](https://github.com/matharts/ziwei/actions/runs/34559509252) 已记录 Docker／HNS／vmcompute 均运行、daemon 完成初始化且监听本地 named pipe；Docker 29.7.2 首次 `info` 在约 4 秒内返回。该次失败是诊断脱敏先于解析、改坏 JSON 的回归，不是 Docker 无响应。修复改为原始数据参与控制流、脱敏副本进入报告；原先超时的原因仍未确认，Windows 容器内的加载也尚未验收。
