@@ -44,6 +44,18 @@ mise run diagnose:pnpm -- --output <新的结果目录>
 
 `pnpm-repro-results-debug/gdb.json` 保存调试命令、寄存器、附近指令、调用栈、模块信息及清理结果；远端不支持的查询会保留原始报错，不将缺失映射视为完整现场。取证成功仍是启动失败，工作流保持失败状态。连接与进程有独立超时，结束后删除本次拥有的调试容器。
 
+接入方式依据 [QEMU 10.2.3 user-mode 文档](https://github.com/qemu/qemu/blob/v10.2.3/docs/user/main.rst)与 [GDB Unix socket 连接文档](https://sourceware.org/gdb/current/onlinedocs/gdb.html/Connecting.html)。GDB 禁用用户初始化、自动加载脚本和 debuginfod；通过远端读取本次容器内实际加载的库，不替换 guest 库或安装调试符号。
+
+提交 `964ba53` 的[首次取证 34683134549](https://github.com/matharts/ziwei/actions/runs/34683134549)与提交 `a06eb08` 的[调用点补充取证 34683297825](https://github.com/matharts/ziwei/actions/runs/34683297825)（均 attempt 1）均捕获到首次 SIGSEGV。实际调试器为 Ubuntu GDB `15.1-1ubuntu1~24.04.1`。两轮的普通／追踪基线仍失败，调试组与各自基线的 pnpm 摘要、QEMU 10.2.3、镜像和宿主内核一致；每轮两个环境采集容器、两个基线探针容器和一个调试容器均完成清理。
+
+现场证据：
+
+- 两轮 `PC = 0x104000000`、`LR = 0x10252d9e4`；该 PC 不在 `info proc mappings` 返回的任何映射中，PC 附近反汇编因此报告无法读取。
+- 补充取证在 `/runtime/pnpm` 的可执行映射内读取到 `0x10252d9e0: bl 0x104000000`，下一条指令为 `0x10252d9e4: nop`。异常目标与该直接分支的目标一致。
+- GDB 回溯为 `0x104000000 → 0x10252d9e4 → 0x10031610c → libc → __libc_start_main`；两个 pnpm 返回地址位于其 `.text` 范围，GDB 无法解析其函数名。模块与地址映射已取得，但缺少源码级调试信息。
+
+这确认了仿真现场中通向未映射地址的具体调用点，不等于已确定 pnpm 构建、链接或 QEMU 的根因。下一项应对照官方归档中的原始 ELF 指令及重定位，判断此分支是否已存在于发布字节中，再决定是否需要符号或真机对照；本轮不修补外部二进制、不改变候选门禁和正式支持范围。
+
 **应按真实调用方划分交付物，不把七个 Rust triple 都等同于七个 Node npm 平台。**
 
 - Linux armv7、ppc64le、s390x 和 FreeBSD x64：继续以现有 Node API 为目标，先解决运行时与测试客户端。
