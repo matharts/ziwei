@@ -30,6 +30,8 @@ test("GDB stops the first SIGSEGV without startup scripts or public ports", asyn
   for (const command of [
     "info registers",
     "x/24i $pc-32",
+    "x/24i $lr-48",
+    "x/16gx $r1",
     "bt 32",
     "info files",
     "info sharedlibrary",
