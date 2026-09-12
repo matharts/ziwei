@@ -30,6 +30,8 @@ mise run diagnose:pnpm -- --output <新的结果目录>
 
 工具通过 `--qemu baseline --pnpm comparison` 选择旧版，报告包含 `pnpmGroup` 和 `pnpmVersion`，正常退出且输出与所选版本严格相符才通过。未知样本或同时切换 QEMU／pnpm 会在创建输出前被拒绝；缺少基线 QEMU 身份也不执行 pnpm 对照。基线失败后仍执行旧版，但工作流不掩盖任何失败。版本对照结果须以实际 CI 报告为准；启动通过不等于完整安装和 Ziwei 消费通过。
 
+提交 `d4990dc` 的[pnpm 对照 34680533065](https://github.com/matharts/ziwei/actions/runs/34680533065)（attempt 1）已完成：12.4.1 与 12.4.0 的两类探针均出现 QEMU SIGSEGV，追踪均为 `si_addr=NULL`；四个容器均清理成功。两组报告的 QEMU 10.2.3 镜像／版本／注册信息、基础镜像、内核和标准化启动参数相同，实际 pnpm 二进制分别匹配各自固定摘要；QEMU 切换步骤未执行。诊断 CI 保留失败状态。结论仅为回退到 12.4.0 不能解决该环境中的故障，不确定 pnpm 或 QEMU 为根因，也没有新的 Ziwei 消费成功证据。后续可固定 QEMU 10.2.3 与 pnpm 12.4.1，只对照基础镜像；本轮未执行该环境对照，项目工具链保持不变。
+
 **应按真实调用方划分交付物，不把七个 Rust triple 都等同于七个 Node npm 平台。**
 
 - Linux armv7、ppc64le、s390x 和 FreeBSD x64：继续以现有 Node API 为目标，先解决运行时与测试客户端。
