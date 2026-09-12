@@ -36,6 +36,10 @@ mise run diagnose:pnpm -- --output <新的结果目录>
 
 两组在运行 pnpm 前均通过独立只读容器采集 `/etc/os-release`、`getconf GNU_LIBC_VERSION`、`/lib64/ld64.so.2` 的实际路径及版本，保存于 `environment`，并清理该容器。环境采集失败与 pnpm 崩溃分开记录，前者不冒充已复现原故障。这是完整用户态镜像对照，不是 glibc 单独版本实验；结果有差异也不能直接确定某个库为根因。正式候选／构建镜像、项目工具链和支持声明均不变。
 
+提交 `8a2dae0` 的[镜像对照 34682048330](https://github.com/matharts/ziwei/actions/runs/34682048330)（attempt 1）已完成。基线实际为 Debian 12、glibc `2.36-9+deb12u14`；对照实际为 Ubuntu 24.04.4、glibc `2.39-0ubuntu8.8`，两者加载器均解析到 `/usr/lib/powerpc64le-linux-gnu/ld64.so.2`。两组环境采集均通过，pnpm 的普通／追踪探针均触发 SIGSEGV，追踪均为 `si_addr=NULL`。报告核对确认 pnpm 字节、QEMU 镜像／版本／注册、宿主内核与其余启动参数相同；两个环境采集容器和四个 pnpm 容器均清理成功。CI 保留失败，未把环境采集通过当作 pnpm 可用。
+
+三轮对照均未得到启动成功样本，不能将故障确定为 pnpm、QEMU 或 glibc 的单方缺陷。下一步应获取指令地址／调用栈，或在真实 ppc64le 宿主运行同一二进制，区分仿真特有问题；不再无依据地扩大版本组合。本轮未配置调试器、真机资源或修改引擎／正式支持声明。
+
 **应按真实调用方划分交付物，不把七个 Rust triple 都等同于七个 Node npm 平台。**
 
 - Linux armv7、ppc64le、s390x 和 FreeBSD x64：继续以现有 Node API 为目标，先解决运行时与测试客户端。
