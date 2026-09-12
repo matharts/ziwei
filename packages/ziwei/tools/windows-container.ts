@@ -14,12 +14,31 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
 import { verifyRegistry, type RuntimeObservation } from "../test/fixtures/registry-consumer.ts";
+import { dockerDiagnostics, waitForWindowsDocker, type DockerAttempt } from "./windows-docker.ts";
+import {
+  installVcRuntime,
+  runtimeInventory,
+  verifyCleanWindowsRuntime,
+  verifyNodeZip,
+  verifyVcRuntime,
+  vcRuntime,
+  windowsBaseline,
+} from "./windows-runtime.ts";
 
 const root = fileURLToPath(new URL("../../..", import.meta.url));
+
+/** Complete source closure for the clean container; no workspace or generated dependencies. */
+export const windowsContainerSources = [
+  "package.json",
+  "packages/ziwei/package.json",
+  "packages/ziwei/tools/windows-container.ts",
+  "packages/ziwei/tools/windows-runtime.ts",
+  "packages/ziwei/tools/windows-docker.ts",
+  "packages/ziwei/test/fixtures/registry-consumer.ts",
+] as const;
 const readJson = (path: string) => JSON.parse(readFileSync(path, "utf8"));
 const save = (path: string, value: unknown) =>
   writeFileSync(path, JSON.stringify(value, null, 2) + "\n");
@@ -33,121 +52,6 @@ export const windowsScenarios = {
   "vc-runtime": { withVcRuntime: true, managers: ["npm", "pnpm"] },
 } as const;
 type WindowsScenario = keyof typeof windowsScenarios;
-
-export const windowsBaseline = {
-  // Microsoft Server Core LTSC 2025 manifest list, inspected 2026-09-10 (amd64 only).
-  image:
-    "mcr.microsoft.com/windows/servercore@sha256:e18a49cbc074dfaa8e106296d51cebd62bbf6effb999f134a5c48eed1c2334e1",
-  nodeVersion: "24.15.0",
-  nodeSha256: "cc5149eabd53779ce1e7bdc5401643622d0c7e6800ade18928a767e940bb0e62",
-  // OS components from both untouched containers in CI 34567870581, not added redistributables.
-  systemRuntimeDlls: [
-    {
-      path: "C:\\Windows\\System32\\msvcp110_win.dll",
-      sha256: "782e62872c751682bc220489b07db6b80820e3799416028630ad899fba113ae6",
-    },
-    {
-      path: "C:\\Windows\\System32\\msvcp60.dll",
-      sha256: "4b7d8e819274e42f4fd61a8f06ed6c8b5aaf9154a1881e2012da5a3200118b96",
-    },
-  ],
-} as const;
-
-export const vcRuntime = {
-  // Resolved from Microsoft's documented vc14 x64 permalink on 2026-09-11.
-  url: "https://download.visualstudio.microsoft.com/download/pr/ebdab8e5-1d7b-4d9f-a11b-cbb1720c3b12/843068991DAAA1F73AD9F6239BCE4D0F6A07A51F18C37EA2A867E9BECA71295C/VC_redist.x64.exe",
-  version: "14.51.36247.0",
-  sha256: "843068991daaa1f73ad9f6239bce4d0f6a07a51f18c37ea2a867e9beca71295c",
-} as const;
-
-export const vcRuntimeInstallArgs = [
-  "/install",
-  "/quiet",
-  "/norestart",
-  "/log",
-  "C:\\output\\vc-runtime-install.log",
-] as const;
-
-export function verifyVcRuntime(bytes: Buffer, expectedSha256: string = vcRuntime.sha256) {
-  const sha256 = createHash("sha256").update(bytes).digest("hex");
-  assert.equal(sha256, expectedSha256, "VC Runtime 安装器与固定摘要不符");
-  return { bytes: bytes.length, sha256 };
-}
-
-export function verifyVcRuntimeSignature(signature: {
-  status: string;
-  subject: string;
-  version: string;
-}) {
-  assert.equal(signature.status, "Valid", "VC Runtime 安装器签名无效");
-  assert.match(
-    signature.subject,
-    /(?:^|,\s*)CN=Microsoft Corporation(?:,|$)/,
-    "安装器必须由 Microsoft Corporation 签名",
-  );
-  assert.equal(signature.version, vcRuntime.version, "VC Runtime 安装器版本不符");
-}
-
-function installVcRuntime(onProgress: (evidence: Record<string, unknown>) => void) {
-  const installer = "C:\\input\\vc_redist.x64.exe";
-  const evidence: Record<string, unknown> = {
-    ...vcRuntime,
-    ...verifyVcRuntime(readFileSync(installer)),
-  };
-  onProgress(evidence);
-  const script = String.raw`
-$ErrorActionPreference = 'Stop'
-[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
-$path = 'C:\input\vc_redist.x64.exe'
-$signature = Get-AuthenticodeSignature -LiteralPath $path
-[ordered]@{
-  status = [string]$signature.Status
-  subject = $signature.SignerCertificate.Subject
-  thumbprint = $signature.SignerCertificate.Thumbprint
-  version = (Get-Item -LiteralPath $path).VersionInfo.FileVersion
-} | ConvertTo-Json -Compress
-`;
-  const result = observeCommand(
-    "powershell.exe",
-    [
-      "-NoProfile",
-      "-NonInteractive",
-      "-EncodedCommand",
-      Buffer.from(script, "utf16le").toString("base64"),
-    ],
-    30_000,
-  );
-  evidence.verification = redactObservation(result);
-  onProgress(evidence);
-  assert.ok(!result.error && result.status === 0, "无法验证 VC Runtime 安装器签名");
-  const signature = JSON.parse(result.stdout);
-  evidence.signature = signature;
-  onProgress(evidence);
-  verifyVcRuntimeSignature(signature);
-  const installation = observeCommand(installer, vcRuntimeInstallArgs, 180_000);
-  evidence.installation = redactObservation(installation);
-  evidence.rebootRequired = installation.status === 3010;
-  onProgress(evidence);
-  assert.ok(
-    !installation.error && (installation.status === 0 || installation.status === 3010),
-    "VC Runtime 安装失败",
-  );
-}
-
-export function verifyNodeZip(
-  bytes: Buffer,
-  sums: string,
-  expected: { nodeVersion: string; nodeSha256: string } = windowsBaseline,
-) {
-  const filename = `node-v${expected.nodeVersion}-win-x64.zip`;
-  const digest = createHash("sha256").update(bytes).digest("hex");
-  assert.equal(digest, expected.nodeSha256, "Node ZIP 与固定摘要不符");
-  assert.ok(
-    sums.split(/\r?\n/).some((line) => line.trim() === `${digest}  ${filename}`),
-    "Node ZIP 与官方 SHASUMS256.txt 不符",
-  );
-  return { filename, bytes: bytes.length, sha256: digest };
-}
 
 // Bootstrap only: the container has PowerShell, but no Node or development toolchain.
 export const windowsBootstrap = String.raw`
@@ -199,58 +103,6 @@ export function windowsContainerArgs(
       "utf16le",
     ).toString("base64"),
   ];
-}
-
-type RuntimeInventory = { dlls: { path: string; sha256?: string }[]; developmentTools: string[] };
-
-function runtimeInventory(): RuntimeInventory {
-  const script = String.raw`
-$ErrorActionPreference = 'Stop'
-$dlls = @(Get-ChildItem "$env:SystemRoot\System32" -File | Where-Object {
-  $_.Name -match '^(vcruntime\d.*|msvcp\d.*|msvcr\d.*|concrt\d.*|vcomp\d.*|vcamp\d.*|ucrtbase)\.dll$'
-} | ForEach-Object {
-  [ordered]@{ path = $_.FullName; version = $_.VersionInfo.FileVersion; sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash }
-})
-$tools = @(Get-Command cl.exe,msbuild.exe,rustc.exe -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source)
-$system = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion'
-[ordered]@{ architecture = $env:PROCESSOR_ARCHITECTURE; build = $system.CurrentBuild; ubr = $system.UBR; dlls = $dlls; developmentTools = $tools } | ConvertTo-Json -Depth 5 -Compress
-`;
-  return JSON.parse(
-    execFileSync(
-      "powershell.exe",
-      [
-        "-NoProfile",
-        "-NonInteractive",
-        "-EncodedCommand",
-        Buffer.from(script, "utf16le").toString("base64"),
-      ],
-      {
-        encoding: "utf8",
-        timeout: 30_000,
-      },
-    ),
-  );
-}
-
-/** Preserve the pinned OS components while rejecting added VC redistributables. */
-export function verifyCleanWindowsRuntime(inventory: RuntimeInventory) {
-  assert.deepEqual(inventory.developmentTools, [], "干净容器中不应存在开发工具链");
-  for (const { path, sha256 } of inventory.dlls) {
-    const name = path.split(/[\\/]/).at(-1)!;
-    const systemDll = windowsBaseline.systemRuntimeDlls.find(
-      (dll) => dll.path.split("\\").at(-1) === name.toLowerCase(),
-    );
-    if (systemDll) {
-      assert.equal(path.toLowerCase(), systemDll.path.toLowerCase(), "系统组件路径与固定基线不符");
-      assert.equal(sha256?.toLowerCase(), systemDll.sha256, "系统组件摘要与固定基线不符");
-      continue;
-    }
-    assert.ok(
-      /_clr0400\.dll$/i.test(name) ||
-        !/^(?:vcruntime|msvcp|msvcr|concrt|vcomp|vcamp)\d.*\.dll$/i.test(name),
-      `干净容器发现额外 VC Runtime：${path}`,
-    );
-  }
 }
 
 type ManagerCheck = {
@@ -409,181 +261,6 @@ async function consumeInsideContainer(scenario: WindowsScenario) {
   }
 }
 
-type CommandObservation = {
-  status: number | null;
-  signal: string | null;
-  error?: { code?: string; message: string };
-  stdout: string;
-  stderr: string;
-  elapsedMs: number;
-};
-
-type DockerAttempt = CommandObservation & { attempt: number; timeoutMs: number };
-
-export function redactDiagnostic(text: string): string {
-  for (const [key, value] of Object.entries(process.env)) {
-    if (/TOKEN|PASSWORD|SECRET|AUTHORIZATION|PRIVATE_KEY/i.test(key) && value && value.length >= 8)
-      text = text.replaceAll(value, "<REDACTED>");
-  }
-  return text
-    .replace(/\b(?:https?|tcp|ssh):\/\/[^\s"'<>]+/gi, (value) => {
-      try {
-        const url = new URL(value);
-        url.username = "";
-        url.password = "";
-        url.search = "";
-        url.hash = "";
-        return url.toString();
-      } catch {
-        return "<REDACTED-URL>";
-      }
-    })
-    .replace(/\b(Bearer|Basic)\s+[a-z0-9+/_=.-]+/gi, "$1 <REDACTED>")
-    .replace(
-      /((?:password|passwd|token|secret|authorization|api[_-]?key)["']?\s*[:=]\s*["']?)[^\s"',;}]+/gi,
-      "$1<REDACTED>",
-    );
-}
-
-export function observeCommand(
-  program: string,
-  args: readonly string[],
-  timeoutMs: number,
-): CommandObservation {
-  const start = performance.now();
-  const result = spawnSync(program, args, {
-    encoding: "utf8",
-    windowsHide: true,
-    timeout: timeoutMs,
-    maxBuffer: 256 * 1024,
-  });
-  return {
-    status: result.status,
-    signal: result.signal,
-    ...(result.error && {
-      error: {
-        code:
-          "code" in result.error && typeof result.error.code === "string"
-            ? result.error.code
-            : undefined,
-        message: result.error.message,
-      },
-    }),
-    stdout: result.stdout ?? "",
-    stderr: result.stderr ?? "",
-    elapsedMs: Math.round(performance.now() - start),
-  };
-}
-
-function redactObservation(result: CommandObservation): CommandObservation {
-  return {
-    ...result,
-    ...(result.error && {
-      error: { ...result.error, message: redactDiagnostic(result.error.message) },
-    }),
-    stdout: redactDiagnostic(result.stdout),
-    stderr: redactDiagnostic(result.stderr),
-  };
-}
-
-function observeDiagnosticCommand(program: string, args: readonly string[], timeoutMs: number) {
-  return redactObservation(observeCommand(program, args, timeoutMs));
-}
-
-export async function waitForWindowsDocker(
-  onAttempt: (attempt: DockerAttempt) => void,
-  {
-    probe = (timeoutMs: number) =>
-      observeCommand("docker", ["info", "--format", "{{json .}}"], timeoutMs),
-    now = () => performance.now(),
-    pause = (ms: number) => delay(ms),
-  } = {},
-) {
-  const deadline = now() + 120_000;
-  let attempt = 0;
-  while (now() < deadline) {
-    const timeoutMs = Math.max(1, Math.floor(Math.min(10_000, deadline - now())));
-    const result = probe(timeoutMs);
-    // Reports contain redacted copies; parser/control flow always uses original command data.
-    onAttempt({ ...redactObservation(result), attempt: ++attempt, timeoutMs });
-    if (now() > deadline) break;
-    if (!result.error && result.status === 0) {
-      const info = JSON.parse(result.stdout);
-      assert.equal(info.OSType, "windows", "要求 Windows Docker daemon");
-      assert.equal(info.Architecture, "x86_64", "要求 x64 Docker daemon");
-      return info;
-    }
-    assert.notEqual(result.error?.code, "ENOENT", "找不到 docker 可执行文件");
-    assert.notEqual(result.error?.code, "ENOBUFS", "Docker 诊断输出超出限制");
-    const remaining = deadline - now();
-    if (remaining <= 0) break;
-    await pause(Math.min(2_000, remaining));
-  }
-  throw new Error("Docker 在 120 秒内未就绪，详见 dockerAttempts 与 dockerDiagnostics");
-}
-
-// Read-only host evidence. Never start/restart services or include process command lines.
-export const dockerDiagnosticsScript = String.raw`
-$ErrorActionPreference = 'Stop'
-$ProgressPreference = 'SilentlyContinue'
-[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
-$services = @('docker', 'hns', 'vmcompute' | ForEach-Object {
-  $name = $_
-  try {
-    $service = Get-Service -Name $name -ErrorAction Stop
-    [ordered]@{ name = $name; status = [string]$service.Status; startType = [string]$service.StartType }
-  } catch { [ordered]@{ name = $name; error = $_.Exception.Message } }
-})
-$processes = @(Get-Process -Name dockerd -ErrorAction SilentlyContinue | ForEach-Object {
-  $process = $_
-  try { [ordered]@{ id = $process.Id; path = $process.Path; startedAt = $process.StartTime.ToUniversalTime().ToString('o') } }
-  catch { [ordered]@{ id = $process.Id; error = $_.Exception.Message } }
-})
-$since = (Get-Date).AddMinutes(-15)
-$events = @(foreach ($source in @(
-  @{ LogName = 'Application'; ProviderName = 'docker'; StartTime = $since },
-  @{ LogName = 'System'; ProviderName = 'Service Control Manager'; StartTime = $since }
-)) {
-  try {
-    Get-WinEvent -FilterHashtable $source -MaxEvents 30 -ErrorAction Stop |
-      Where-Object { $source.LogName -eq 'Application' -or $_.Message -match '(?i)docker|hns|vmcompute' } |
-      ForEach-Object { [ordered]@{ time = $_.TimeCreated.ToUniversalTime().ToString('o'); id = $_.Id; level = $_.Level; message = $_.Message } }
-  } catch { [ordered]@{ log = $source.LogName; error = $_.Exception.Message } }
-})
-[ordered]@{ services = $services; processes = $processes; events = $events } | ConvertTo-Json -Depth 6 -Compress
-`;
-
-function dockerDiagnostics() {
-  return {
-    observedAt: new Date().toISOString(),
-    runnerImage: { name: process.env.ImageOS, version: process.env.ImageVersion },
-    // Only connection-related settings; never dump the environment or Docker config.json.
-    connection: Object.fromEntries(
-      ["DOCKER_HOST", "DOCKER_CONTEXT", "DOCKER_TLS_VERIFY", "DOCKER_API_VERSION"].map((key) => [
-        key,
-        process.env[key] === undefined ? null : redactDiagnostic(process.env[key]),
-      ]),
-    ),
-    client: observeDiagnosticCommand("docker", ["--version"], 5_000),
-    context: observeDiagnosticCommand("docker", ["context", "show"], 5_000),
-    endpoint: observeDiagnosticCommand(
-      "docker",
-      ["context", "inspect", "--format", "{{json .Endpoints.docker.Host}}"],
-      5_000,
-    ),
-    host: observeDiagnosticCommand(
-      "powershell.exe",
-      [
-        "-NoProfile",
-        "-NonInteractive",
-        "-EncodedCommand",
-        Buffer.from(dockerDiagnosticsScript, "utf16le").toString("base64"),
-      ],
-      10_000,
-    ),
-  };
-}
-
 type ScenarioCheck = { name: WindowsScenario; passed: boolean; error?: string };
 
 /** Every selected scenario is required; a failure must not hide later evidence. */
@@ -680,12 +357,7 @@ async function runContainer(directory: string, output: string, compareVcRuntime:
       docker: info.ServerVersion,
     };
     report.stage = "stage-inputs";
-    for (const file of [
-      "package.json",
-      "packages/ziwei/package.json",
-      "packages/ziwei/tools/windows-container.ts",
-      "packages/ziwei/test/fixtures/registry-consumer.ts",
-    ]) {
+    for (const file of windowsContainerSources) {
       const target = join(temporary, "source", file);
       mkdirSync(dirname(target), { recursive: true });
       copyFileSync(join(root, file), target);

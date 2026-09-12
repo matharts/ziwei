@@ -1,28 +1,76 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { test } from "@rstest/core";
 
 import {
-  dockerDiagnosticsScript,
-  observeCommand,
-  redactDiagnostic,
-  verifyCleanWindowsRuntime,
   verifyWindowsConsumers,
-  verifyNodeZip,
-  verifyVcRuntime,
-  verifyVcRuntimeSignature,
   verifyWindowsScenarios,
-  vcRuntime,
-  vcRuntimeInstallArgs,
-  waitForWindowsDocker,
-  windowsBaseline,
+  windowsContainerSources,
   windowsBootstrap,
   windowsContainerArgs,
   windowsScenarios,
 } from "../../packages/ziwei/tools/windows-container.ts";
+import {
+  dockerDiagnosticsScript,
+  observeCommand,
+  redactDiagnostic,
+  waitForWindowsDocker,
+} from "../../packages/ziwei/tools/windows-docker.ts";
+import {
+  verifyCleanWindowsRuntime,
+  verifyNodeZip,
+  verifyVcRuntime,
+  verifyVcRuntimeSignature,
+  vcRuntime,
+  vcRuntimeInstallArgs,
+  windowsBaseline,
+} from "../../packages/ziwei/tools/windows-runtime.ts";
+
+test("Clean Windows container source closure imports without workspace dependencies", () => {
+  const root = fileURLToPath(new URL("../..", import.meta.url));
+  const temporary = mkdtempSync(join(tmpdir(), "ziwei-windows-source-"));
+  try {
+    for (const file of windowsContainerSources) {
+      const target = join(temporary, file);
+      mkdirSync(dirname(target), { recursive: true });
+      copyFileSync(join(root, file), target);
+    }
+    const entry = pathToFileURL(join(temporary, "packages/ziwei/tools/windows-container.ts")).href;
+    execFileSync(
+      process.execPath,
+      ["--input-type=module", "--eval", `await import(${JSON.stringify(entry)})`],
+      {
+        cwd: temporary,
+        timeout: 10_000,
+        env: { ...process.env, NODE_PATH: "", NODE_OPTIONS: "" },
+      },
+    );
+    // Prove the closure check detects a forgotten staged module after a structural move.
+    rmSync(join(temporary, "packages/ziwei/tools/windows-runtime.ts"));
+    assert.throws(
+      () =>
+        execFileSync(
+          process.execPath,
+          ["--input-type=module", "--eval", `await import(${JSON.stringify(entry)})`],
+          {
+            cwd: temporary,
+            timeout: 10_000,
+            env: { ...process.env, NODE_PATH: "", NODE_OPTIONS: "" },
+            stdio: "pipe",
+          },
+        ),
+      /ERR_MODULE_NOT_FOUND/,
+    );
+  } finally {
+    rmSync(temporary, { recursive: true, force: true });
+  }
+});
 
 test("Clean npm rejects ordinary VC runtime DLLs and development tools", () => {
   const clean = {

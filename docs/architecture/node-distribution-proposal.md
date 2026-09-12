@@ -221,6 +221,8 @@ mise run --tool node@24.15.0 check:node:registry -- <同一完整交付目录>
 
 现有 Windows 双架构 runner 继续验证实际包消费；`Windows x64 clean consumers` 额外检查不继承宿主开发软件的消费环境。正式门禁区分 Ziwei 的运行要求与 pnpm 自身的先决条件，不增加最低 Windows 版本承诺。
 
+工具职责分为三个 Module：`windows-container.ts` 编排材料暂存、容器与消费场景；`windows-runtime.ts` 管理固定运行环境、Node／VC Runtime 材料校验、容器内安装和运行库盘点；`windows-docker.ts` 管理命令观察、脱敏、Docker 就绪及只读宿主取证。容器源码清单显式包含三个文件，隔离导入测试验证无需 workspace 依赖；拆分不改变报告结构、默认场景或验收条件。
+
 - **输入与环境**：[实验工具](../../packages/ziwei/tools/windows-container.ts)在 Windows x64 Docker 宿主运行，固定 Microsoft Server Core LTSC 2025 的 manifest digest，使用 process isolation。仅复制两个 manifest、必要的 TypeScript 测试文件及完整批次到临时只读挂载，结果目录单独可写；不挂载宿主 Node、运行库、Rust、MSVC 或 workspace 依赖。
 - **Docker 预检**：就绪探测窗口最多 120 秒，单次 `docker info` 最多 10 秒，两次之间最多等待 2 秒；末次探测与等待按剩余预算裁剪。缺少可执行文件、输出超限、无效 JSON 或错误 OS／CPU 立即失败。`experiment.json.dockerAttempts` 逐次保存耗时、超时预算、退出状态和输出。探测前后另以 5～10 秒的独立命令限时记录客户端版本、当前 context／endpoint、三个服务（`docker`、`hns`、`vmcompute`）、`dockerd` 进程和近 15 分钟的相关 Windows 事件；每个事件来源最多取 30 条。诊断采集时间不计入 120 秒就绪窗口。
 - **诊断边界**：只读宿主状态，不启动或重启服务、不切换 context、不降级 Docker。命令输出限制为 256 KiB，上传前过滤已知敏感环境值、认证字段与 URL 凭据／查询参数；不读取完整环境、进程命令行或 Docker 凭据文件。解析和就绪判定使用原始命令数据，报告只持有独立的脱敏副本；报告中的 stdout／stderr 是诊断文本，不保证保留其原始结构。诊断命令自身的失败也保留在报告中，不代替真实就绪判定。Windows runner 的额外测试实际执行同一 PowerShell 诊断脚本；本地模拟测试只证明等待、退出和证据保留机制。

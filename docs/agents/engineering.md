@@ -44,6 +44,8 @@ Node 任务通过 `pnpm exec` 执行，因此仍先经过开发版本校验；�
 
 路径使用原生 realpath 比较。CI 在各平台包测试前执行，不触发性能测量；本机通过不能替代 Windows 实机验收。工具测试只信任自己创建的临时 mise 配置，不修改全局信任列表。Rslib 隔离夹具显式提供 TypeScript 依赖，不依赖工具 bin shim 注入的 `NODE_PATH`。
 
+跨平台工具合同不调用 Linux 专用 shell。此类检查放在 `tools/tests/linux`，由 `check:node:tools:linux` 显式执行，并作为主 CI Linux 原生任务的必需步骤；误在非 Linux 宿主执行会明确失败，不静默跳过。外部 pnpm／QEMU 复现位于 `packages/ziwei/tools/diagnostics`，由独立手动工作流运行；纯参数和失败分类测试仍保留在跨平台工具组。
+
 ## Node 构建与类型检查
 
 ### Lint 与格式化
@@ -112,17 +114,18 @@ Rslib 负责 JS 与声明输出；`tsconfig.json` 保留严格类型规则并设
 
 ## Node 测试框架
 
-Node 侧统一使用锁定版本的 `@rstest/core`（JavaScript 框架，不是 Rust 的 rstest crate），由根 [rstest.config.ts](../../rstest.config.ts) 聚合三个互不重叠的项目。配置不导入产品源码；`node:assert/strict` 断言保持不变。
+Node 侧统一使用锁定版本的 `@rstest/core`（JavaScript 框架，不是 Rust 的 rstest crate），由根 [rstest.config.ts](../../rstest.config.ts) 聚合四个互不重叠的项目。配置不导入产品源码；`node:assert/strict` 断言保持不变。
 
 | 项目 | 范围 | 根目录命令 |
 | --- | --- | --- |
 | `ziwei` | 包 API、原生边界、Worker、GC 与独立打包消费端 | `mise run check:node`：先构建，再运行测试与 TypeScript 合同 |
 | `node-tools` | 开发命令、运行时选择、参数、退出码与 Rslib 构建合同 | `mise run check:node:tools` |
+| `node-tools-linux` | 需要 Linux 宿主和 shell 的诊断合同 | `mise run check:node:tools:linux`；Linux CI 必跑 |
 | `node-bench` | 基准记录器与 CLI 合同；只有 smoke，不设性能门禁 | `mise run check:node:bench` |
 
 ### 选择测试
 
-已经构建时，可用 `mise run test:node -- -t palace` 筛选测试，或 `mise run test:node -- --watch` 持续运行；复杂参数使用上文直接 CLI 入口。`mise exec -- pnpm exec -- node node_modules/@rstest/core/bin/rstest.js list --filesOnly` 核验三个项目的发现范围，TypeScript 负例仍由独立 `tsc` 任务编译，不作为运行时测试。
+已经构建时，可用 `mise run test:node -- -t palace` 筛选测试，或 `mise run test:node -- --watch` 持续运行；复杂参数使用上文直接 CLI 入口。`mise exec -- pnpm exec -- node node_modules/@rstest/core/bin/rstest.js list --filesOnly` 核验各项目的发现范围，TypeScript 负例仍由独立 `tsc` 任务编译，不作为运行时测试。
 
 ### 隔离与串行执行
 

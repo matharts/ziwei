@@ -11,7 +11,7 @@ import {
   candidateRuntimes,
   runCandidateCommand,
   verifyDownload,
-} from "./candidate-runtime.ts";
+} from "../candidate-runtime.ts";
 import { capturePnpmCrash } from "./pnpm-gdb.ts";
 
 export const pnpmReproVersion = "12.4.1";

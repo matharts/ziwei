@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 
 import { test } from "@rstest/core";
 
 import { candidateImage } from "../../packages/ziwei/tools/candidate-runtime.ts";
-import { pnpmGdbArgs } from "../../packages/ziwei/tools/pnpm-gdb.ts";
+import { pnpmGdbArgs } from "../../packages/ziwei/tools/diagnostics/pnpm-gdb.ts";
 import {
   classifyPnpmProbe,
   imageComparison,
@@ -18,7 +18,7 @@ import {
   qemuComparisons,
   qemuComparison,
   verifyQemuVersion,
-} from "../../packages/ziwei/tools/pnpm-repro.ts";
+} from "../../packages/ziwei/tools/diagnostics/pnpm-repro.ts";
 
 test("GDB stops the first SIGSEGV without startup scripts or public ports", async () => {
   const args = pnpmGdbArgs("/tmp/pnpm", "/tmp/debug/gdb.sock");
@@ -50,10 +50,12 @@ test("GDB stops the first SIGSEGV without startup scripts or public ports", asyn
 });
 
 test("pnpm reproduction mounts only the binary and changes only tracing", () => {
-  const plain = pnpmReproArgs("owned-test", "/tmp/pnpm", false);
-  const traced = pnpmReproArgs("owned-test", "/tmp/pnpm", true);
+  // Host paths use host semantics; the container destination remains POSIX.
+  const binary = join("fixture with spaces", "pnpm");
+  const plain = pnpmReproArgs("owned-test", binary, false);
+  const traced = pnpmReproArgs("owned-test", binary, true);
   assert.equal(plain.filter((arg) => arg === "--mount").length, 1);
-  assert.ok(plain.includes("type=bind,src=/tmp/pnpm,dst=/runtime/pnpm,readonly"));
+  assert.ok(plain.includes(`type=bind,src=${resolve(binary)},dst=/runtime/pnpm,readonly`));
   assert.deepEqual(plain.slice(-2), [candidateImage, "--version"]);
   assert.ok(!plain.includes("--rm")); // Explicit cleanup retains the stopped container until collected.
   const traceIndex = traced.indexOf("QEMU_STRACE=1");
@@ -83,7 +85,6 @@ test("image comparison changes only the pinned guest image and rejects mixed var
     runPnpmRepro("unused", undefined, "baseline", "comparison"),
     /镜像对照必须固定/,
   );
-  execFileSync("bash", ["-n"], { input: imageEnvironmentScript });
   assert.match(imageEnvironmentScript, /getconf GNU_LIBC_VERSION/);
   assert.match(imageEnvironmentScript, /readlink -f \/lib64\/ld64.so.2/);
 });
@@ -136,6 +137,18 @@ test("pnpm diagnostic workflow is manual, bounded and independent of candidate b
   assert.match(workflow, /timeout-minutes: 10/);
   assert.match(workflow, /mise run diagnose:pnpm -- --output pnpm-repro-results/);
   assert.match(workflow, /if: \$\{\{ !cancelled\(\) \}\}/);
+});
+
+test("Linux-only shell checks remain mandatory in native Linux CI", () => {
+  const workflow = readFileSync(new URL("../../.github/workflows/ci.yml", import.meta.url), "utf8");
+  assert.match(
+    workflow,
+    /name: Linux diagnostic contracts\n\s+if: runner.os == 'Linux'\n\s+run: mise run check:node:tools:linux/,
+  );
+  const tasks = readFileSync(new URL("../../mise.toml", import.meta.url), "utf8");
+  assert.match(tasks, /\[tasks\."check:node:tools:linux"\][\s\S]*?--project node-tools-linux/);
+  const nativeJob = workflow.split("  native-tests:\n")[1]!.split("\n  musl-distribution:")[0]!;
+  assert.doesNotMatch(nativeJob, /continue-on-error/);
 });
 
 test("QEMU comparisons reject unknown groups and mismatched runtime versions", () => {

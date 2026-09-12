@@ -37,5 +37,12 @@ export default defineConfig({
       include: ["bench/*.test.ts"],
       testTimeout: 180_000,
     }),
+    defineInlineProject({
+      name: "node-tools-linux",
+      root: fileURLToPath(new URL(".", import.meta.url)),
+      testEnvironment: "node",
+      include: ["tools/tests/linux/*.test.ts"],
+      testTimeout: 60_000,
+    }),
   ],
 });

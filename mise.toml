@@ -175,7 +175,11 @@ run = "pnpm exec -- node packages/ziwei/tools/candidate-runtime.ts"
 
 [tasks."diagnose:pnpm"]
 description = "独立复现 ppc64le pnpm 启动；无需构建产物或安装依赖"
-run = "node packages/ziwei/tools/pnpm-repro.ts"
+run = "node packages/ziwei/tools/diagnostics/pnpm-repro.ts"
+
+[tasks."check:node:tools:linux"]
+description = "验证 Linux 专用诊断脚本；与跨平台工具合同分开，Linux CI 必跑"
+run = "pnpm exec -- node node_modules/@rstest/core/bin/rstest.js --project node-tools-linux"
 
 [tasks."check:typescript"]
 description = "严格检查 TypeScript 配置、测试和工具；需先构建 Node 包"

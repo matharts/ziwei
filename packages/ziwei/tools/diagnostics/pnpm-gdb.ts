@@ -3,7 +3,7 @@ import { mkdirSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { setTimeout } from "node:timers/promises";
 
-import { runCandidateCommand } from "./candidate-runtime.ts";
+import { runCandidateCommand } from "../candidate-runtime.ts";
 
 export function pnpmGdbArgs(binary: string, socket: string) {
   assert.match(socket, /^\/[\w/.-]+$/, "GDB socket 必须是安全的绝对路径");

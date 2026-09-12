@@ -60,6 +60,9 @@ jobs:
         run: mise exec -- pnpm install --frozen-lockfile
       - name: Node development runtime contracts
         run: mise run check:node:tools
+      - name: Linux diagnostic contracts
+        if: runner.os == 'Linux'
+        run: mise run check:node:tools:linux
       # Optional diagnostic baseline; normal builds use the shared mise static policy.
       - name: Record Windows x64 dynamic CRT baseline
         if: matrix.target == 'x86_64-pc-windows-msvc' && inputs.compare_windows_crt == true
