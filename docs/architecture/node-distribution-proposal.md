@@ -231,6 +231,8 @@ mise run --tool node@24.15.0 check:node:registry -- <同一完整交付目录>
 - **消费与证据**：传入当前 commit／run／attempt，由原有注册表夹具核对完整 tarball 集合与摘要。npm／pnpm 分别使用独立注册表实例和冷缓存，各自执行正常、禁用 optional、缺失、损坏四个场景。pnpm 版本检查只属于 pnpm 分支；一个分支失败后仍执行另一个分支。`consumer.json.checks` 分别保留包管理器、阶段、通过状态、加载观察和错误消息／退出信息；`consumers` 保留平铺的加载观察。正常加载探针额外记录 Node 版本、CPU 和实际加载模块路径；即使原生导入失败也尽量保存该观察。仅提取报告必要字段，不上传完整 Node diagnostic report 中的环境变量。
 - **失败传播**：Docker 不可用、镜像不兼容、材料校验失败或真实消费失败都使任务失败。正式门禁要求 `npm-clean` 与 `pnpm-runtime` 均通过；一个失败后仍执行另一个并保留证据。手动对照仍执行 `baseline`／`vc-runtime` 两组的全部 npm／pnpm 检查，失败如实传播，不把已知 pnpm 启动失败视为成功。根 `experiment.json.mode` 区分 `acceptance`／`comparison`，`scenarios` 汇总结果；每组独立子目录保存 `consumer.json`、退出／清理信息 `container.json` 及 stdout／stderr。任务纳入最终 `verify`，不使用 `continue-on-error`。结果目录不可覆盖；退出或超时后只清理本轮容器与临时输入，保留结果。工作流被取消时不保证报告上传。
 
+CI 在验收前用独立的 PowerShell 步骤检查已有 `docker` 服务，仅在未运行时启动；步骤最多两分钟，服务缺失或启动失败直接阻断验收。不安装组件、不重启服务、不更改启动类型。随后仍由原有 Docker 预检验证 daemon 就绪；诊断工具自身保持只读。
+
 在具备 Windows x64 Docker daemon 的宿主运行：
 
 ```sh

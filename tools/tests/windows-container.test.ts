@@ -530,6 +530,22 @@ test("Windows acceptance failures are retained and cannot bypass the final CI ch
   const job = workflow.split("  windows-clean-consumer:\n")[1]!.split(/\n  [\w-]+:\n/)[0]!;
   assert.match(job, /needs: node-distribution/);
   assert.match(job, /runs-on: windows-2025/);
+  const startup = job
+    .split("      - name: Start existing Windows Docker service\n")[1]!
+    .split("      - name:")[0]!;
+  assert.match(startup, /shell: pwsh/);
+  assert.match(startup, /timeout-minutes: 2/);
+  assert.match(startup, /Get-Service -Name docker -ErrorAction Stop/);
+  assert.match(startup, /if \(\$service.Status -ne 'Running'\)/);
+  assert.match(startup, /Start-Service -InputObject \$service -ErrorAction Stop/);
+  assert.doesNotMatch(
+    startup,
+    /Restart-Service|Set-Service|Install-|SilentlyContinue|continue-on-error/,
+  );
+  assert.ok(
+    job.indexOf("- name: Start existing Windows Docker service") <
+      job.indexOf("- name: Verify clean npm and runtime-equipped pnpm"),
+  );
   assert.match(job, /mise run check:node:windows -- /);
   assert.doesNotMatch(job, /--compare-vc-runtime/);
   assert.match(job, /name: node-distribution-\$\{\{ github\.run_attempt \}\}/);

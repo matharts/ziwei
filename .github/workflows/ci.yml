@@ -439,6 +439,14 @@ jobs:
         with:
           install_args: node pnpm
           cache: false
+      - name: Start existing Windows Docker service
+        shell: pwsh
+        timeout-minutes: 2
+        run: |
+          $service = Get-Service -Name docker -ErrorAction Stop
+          if ($service.Status -ne 'Running') {
+            Start-Service -InputObject $service -ErrorAction Stop
+          }
       - name: Verify clean npm and runtime-equipped pnpm against the sealed cohort
         shell: pwsh
         run: |
