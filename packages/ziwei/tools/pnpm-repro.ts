@@ -14,7 +14,24 @@ import {
 } from "./candidate-runtime.ts";
 
 export const pnpmReproVersion = "12.4.1";
-const archiveUrl = `https://registry.npmjs.org/@pnpm/exe.linux-ppc64/-/exe.linux-ppc64-${pnpmReproVersion}.tgz`;
+export const pnpmComparisons = {
+  baseline: {
+    version: pnpmReproVersion,
+    integrity: candidateRuntimes["powerpc64le-unknown-linux-gnu"].pnpmIntegrity,
+    binarySha256: "5e75d665ebf2d22a42ef136adcfc4822c939b060cad7cd0da9c6ccef77931b8f",
+  },
+  comparison: {
+    version: "12.4.0",
+    integrity:
+      "7shJ4WytyvBEdjrbIDqx2gDAH7sr0HBDooTmnNQ7DlzcLeeGi7Yqir7gJjOTm6s9S1cVnT56IwmqnnwQMP1HTQ==",
+    binarySha256: "c388a29f3bc6a25dd0806dcbdd47c489efda6f306e3d0724ede1be5066de0d1a",
+  },
+} as const;
+
+export function pnpmComparison(value: string) {
+  assert.ok(value === "baseline" || value === "comparison", "未知 pnpm 对照组");
+  return pnpmComparisons[value];
+}
 
 // Official deploy images, resolved on 2026-09-12. These are diagnostic pins only.
 export const qemuComparisons = {
@@ -80,13 +97,16 @@ export function pnpmReproArgs(name: string, binary: string, trace: boolean) {
   ];
 }
 
-export function classifyPnpmProbe(result: {
-  code: number | string | null;
-  signal: string | null;
-  stdout: string;
-  stderr: string;
-}) {
-  if (result.code === 0 && result.signal === null && result.stdout.trim() === pnpmReproVersion)
+export function classifyPnpmProbe(
+  result: {
+    code: number | string | null;
+    signal: string | null;
+    stdout: string;
+    stderr: string;
+  },
+  expectedVersion: string = pnpmReproVersion,
+) {
+  if (result.code === 0 && result.signal === null && result.stdout.trim() === expectedVersion)
     return "passed";
   if (/qemu: uncaught target signal 11 \(Segmentation fault\)/.test(result.stderr))
     return "qemu-sigsegv";
@@ -94,8 +114,11 @@ export function classifyPnpmProbe(result: {
   return "failed";
 }
 
-export async function runPnpmRepro(output: string, qemu?: string) {
+export async function runPnpmRepro(output: string, qemu?: string, pnpm = "baseline") {
   const selectedQemu = qemu === undefined ? undefined : qemuComparison(qemu);
+  const selectedPnpm = pnpmComparison(pnpm);
+  assert.ok(pnpm === "baseline" || qemu === "baseline", "pnpm 对照必须固定基线 QEMU");
+  const archiveUrl = `https://registry.npmjs.org/@pnpm/exe.linux-ppc64/-/exe.linux-ppc64-${selectedPnpm.version}.tgz`;
   assert.equal(process.platform, "linux", "复现要求 Linux x64 Docker/QEMU 宿主");
   assert.equal(process.arch, "x64", "复现要求 Linux x64 Docker/QEMU 宿主");
   mkdirSync(output); // Never overwrite previous evidence.
@@ -110,6 +133,8 @@ export async function runPnpmRepro(output: string, qemu?: string) {
     attempt: process.env.GITHUB_RUN_ATTEMPT ?? null,
     hostKernel: release(),
     qemuGroup: qemu ?? null,
+    pnpmGroup: pnpm,
+    pnpmVersion: selectedPnpm.version,
     probes: [],
   };
   const save = () =>
@@ -164,21 +189,13 @@ export async function runPnpmRepro(output: string, qemu?: string) {
       chunks.push(Buffer.from(chunk));
     }
     const archive = Buffer.concat(chunks);
-    report.archiveSha256 = verifyDownload(
-      archive,
-      candidateRuntimes["powerpc64le-unknown-linux-gnu"].pnpmIntegrity,
-      "sha512",
-    );
+    report.archiveSha256 = verifyDownload(archive, selectedPnpm.integrity, "sha512");
     const binary = execFileSync("tar", ["-xzOf", "-", "package/pnpm"], {
       input: archive,
       timeout: 30_000,
       maxBuffer: 128 * 1024 * 1024,
     });
-    report.binarySha256 = verifyDownload(
-      binary,
-      "5e75d665ebf2d22a42ef136adcfc4822c939b060cad7cd0da9c6ccef77931b8f",
-      "sha256",
-    );
+    report.binarySha256 = verifyDownload(binary, selectedPnpm.binarySha256, "sha256");
     const binaryPath = join(temporary, "pnpm");
     writeFileSync(binaryPath, binary);
     chmodSync(binaryPath, 0o755);
@@ -230,7 +247,7 @@ export async function runPnpmRepro(output: string, qemu?: string) {
           stderr: failure.stderr ?? failure.message,
         });
       } finally {
-        probe.outcome = classifyPnpmProbe(probe);
+        probe.outcome = classifyPnpmProbe(probe, selectedPnpm.version);
         save();
         try {
           await runCandidateCommand("docker", ["rm", "--force", name], { timeout: 15_000 });
@@ -257,8 +274,8 @@ export async function runPnpmRepro(output: string, qemu?: string) {
 
 if (import.meta.main) {
   const { values } = parseArgs({
-    options: { output: { type: "string" }, qemu: { type: "string" } },
+    options: { output: { type: "string" }, qemu: { type: "string" }, pnpm: { type: "string" } },
   });
   assert.ok(values.output, "需要 --output 新结果目录");
-  await runPnpmRepro(resolve(values.output), values.qemu);
+  await runPnpmRepro(resolve(values.output), values.qemu, values.pnpm);
 }

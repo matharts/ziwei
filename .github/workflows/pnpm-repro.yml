@@ -2,6 +2,15 @@ name: pnpm ppc64le startup diagnostic
 
 on:
   workflow_dispatch:
+    inputs:
+      comparison:
+        description: Single variable to compare
+        type: choice
+        required: true
+        default: pnpm
+        options:
+          - pnpm
+          - qemu
 
 permissions:
   contents: read
@@ -26,11 +35,14 @@ jobs:
           cache-image: false
       - name: Reproduce with baseline QEMU 10.2.3
         run: mise run diagnose:pnpm -- --output pnpm-repro-results-baseline --qemu baseline
+      - name: Compare pnpm 12.4.0 with unchanged QEMU 10.2.3
+        if: ${{ !cancelled() && inputs.comparison == 'pnpm' && steps.baseline-qemu.outcome == 'success' }}
+        run: mise run diagnose:pnpm -- --output pnpm-repro-results-pnpm --qemu baseline --pnpm comparison
       # Same runner and guest inputs. Unregister the fixed interpreter before switching.
       # Privilege is limited to binfmt registration on this disposable CI host.
       - name: Remove only the previous ppc64le interpreter
         id: reset-qemu
-        if: ${{ !cancelled() && steps.baseline-qemu.outcome == 'success' }}
+        if: ${{ !cancelled() && inputs.comparison == 'qemu' && steps.baseline-qemu.outcome == 'success' }}
         run: |
           docker run --privileged --rm tonistiigi/binfmt@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0 --uninstall qemu-ppc64le
           test ! -e /proc/sys/fs/binfmt_misc/qemu-ppc64le
@@ -52,5 +64,6 @@ jobs:
           path: |
             pnpm-repro-results-baseline/
             pnpm-repro-results-comparison/
+            pnpm-repro-results-pnpm/
           if-no-files-found: error
           retention-days: 7

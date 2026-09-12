@@ -20,11 +20,15 @@ mise run diagnose:pnpm -- --output <新的结果目录>
 
 提交 `0e67a96` 的[独立复现 34678957733](https://github.com/matharts/ziwei/actions/runs/34678957733)（attempt 1）已保留原故障：普通与追踪探针均报告 QEMU SIGSEGV，后者记录 `si_addr=NULL`；二进制摘要与候选验收相同，两次容器均完成清理。该结果说明故障不依赖 Ziwei 构建／挂载，但不确定 pnpm 或 QEMU 的具体根因。
 
-工作流在同一 runner 上顺序运行 QEMU 10.2.3 基线与 10.2.1 对照。两组使用相同的 pnpm、基础镜像、隔离参数和普通／追踪探针；切换前只卸载 `qemu-ppc64le` 并确认注册项消失，再安装对照版本。基线失败不会跳过对照，也不会被后续步骤的成功掩盖；切换失败则不执行错误版本的对照。`--qemu baseline`／`--qemu comparison` 只校验和记录已安装环境，不自行安装解释器；报告增加实际版本、固定镜像、内核和 binfmt 注册信息。
+手动触发时选择 `comparison=qemu`，工作流在同一 runner 上顺序运行 QEMU 10.2.3 基线与 10.2.1 对照。两组使用相同的 pnpm、基础镜像、隔离参数和普通／追踪探针；切换前只卸载 `qemu-ppc64le` 并确认注册项消失，再安装对照版本。基线失败不会跳过对照，也不会被后续步骤的成功掩盖；切换失败则不执行错误版本的对照。`--qemu baseline`／`--qemu comparison` 只校验和记录已安装环境，不自行安装解释器；报告增加实际版本、固定镜像、内核和 binfmt 注册信息。
 
 两份预编译 QEMU 镜像使用[上游 10.2.3 发布](https://github.com/tonistiigi/binfmt/releases/tag/deploy%2Fv10.2.3-68)与[上游 10.2.1 发布](https://github.com/tonistiigi/binfmt/releases/tag/deploy%2Fv10.2.1-65)，摘要分别为 `400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0` 与 `d3b963f787999e6c0219a48dba02978769286ff61a5f4d26245cb6a6e5567ea3`。这比较的是发布包，不是同一编译环境下仅切换 QEMU 源码的实验；即使结果不同，也不能据此认定某条源码变更为根因。项目工具链和正式候选 CI 的 QEMU 摘要不变。
 
 提交 `70f6d3d` 的[版本对照 34679576528](https://github.com/matharts/ziwei/actions/runs/34679576528)（attempt 1）已完成：实际 QEMU 分别为 10.2.3 与 10.2.1；两组均在普通／追踪探针触发 SIGSEGV，追踪均记录 `si_addr=NULL`，四个测试容器均清理成功。报告核对确认 pnpm 归档和二进制摘要、基础镜像、内核 `6.17.0-1022-azure`、binfmt `POCF` 注册及启动参数一致（仅本轮临时路径和容器名不同）。任务保留失败状态，没有以“复现成功”代替“程序可用”。结论仅为回退到该 10.2.1 发布包不能解决故障；两版共有的 QEMU 问题仍未排除，不能据此确定 pnpm 为根因。下一项为固定 QEMU／基础镜像，只对照 pnpm 测试客户端版本，尚未执行。
+
+手动入口默认选择 `comparison=pnpm`：在同一 runner 和 QEMU 10.2.3 下顺序运行 pnpm 12.4.1 与 12.4.0，不卸载或更换解释器。官方 [ppc64le 包](https://registry.npmjs.org/@pnpm/exe.linux-ppc64)本轮只有 12.4.0／12.4.1 两个非占位发布，12.3.4 的版本查询为 404，故选 12.4.0；不借用其他架构或不同包装方式。12.4.0 归档按官方 SHA-512 校验，解出二进制为 47554968 字节，SHA-256 为 `c388a29f3bc6a25dd0806dcbdd47c489efda6f306e3d0724ede1be5066de0d1a`。这些固定值仅用于诊断，不修改 mise、devEngines 或锁文件。
+
+工具通过 `--qemu baseline --pnpm comparison` 选择旧版，报告包含 `pnpmGroup` 和 `pnpmVersion`，正常退出且输出与所选版本严格相符才通过。未知样本或同时切换 QEMU／pnpm 会在创建输出前被拒绝；缺少基线 QEMU 身份也不执行 pnpm 对照。基线失败后仍执行旧版，但工作流不掩盖任何失败。版本对照结果须以实际 CI 报告为准；启动通过不等于完整安装和 Ziwei 消费通过。
 
 **应按真实调用方划分交付物，不把七个 Rust triple 都等同于七个 Node npm 平台。**
 

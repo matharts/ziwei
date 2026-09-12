@@ -7,6 +7,9 @@ import { candidateImage } from "../../packages/ziwei/tools/candidate-runtime.ts"
 import {
   classifyPnpmProbe,
   pnpmReproArgs,
+  pnpmComparison,
+  pnpmComparisons,
+  runPnpmRepro,
   qemuComparisons,
   qemuComparison,
   verifyQemuVersion,
@@ -85,9 +88,49 @@ test("QEMU comparison uses one runner, exact pins and failure-independent ordere
   assert.ok(workflow.indexOf("--qemu baseline") < workflow.indexOf("--uninstall qemu-ppc64le"));
   assert.ok(workflow.indexOf("--uninstall qemu-ppc64le") < workflow.indexOf("id: comparison-qemu"));
   assert.match(workflow, /test ! -e \/proc\/sys\/fs\/binfmt_misc\/qemu-ppc64le/);
-  for (const step of ["baseline-qemu", "reset-qemu", "comparison-qemu"]) {
+  assert.ok(
+    workflow.includes("inputs.comparison == 'qemu' && steps.baseline-qemu.outcome == 'success'"),
+  );
+  for (const step of ["reset-qemu", "comparison-qemu"]) {
     assert.ok(
       workflow.includes(`if: \u0024{{ !cancelled() && steps.${step}.outcome == 'success' }}`),
     );
   }
+});
+
+test("pnpm comparison validates the selected version and rejects mixed variables before Docker", async () => {
+  assert.equal(pnpmComparison("baseline"), pnpmComparisons.baseline);
+  assert.equal(pnpmComparison("comparison"), pnpmComparisons.comparison);
+  assert.throws(() => pnpmComparison("latest"), /未知 pnpm/);
+  const old = { code: 0, signal: null, stdout: "12.4.0\n", stderr: "" };
+  assert.equal(classifyPnpmProbe(old, pnpmComparisons.comparison.version), "passed");
+  assert.equal(classifyPnpmProbe(old), "failed");
+  assert.equal(classifyPnpmProbe({ ...old, code: 1 }, "12.4.0"), "failed");
+  await assert.rejects(runPnpmRepro("unused", "comparison", "comparison"), /必须固定/);
+  await assert.rejects(runPnpmRepro("unused", undefined, "comparison"), /必须固定/);
+  assert.notEqual(pnpmComparisons.baseline.binarySha256, pnpmComparisons.comparison.binarySha256);
+  for (const config of Object.values(pnpmComparisons)) {
+    assert.match(config.binarySha256, /^[a-f0-9]{64}$/);
+    assert.equal(Buffer.from(config.integrity, "base64").length, 64);
+  }
+});
+
+test("pnpm workflow mode keeps QEMU fixed and still executes after a failed baseline", () => {
+  const workflow = readFileSync(
+    new URL("../../.github/workflows/pnpm-repro.yml", import.meta.url),
+    "utf8",
+  );
+  assert.match(workflow, /default: pnpm/);
+  assert.ok(
+    workflow.includes(
+      "!cancelled() && inputs.comparison == 'pnpm' && steps.baseline-qemu.outcome == 'success'",
+    ),
+  );
+  assert.ok(
+    workflow.includes("--output pnpm-repro-results-pnpm --qemu baseline --pnpm comparison"),
+  );
+  assert.ok(
+    workflow.indexOf("--qemu baseline --pnpm comparison") <
+      workflow.indexOf("--uninstall qemu-ppc64le"),
+  );
 });
