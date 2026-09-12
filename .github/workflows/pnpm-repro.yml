@@ -1,0 +1,35 @@
+name: pnpm ppc64le startup diagnostic
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  reproduce:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
+        with:
+          install_args: node
+          cache: false
+      - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
+        with:
+          image: tonistiigi/binfmt@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0
+          platforms: ppc64le
+          cache-image: false
+      - name: Reproduce without Ziwei builds or artifacts
+        run: mise run diagnose:pnpm -- --output pnpm-repro-results
+      - name: Preserve startup evidence on failure
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: pnpm-repro-${{ github.sha }}-${{ github.run_attempt }}
+          path: pnpm-repro-results/
+          if-no-files-found: error
+          retention-days: 7

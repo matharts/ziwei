@@ -173,6 +173,10 @@ run = "pnpm exec -- node packages/ziwei/tools/candidate.ts --mode pack"
 description = "在 Linux x64 Docker/QEMU 中消费同批候选；只记录仿真证据"
 run = "pnpm exec -- node packages/ziwei/tools/candidate-runtime.ts"
 
+[tasks."diagnose:pnpm"]
+description = "独立复现 ppc64le pnpm 启动；无需构建产物或安装依赖"
+run = "node packages/ziwei/tools/pnpm-repro.ts"
+
 [tasks."check:typescript"]
 description = "严格检查 TypeScript 配置、测试和工具；需先构建 Node 包"
 run = "pnpm exec -- node node_modules/typescript/bin/tsc --project tsconfig.json"

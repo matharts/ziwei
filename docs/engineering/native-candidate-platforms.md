@@ -6,6 +6,18 @@
 
 ## 结论与推荐
 
+### 独立 pnpm 启动诊断
+
+[手动诊断工作流](../../.github/workflows/pnpm-repro.yml)独立于候选矩阵，无需构建 Ziwei、下载候选产物或安装 workspace 依赖。在已注册 ppc64le QEMU 的 Linux x64 Docker 宿主运行：
+
+```sh
+mise run diagnose:pnpm -- --output <新的结果目录>
+```
+
+[诊断工具](../../packages/ziwei/tools/pnpm-repro.ts)复用候选固定镜像与 pnpm 12.4.1 归档摘要，并再次核对解出的二进制 SHA-256。容器只挂载该二进制，在 `/tmp` 直接执行 `pnpm --version`；不挂载 Ziwei、候选 tarball 或外置 Node。先执行普通探针，再仅增加 `QEMU_STRACE=1`，各有 30 秒硬超时及独立容器清理。
+
+`experiment.json` 保存提交／run／attempt、输入摘要、镜像检查、实际参数、stdout／stderr、退出信号及清理结果。正确版本且正常退出才通过；QEMU SIGSEGV、超时、基础设施错误和清理失败均使任务失败，失败报告仍上传。这是启动诊断，不是候选平台验收。此缩减用例是否保留原故障须由实际运行确认；未确认前不做版本对照，也不声称已经定位 pnpm 或 QEMU 的根因。
+
 **应按真实调用方划分交付物，不把七个 Rust triple 都等同于七个 Node npm 平台。**
 
 - Linux armv7、ppc64le、s390x 和 FreeBSD x64：继续以现有 Node API 为目标，先解决运行时与测试客户端。
