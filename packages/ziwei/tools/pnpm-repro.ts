@@ -12,6 +12,7 @@ import {
   runCandidateCommand,
   verifyDownload,
 } from "./candidate-runtime.ts";
+import { capturePnpmCrash } from "./pnpm-gdb.ts";
 
 export const pnpmReproVersion = "12.4.1";
 export const pnpmComparisons = {
@@ -137,7 +138,12 @@ export async function runPnpmRepro(
   qemu?: string,
   pnpm = "baseline",
   image = "baseline",
+  debug = false,
 ) {
+  assert.ok(
+    !debug || (qemu === "baseline" && pnpm === "baseline" && image === "baseline"),
+    "GDB 取证必须固定全部基线",
+  );
   const selectedQemu = qemu === undefined ? undefined : qemuComparison(qemu);
   const selectedPnpm = pnpmComparison(pnpm);
   assert.ok(pnpm === "baseline" || qemu === "baseline", "pnpm 对照必须固定基线 QEMU");
@@ -282,6 +288,14 @@ export async function runPnpmRepro(
       }
     }
     assert.equal(environment.cleanup, "removed", "环境采集容器清理失败");
+    if (debug) {
+      await capturePnpmCrash(
+        output,
+        temporary,
+        binaryPath,
+        pnpmReproArgs(`pnpm-gdb-${randomUUID()}`, binaryPath, false),
+      );
+    }
     const probes: Array<{ outcome: string; cleanup: string }> = [];
     report.probes = probes;
     for (const trace of [false, true]) {
@@ -352,8 +366,9 @@ if (import.meta.main) {
       qemu: { type: "string" },
       pnpm: { type: "string" },
       image: { type: "string" },
+      debug: { type: "boolean", default: false },
     },
   });
   assert.ok(values.output, "需要 --output 新结果目录");
-  await runPnpmRepro(resolve(values.output), values.qemu, values.pnpm, values.image);
+  await runPnpmRepro(resolve(values.output), values.qemu, values.pnpm, values.image, values.debug);
 }

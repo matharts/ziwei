@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 import { test } from "@rstest/core";
 
 import { candidateImage } from "../../packages/ziwei/tools/candidate-runtime.ts";
+import { pnpmGdbArgs } from "../../packages/ziwei/tools/pnpm-gdb.ts";
 import {
   classifyPnpmProbe,
   imageComparison,
@@ -18,6 +19,33 @@ import {
   qemuComparison,
   verifyQemuVersion,
 } from "../../packages/ziwei/tools/pnpm-repro.ts";
+
+test("GDB stops the first SIGSEGV without startup scripts or public ports", async () => {
+  const args = pnpmGdbArgs("/tmp/pnpm", "/tmp/debug/gdb.sock");
+  assert.ok(args.includes("--nx"));
+  assert.ok(args.includes("set auto-load off"));
+  assert.ok(args.includes("target remote /tmp/debug/gdb.sock"));
+  assert.ok(args.includes("handle SIGSEGV stop print nopass"));
+  assert.equal(args.filter((arg) => arg === "continue").length, 1);
+  for (const command of [
+    "info registers",
+    "x/24i $pc-32",
+    "bt 32",
+    "info files",
+    "info sharedlibrary",
+    "info proc mappings",
+  ])
+    assert.ok(args.includes(command));
+  assert.throws(() => pnpmGdbArgs("/tmp/pnpm", "/tmp/socket\ncontinue"));
+  await assert.rejects(
+    runPnpmRepro("unused", "comparison", "baseline", "baseline", true),
+    /固定全部基线/,
+  );
+  const workflow = readFileSync(".github/workflows/pnpm-repro.yml", "utf8");
+  assert.match(workflow, /inputs.comparison == 'debug'/);
+  assert.match(workflow, /--qemu baseline --debug/);
+  assert.match(workflow, /pnpm-repro-results-debug\//);
+});
 
 test("pnpm reproduction mounts only the binary and changes only tracing", () => {
   const plain = pnpmReproArgs("owned-test", "/tmp/pnpm", false);

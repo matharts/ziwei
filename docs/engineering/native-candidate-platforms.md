@@ -40,6 +40,10 @@ mise run diagnose:pnpm -- --output <新的结果目录>
 
 三轮对照均未得到启动成功样本，不能将故障确定为 pnpm、QEMU 或 glibc 的单方缺陷。下一步应获取指令地址／调用栈，或在真实 ppc64le 宿主运行同一二进制，区分仿真特有问题；不再无依据地扩大版本组合。本轮未配置调试器、真机资源或修改引擎／正式支持声明。
 
+后续现场取证使用手动工作流 `comparison=debug`：先运行原始基线，再在同一临时 runner 安装发行版 `gdb-multiarch`（实际版本写入证据），通过 QEMU 10.2.3 的 Unix socket 接口捕获首次 guest `SIGSEGV`。不开放 TCP 端口，不改变 pnpm／QEMU／容器镜像或项目工具链。
+
+`pnpm-repro-results-debug/gdb.json` 保存调试命令、寄存器、附近指令、调用栈、模块信息及清理结果；远端不支持的查询会保留原始报错，不将缺失映射视为完整现场。取证成功仍是启动失败，工作流保持失败状态。连接与进程有独立超时，结束后删除本次拥有的调试容器。
+
 **应按真实调用方划分交付物，不把七个 Rust triple 都等同于七个 Node npm 平台。**
 
 - Linux armv7、ppc64le、s390x 和 FreeBSD x64：继续以现有 Node API 为目标，先解决运行时与测试客户端。

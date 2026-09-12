@@ -12,6 +12,7 @@ on:
           - pnpm
           - qemu
           - image
+          - debug
 
 permissions:
   contents: read
@@ -39,6 +40,15 @@ jobs:
       - name: Compare pnpm 12.4.0 with unchanged QEMU 10.2.3
         if: ${{ !cancelled() && inputs.comparison == 'pnpm' && steps.baseline-qemu.outcome == 'success' }}
         run: mise run diagnose:pnpm -- --output pnpm-repro-results-pnpm --qemu baseline --pnpm comparison
+      - name: Install diagnostic debugger on disposable runner
+        id: debugger
+        if: ${{ !cancelled() && inputs.comparison == 'debug' && steps.baseline-qemu.outcome == 'success' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends gdb-multiarch
+      - name: Capture first guest SIGSEGV with unchanged baseline
+        if: ${{ !cancelled() && steps.debugger.outcome == 'success' }}
+        run: mise run diagnose:pnpm -- --output pnpm-repro-results-debug --qemu baseline --debug
       - name: Compare Ubuntu userspace with unchanged QEMU and pnpm
         if: ${{ !cancelled() && inputs.comparison == 'image' && steps.baseline-qemu.outcome == 'success' }}
         run: mise run diagnose:pnpm -- --output pnpm-repro-results-image --qemu baseline --image comparison
@@ -70,5 +80,6 @@ jobs:
             pnpm-repro-results-comparison/
             pnpm-repro-results-pnpm/
             pnpm-repro-results-image/
+            pnpm-repro-results-debug/
           if-no-files-found: error
           retention-days: 7
