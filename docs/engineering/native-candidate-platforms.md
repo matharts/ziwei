@@ -24,6 +24,8 @@ mise run diagnose:pnpm -- --output <新的结果目录>
 
 两份预编译 QEMU 镜像使用[上游 10.2.3 发布](https://github.com/tonistiigi/binfmt/releases/tag/deploy%2Fv10.2.3-68)与[上游 10.2.1 发布](https://github.com/tonistiigi/binfmt/releases/tag/deploy%2Fv10.2.1-65)，摘要分别为 `400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0` 与 `d3b963f787999e6c0219a48dba02978769286ff61a5f4d26245cb6a6e5567ea3`。这比较的是发布包，不是同一编译环境下仅切换 QEMU 源码的实验；即使结果不同，也不能据此认定某条源码变更为根因。项目工具链和正式候选 CI 的 QEMU 摘要不变。
 
+提交 `70f6d3d` 的[版本对照 34679576528](https://github.com/matharts/ziwei/actions/runs/34679576528)（attempt 1）已完成：实际 QEMU 分别为 10.2.3 与 10.2.1；两组均在普通／追踪探针触发 SIGSEGV，追踪均记录 `si_addr=NULL`，四个测试容器均清理成功。报告核对确认 pnpm 归档和二进制摘要、基础镜像、内核 `6.17.0-1022-azure`、binfmt `POCF` 注册及启动参数一致（仅本轮临时路径和容器名不同）。任务保留失败状态，没有以“复现成功”代替“程序可用”。结论仅为回退到该 10.2.1 发布包不能解决故障；两版共有的 QEMU 问题仍未排除，不能据此确定 pnpm 为根因。下一项为固定 QEMU／基础镜像，只对照 pnpm 测试客户端版本，尚未执行。
+
 **应按真实调用方划分交付物，不把七个 Rust triple 都等同于七个 Node npm 平台。**
 
 - Linux armv7、ppc64le、s390x 和 FreeBSD x64：继续以现有 Node API 为目标，先解决运行时与测试客户端。
