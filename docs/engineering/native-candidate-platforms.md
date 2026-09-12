@@ -32,6 +32,10 @@ mise run diagnose:pnpm -- --output <新的结果目录>
 
 提交 `d4990dc` 的[pnpm 对照 34680533065](https://github.com/matharts/ziwei/actions/runs/34680533065)（attempt 1）已完成：12.4.1 与 12.4.0 的两类探针均出现 QEMU SIGSEGV，追踪均为 `si_addr=NULL`；四个容器均清理成功。两组报告的 QEMU 10.2.3 镜像／版本／注册信息、基础镜像、内核和标准化启动参数相同，实际 pnpm 二进制分别匹配各自固定摘要；QEMU 切换步骤未执行。诊断 CI 保留失败状态。结论仅为回退到 12.4.0 不能解决该环境中的故障，不确定 pnpm 或 QEMU 为根因，也没有新的 Ziwei 消费成功证据。后续可固定 QEMU 10.2.3 与 pnpm 12.4.1，只对照基础镜像；本轮未执行该环境对照，项目工具链保持不变。
 
+手动选择 `comparison=image` 时，只替换用户态镜像：基线保持原 Node 镜像，对照为[官方 Ubuntu 24.04](https://hub.docker.com/_/ubuntu)，固定索引摘要 `224a1869083a311ef3f13648a154ba79832fbef6364d31493642ca03082da254`；核验时其 ppc64le manifest 为 `c53b1d54990013dd174e1d9baf4996b3dec93f3d92343fe10d2b6d610642a3a7`。两组固定 QEMU 10.2.3、pnpm 12.4.1 和所有探针参数，仍在同一 runner 顺序执行，不安装软件。`--qemu baseline --image comparison` 选择对照；混用其他 QEMU／pnpm 样本在创建输出前失败。
+
+两组在运行 pnpm 前均通过独立只读容器采集 `/etc/os-release`、`getconf GNU_LIBC_VERSION`、`/lib64/ld64.so.2` 的实际路径及版本，保存于 `environment`，并清理该容器。环境采集失败与 pnpm 崩溃分开记录，前者不冒充已复现原故障。这是完整用户态镜像对照，不是 glibc 单独版本实验；结果有差异也不能直接确定某个库为根因。正式候选／构建镜像、项目工具链和支持声明均不变。
+
 **应按真实调用方划分交付物，不把七个 Rust triple 都等同于七个 Node npm 平台。**
 
 - Linux armv7、ppc64le、s390x 和 FreeBSD x64：继续以现有 Node API 为目标，先解决运行时与测试客户端。

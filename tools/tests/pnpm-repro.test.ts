@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 
 import { test } from "@rstest/core";
@@ -6,6 +7,9 @@ import { test } from "@rstest/core";
 import { candidateImage } from "../../packages/ziwei/tools/candidate-runtime.ts";
 import {
   classifyPnpmProbe,
+  imageComparison,
+  imageComparisons,
+  imageEnvironmentScript,
   pnpmReproArgs,
   pnpmComparison,
   pnpmComparisons,
@@ -26,6 +30,46 @@ test("pnpm reproduction mounts only the binary and changes only tracing", () => 
   traced.splice(traceIndex - 1, 2);
   assert.deepEqual(traced, plain);
   assert.throws(() => pnpmReproArgs("owned-test", "/tmp/a,b", false), /逗号/);
+});
+
+test("image comparison changes only the pinned guest image and rejects mixed variables", async () => {
+  assert.equal(imageComparison("baseline"), candidateImage);
+  assert.equal(imageComparison("comparison"), imageComparisons.comparison);
+  assert.throws(() => imageComparison("latest"), /未知基础镜像/);
+  const baseline = pnpmReproArgs("owned", "/tmp/pnpm", false);
+  const alternate = pnpmReproArgs("owned", "/tmp/pnpm", false, "comparison");
+  assert.equal(alternate.at(-2), imageComparisons.comparison);
+  alternate[alternate.length - 2] = candidateImage;
+  assert.deepEqual(alternate, baseline);
+  await assert.rejects(
+    runPnpmRepro("unused", "comparison", "baseline", "comparison"),
+    /镜像对照必须固定/,
+  );
+  await assert.rejects(
+    runPnpmRepro("unused", "baseline", "comparison", "comparison"),
+    /镜像对照必须固定/,
+  );
+  await assert.rejects(
+    runPnpmRepro("unused", undefined, "baseline", "comparison"),
+    /镜像对照必须固定/,
+  );
+  execFileSync("bash", ["-n"], { input: imageEnvironmentScript });
+  assert.match(imageEnvironmentScript, /getconf GNU_LIBC_VERSION/);
+  assert.match(imageEnvironmentScript, /readlink -f \/lib64\/ld64.so.2/);
+});
+
+test("image workflow mode holds QEMU and pnpm at baseline", () => {
+  const workflow = readFileSync(
+    new URL("../../.github/workflows/pnpm-repro.yml", import.meta.url),
+    "utf8",
+  );
+  assert.ok(
+    workflow.includes("inputs.comparison == 'image' && steps.baseline-qemu.outcome == 'success'"),
+  );
+  assert.ok(
+    workflow.includes("--output pnpm-repro-results-image --qemu baseline --image comparison"),
+  );
+  assert.ok(workflow.includes("pnpm-repro-results-image/"));
 });
 
 test("pnpm reproduction separates correct output, crashes, kills and infrastructure failures", () => {

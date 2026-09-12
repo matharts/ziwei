@@ -33,6 +33,23 @@ export function pnpmComparison(value: string) {
   return pnpmComparisons[value];
 }
 
+export const imageComparisons = {
+  baseline: candidateImage,
+  comparison: "ubuntu@sha256:224a1869083a311ef3f13648a154ba79832fbef6364d31493642ca03082da254",
+} as const;
+
+export function imageComparison(value: string) {
+  assert.ok(value === "baseline" || value === "comparison", "未知基础镜像对照组");
+  return imageComparisons[value];
+}
+
+export const imageEnvironmentScript = [
+  "cat /etc/os-release",
+  "getconf GNU_LIBC_VERSION",
+  "readlink -f /lib64/ld64.so.2",
+  "/lib64/ld64.so.2 --version",
+].join("\n");
+
 // Official deploy images, resolved on 2026-09-12. These are diagnostic pins only.
 export const qemuComparisons = {
   baseline: {
@@ -60,7 +77,8 @@ export function verifyQemuVersion(stdout: string, expected: string) {
   );
 }
 
-export function pnpmReproArgs(name: string, binary: string, trace: boolean) {
+export function pnpmReproArgs(name: string, binary: string, trace: boolean, image = "baseline") {
+  const selectedImage = imageComparison(image);
   assert.ok(!binary.includes(","), "Docker 挂载路径不可包含逗号");
   return [
     "run",
@@ -92,7 +110,7 @@ export function pnpmReproArgs(name: string, binary: string, trace: boolean) {
     "/tmp",
     "--entrypoint",
     "/runtime/pnpm",
-    candidateImage,
+    selectedImage,
     "--version",
   ];
 }
@@ -114,10 +132,20 @@ export function classifyPnpmProbe(
   return "failed";
 }
 
-export async function runPnpmRepro(output: string, qemu?: string, pnpm = "baseline") {
+export async function runPnpmRepro(
+  output: string,
+  qemu?: string,
+  pnpm = "baseline",
+  image = "baseline",
+) {
   const selectedQemu = qemu === undefined ? undefined : qemuComparison(qemu);
   const selectedPnpm = pnpmComparison(pnpm);
   assert.ok(pnpm === "baseline" || qemu === "baseline", "pnpm 对照必须固定基线 QEMU");
+  const selectedImage = imageComparison(image);
+  assert.ok(
+    image === "baseline" || (qemu === "baseline" && pnpm === "baseline"),
+    "镜像对照必须固定基线 QEMU 和 pnpm",
+  );
   const archiveUrl = `https://registry.npmjs.org/@pnpm/exe.linux-ppc64/-/exe.linux-ppc64-${selectedPnpm.version}.tgz`;
   assert.equal(process.platform, "linux", "复现要求 Linux x64 Docker/QEMU 宿主");
   assert.equal(process.arch, "x64", "复现要求 Linux x64 Docker/QEMU 宿主");
@@ -126,7 +154,8 @@ export async function runPnpmRepro(output: string, qemu?: string, pnpm = "baseli
   const report: Record<string, unknown> = {
     kind: "pnpm-startup-diagnostic",
     passed: false,
-    image: candidateImage,
+    image: selectedImage,
+    imageGroup: image,
     archiveUrl,
     sha: process.env.GITHUB_SHA ?? null,
     run: process.env.GITHUB_RUN_ID ?? null,
@@ -199,21 +228,65 @@ export async function runPnpmRepro(output: string, qemu?: string, pnpm = "baseli
     const binaryPath = join(temporary, "pnpm");
     writeFileSync(binaryPath, binary);
     chmodSync(binaryPath, 0o755);
-    await runCandidateCommand("docker", ["pull", "--platform", "linux/ppc64le", candidateImage], {
+    await runCandidateCommand("docker", ["pull", "--platform", "linux/ppc64le", selectedImage], {
       timeout: 180_000,
     });
     report.imageInspect = JSON.parse(
       (
-        await runCandidateCommand("docker", ["image", "inspect", candidateImage], {
+        await runCandidateCommand("docker", ["image", "inspect", selectedImage], {
           timeout: 10_000,
         })
       ).stdout,
     );
+    const environmentName = `pnpm-environment-${randomUUID()}`;
+    const environmentArgs = pnpmReproArgs(environmentName, binaryPath, false, image);
+    environmentArgs[environmentArgs.indexOf("--entrypoint") + 1] = "/bin/sh";
+    environmentArgs.splice(-1, 1, "-ec", imageEnvironmentScript);
+    const environment = {
+      args: environmentArgs,
+      stdout: "",
+      stderr: "",
+      passed: false,
+      cleanup: "pending",
+      error: null as string | null,
+    };
+    report.environment = environment;
+    save();
+    try {
+      Object.assign(
+        environment,
+        await runCandidateCommand("docker", environmentArgs, {
+          timeout: 30_000,
+          maxBuffer: 64 * 1024,
+        }),
+      );
+      assert.match(environment.stdout, /glibc \d+\.\d+/);
+      environment.passed = true;
+    } catch (error) {
+      const failure = error as Error & { stdout?: string; stderr?: string };
+      environment.error = String(error);
+      environment.stdout = failure.stdout ?? environment.stdout;
+      environment.stderr = failure.stderr ?? environment.stderr;
+      throw error;
+    } finally {
+      save();
+      try {
+        await runCandidateCommand("docker", ["rm", "--force", environmentName], {
+          timeout: 15_000,
+        });
+        environment.cleanup = "removed";
+      } catch (error) {
+        environment.cleanup = `failed: ${String(error)}`;
+      } finally {
+        save();
+      }
+    }
+    assert.equal(environment.cleanup, "removed", "环境采集容器清理失败");
     const probes: Array<{ outcome: string; cleanup: string }> = [];
     report.probes = probes;
     for (const trace of [false, true]) {
       const name = `pnpm-repro-${randomUUID()}`;
-      const args = pnpmReproArgs(name, binaryPath, trace);
+      const args = pnpmReproArgs(name, binaryPath, trace, image);
       const probe = {
         trace,
         args,
@@ -274,8 +347,13 @@ export async function runPnpmRepro(output: string, qemu?: string, pnpm = "baseli
 
 if (import.meta.main) {
   const { values } = parseArgs({
-    options: { output: { type: "string" }, qemu: { type: "string" }, pnpm: { type: "string" } },
+    options: {
+      output: { type: "string" },
+      qemu: { type: "string" },
+      pnpm: { type: "string" },
+      image: { type: "string" },
+    },
   });
   assert.ok(values.output, "需要 --output 新结果目录");
-  await runPnpmRepro(resolve(values.output), values.qemu, values.pnpm);
+  await runPnpmRepro(resolve(values.output), values.qemu, values.pnpm, values.image);
 }

@@ -11,6 +11,7 @@ on:
         options:
           - pnpm
           - qemu
+          - image
 
 permissions:
   contents: read
@@ -38,6 +39,9 @@ jobs:
       - name: Compare pnpm 12.4.0 with unchanged QEMU 10.2.3
         if: ${{ !cancelled() && inputs.comparison == 'pnpm' && steps.baseline-qemu.outcome == 'success' }}
         run: mise run diagnose:pnpm -- --output pnpm-repro-results-pnpm --qemu baseline --pnpm comparison
+      - name: Compare Ubuntu userspace with unchanged QEMU and pnpm
+        if: ${{ !cancelled() && inputs.comparison == 'image' && steps.baseline-qemu.outcome == 'success' }}
+        run: mise run diagnose:pnpm -- --output pnpm-repro-results-image --qemu baseline --image comparison
       # Same runner and guest inputs. Unregister the fixed interpreter before switching.
       # Privilege is limited to binfmt registration on this disposable CI host.
       - name: Remove only the previous ppc64le interpreter
@@ -65,5 +69,6 @@ jobs:
             pnpm-repro-results-baseline/
             pnpm-repro-results-comparison/
             pnpm-repro-results-pnpm/
+            pnpm-repro-results-image/
           if-no-files-found: error
           retention-days: 7
