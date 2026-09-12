@@ -19,17 +19,38 @@ jobs:
           install_args: node
           cache: false
       - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
+        id: baseline-qemu
         with:
           image: tonistiigi/binfmt@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0
           platforms: ppc64le
           cache-image: false
-      - name: Reproduce without Ziwei builds or artifacts
-        run: mise run diagnose:pnpm -- --output pnpm-repro-results
+      - name: Reproduce with baseline QEMU 10.2.3
+        run: mise run diagnose:pnpm -- --output pnpm-repro-results-baseline --qemu baseline
+      # Same runner and guest inputs. Unregister the fixed interpreter before switching.
+      # Privilege is limited to binfmt registration on this disposable CI host.
+      - name: Remove only the previous ppc64le interpreter
+        id: reset-qemu
+        if: ${{ !cancelled() && steps.baseline-qemu.outcome == 'success' }}
+        run: |
+          docker run --privileged --rm tonistiigi/binfmt@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0 --uninstall qemu-ppc64le
+          test ! -e /proc/sys/fs/binfmt_misc/qemu-ppc64le
+      - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
+        id: comparison-qemu
+        if: ${{ !cancelled() && steps.reset-qemu.outcome == 'success' }}
+        with:
+          image: tonistiigi/binfmt@sha256:d3b963f787999e6c0219a48dba02978769286ff61a5f4d26245cb6a6e5567ea3
+          platforms: ppc64le
+          cache-image: false
+      - name: Reproduce with comparison QEMU 10.2.1
+        if: ${{ !cancelled() && steps.comparison-qemu.outcome == 'success' }}
+        run: mise run diagnose:pnpm -- --output pnpm-repro-results-comparison --qemu comparison
       - name: Preserve startup evidence on failure
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: pnpm-repro-${{ github.sha }}-${{ github.run_attempt }}
-          path: pnpm-repro-results/
+          path: |
+            pnpm-repro-results-baseline/
+            pnpm-repro-results-comparison/
           if-no-files-found: error
           retention-days: 7

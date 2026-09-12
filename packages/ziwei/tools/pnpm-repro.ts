@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { release, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 
@@ -15,6 +15,33 @@ import {
 
 export const pnpmReproVersion = "12.4.1";
 const archiveUrl = `https://registry.npmjs.org/@pnpm/exe.linux-ppc64/-/exe.linux-ppc64-${pnpmReproVersion}.tgz`;
+
+// Official deploy images, resolved on 2026-09-12. These are diagnostic pins only.
+export const qemuComparisons = {
+  baseline: {
+    version: "10.2.3",
+    image:
+      "tonistiigi/binfmt@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0",
+  },
+  comparison: {
+    version: "10.2.1",
+    image:
+      "tonistiigi/binfmt@sha256:d3b963f787999e6c0219a48dba02978769286ff61a5f4d26245cb6a6e5567ea3",
+  },
+} as const;
+
+export function qemuComparison(value: string) {
+  assert.ok(value === "baseline" || value === "comparison", "未知 QEMU 对照组");
+  return qemuComparisons[value];
+}
+
+export function verifyQemuVersion(stdout: string, expected: string) {
+  assert.equal(
+    /^qemu-ppc64le version (\d+\.\d+\.\d+)(?:\s|$)/m.exec(stdout)?.[1],
+    expected,
+    "QEMU 实际版本与对照组不一致",
+  );
+}
 
 export function pnpmReproArgs(name: string, binary: string, trace: boolean) {
   assert.ok(!binary.includes(","), "Docker 挂载路径不可包含逗号");
@@ -67,7 +94,8 @@ export function classifyPnpmProbe(result: {
   return "failed";
 }
 
-export async function runPnpmRepro(output: string) {
+export async function runPnpmRepro(output: string, qemu?: string) {
+  const selectedQemu = qemu === undefined ? undefined : qemuComparison(qemu);
   assert.equal(process.platform, "linux", "复现要求 Linux x64 Docker/QEMU 宿主");
   assert.equal(process.arch, "x64", "复现要求 Linux x64 Docker/QEMU 宿主");
   mkdirSync(output); // Never overwrite previous evidence.
@@ -80,6 +108,8 @@ export async function runPnpmRepro(output: string) {
     sha: process.env.GITHUB_SHA ?? null,
     run: process.env.GITHUB_RUN_ID ?? null,
     attempt: process.env.GITHUB_RUN_ATTEMPT ?? null,
+    hostKernel: release(),
+    qemuGroup: qemu ?? null,
     probes: [],
   };
   const save = () =>
@@ -93,6 +123,37 @@ export async function runPnpmRepro(output: string) {
     );
     assert.match(info.stdout.trim(), /^linux\/(x86_64|amd64)$/);
     report.docker = info.stdout.trim();
+    if (selectedQemu) {
+      const version = await runCandidateCommand(
+        "docker",
+        [
+          "run",
+          "--rm",
+          "--platform",
+          "linux/amd64",
+          "--network",
+          "none",
+          "--read-only",
+          "--cap-drop",
+          "ALL",
+          "--security-opt",
+          "no-new-privileges",
+          "--entrypoint",
+          "/usr/bin/qemu-ppc64le",
+          selectedQemu.image,
+          "--version",
+        ],
+        { timeout: 15_000 },
+      );
+      report.qemu = {
+        ...selectedQemu,
+        stdout: version.stdout,
+        stderr: version.stderr,
+        registration: readFileSync("/proc/sys/fs/binfmt_misc/qemu-ppc64le", "utf8"),
+      };
+      save();
+      verifyQemuVersion(version.stdout, selectedQemu.version);
+    }
     const response = await fetch(archiveUrl, { signal: AbortSignal.timeout(120_000) });
     assert.ok(response.ok && response.body, "pnpm 下载失败");
     const chunks: Buffer[] = [];
@@ -195,7 +256,9 @@ export async function runPnpmRepro(output: string) {
 }
 
 if (import.meta.main) {
-  const { values } = parseArgs({ options: { output: { type: "string" } } });
+  const { values } = parseArgs({
+    options: { output: { type: "string" }, qemu: { type: "string" } },
+  });
   assert.ok(values.output, "需要 --output 新结果目录");
-  await runPnpmRepro(resolve(values.output));
+  await runPnpmRepro(resolve(values.output), values.qemu);
 }

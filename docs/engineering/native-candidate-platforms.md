@@ -16,7 +16,13 @@ mise run diagnose:pnpm -- --output <新的结果目录>
 
 [诊断工具](../../packages/ziwei/tools/pnpm-repro.ts)复用候选固定镜像与 pnpm 12.4.1 归档摘要，并再次核对解出的二进制 SHA-256。容器只挂载该二进制，在 `/tmp` 直接执行 `pnpm --version`；不挂载 Ziwei、候选 tarball 或外置 Node。先执行普通探针，再仅增加 `QEMU_STRACE=1`，各有 30 秒硬超时及独立容器清理。
 
-`experiment.json` 保存提交／run／attempt、输入摘要、镜像检查、实际参数、stdout／stderr、退出信号及清理结果。正确版本且正常退出才通过；QEMU SIGSEGV、超时、基础设施错误和清理失败均使任务失败，失败报告仍上传。这是启动诊断，不是候选平台验收。此缩减用例是否保留原故障须由实际运行确认；未确认前不做版本对照，也不声称已经定位 pnpm 或 QEMU 的根因。
+`experiment.json` 保存提交／run／attempt、输入摘要、镜像检查、实际参数、stdout／stderr、退出信号及清理结果。正确版本且正常退出才通过；QEMU SIGSEGV、超时、基础设施错误和清理失败均使任务失败，失败报告仍上传。这是启动诊断，不是候选平台验收。
+
+提交 `0e67a96` 的[独立复现 34678957733](https://github.com/matharts/ziwei/actions/runs/34678957733)（attempt 1）已保留原故障：普通与追踪探针均报告 QEMU SIGSEGV，后者记录 `si_addr=NULL`；二进制摘要与候选验收相同，两次容器均完成清理。该结果说明故障不依赖 Ziwei 构建／挂载，但不确定 pnpm 或 QEMU 的具体根因。
+
+工作流在同一 runner 上顺序运行 QEMU 10.2.3 基线与 10.2.1 对照。两组使用相同的 pnpm、基础镜像、隔离参数和普通／追踪探针；切换前只卸载 `qemu-ppc64le` 并确认注册项消失，再安装对照版本。基线失败不会跳过对照，也不会被后续步骤的成功掩盖；切换失败则不执行错误版本的对照。`--qemu baseline`／`--qemu comparison` 只校验和记录已安装环境，不自行安装解释器；报告增加实际版本、固定镜像、内核和 binfmt 注册信息。
+
+两份预编译 QEMU 镜像使用[上游 10.2.3 发布](https://github.com/tonistiigi/binfmt/releases/tag/deploy%2Fv10.2.3-68)与[上游 10.2.1 发布](https://github.com/tonistiigi/binfmt/releases/tag/deploy%2Fv10.2.1-65)，摘要分别为 `400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0` 与 `d3b963f787999e6c0219a48dba02978769286ff61a5f4d26245cb6a6e5567ea3`。这比较的是发布包，不是同一编译环境下仅切换 QEMU 源码的实验；即使结果不同，也不能据此认定某条源码变更为根因。项目工具链和正式候选 CI 的 QEMU 摘要不变。
 
 **应按真实调用方划分交付物，不把七个 Rust triple 都等同于七个 Node npm 平台。**
 
