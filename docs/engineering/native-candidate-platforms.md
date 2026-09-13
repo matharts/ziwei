@@ -1,6 +1,6 @@
 # 七个原生候选平台：宿主、构建与验收矩阵
 
-当前状态：2026-09-12，提交 `c30dd7e` 的[候选 CI](https://github.com/matharts/ziwei/actions/runs/34687240792)再次通过七目标核心检查、三项 GNU addon 交叉构建／静态审计及 s390x 双 Node／双客户端 QEMU 消费；ppc64le 消费任务仍失败，完整候选门禁未通过。已有独立复现与 GDB 调用点证据见下方历史记录；具体根因未确定，不把追踪中的空地址信息等同于最终调用点。七目标仍属于完整交付范围，仿真不替代真机验收。现有八目标结论沿用 [Node 分发设计](../architecture/node-distribution-proposal.md)。
+当前状态：2026-09-14，提交 `431aa92` 的[候选 CI](https://github.com/matharts/ziwei/actions/runs/34772938562)通过七目标核心检查、三项 GNU addon 交叉构建／静态审计及 s390x 双 Node／双客户端 QEMU 消费；ppc64le 消费任务仍失败，完整候选门禁未通过。官方 pnpm 文件中的异常分支已与 GDB 现场对应，已增加隔离重建实验，尚无修复结论。历史证据与实验边界见下文；当前范围以本页平台矩阵为准，仿真不替代真机验收。现有八目标结论沿用 [Node 分发设计](../architecture/node-distribution-proposal.md)。
 
 候选实现包含 [静态审计](../../packages/ziwei/tools/compatibility.ts)、[候选封存与消费](../../packages/ziwei/tools/candidate.ts)、[仿真控制器](../../packages/ziwei/tools/candidate-runtime.ts) 和独立的[候选 CI](../../.github/workflows/native-candidates.yml)。不改正式目标 manifest、依赖或公开 API，不安装本机 SDK、虚拟机或设备工具，不申请云资源，不发布。下文的实施路径与工期是项目建议，不是上游支持承诺。
 
@@ -55,6 +55,18 @@ mise run diagnose:pnpm -- --output <新的结果目录>
 - GDB 回溯为 `0x104000000 → 0x10252d9e4 → 0x10031610c → libc → __libc_start_main`；两个 pnpm 返回地址位于其 `.text` 范围，GDB 无法解析其函数名。模块与地址映射已取得，但缺少源码级调试信息。
 
 这确认了仿真现场中通向未映射地址的具体调用点，不等于已确定 pnpm 构建、链接或 QEMU 的根因。下一项应对照官方归档中的原始 ELF 指令及重定位，判断此分支是否已存在于发布字节中，再决定是否需要符号或真机对照；本轮不修补外部二进制、不改变候选门禁和正式支持范围。
+
+#### 原始 ELF 与隔离重建
+
+2026-09-14 对照相同 SHA-256 的官方文件：ELF 偏移 `0x252d9e0` 为小端指令 `0x49ad2621`，解码为相对调用 `0x4000000`；加上现场加载偏移 `0x100000000` 后，目标与 GDB 的 `PC = 0x104000000` 一致。目标不在任何 `PT_LOAD` 段内，调用点也无动态 RELA 记录。这表明异常分支已存在于发布字节中；尚未定位具体源码符号、编译器或链接器缺陷。
+
+用户已授权临时分支上的隔离重建与 Linux CI。手动诊断选择 `comparison=rebuild`：先执行原官方基线，再从 [pnpm v12.4.1 固定提交](https://github.com/pnpm/pnpm/tree/19eb39448649c926bc63b0e9fa16f0e340701460)重建 `pnpm-cli`。官方 [Rust 配置](https://github.com/pnpm/pnpm/blob/19eb39448649c926bc63b0e9fa16f0e340701460/rust-toolchain.toml)的 1.97.0 不变，使用固定摘要的 [Rust Bookworm 镜像](https://hub.docker.com/_/rust)、[GCC 12.2](https://packages.debian.org/bookworm/gcc-12-powerpc64le-linux-gnu)／[binutils 2.40](https://packages.debian.org/bookworm/binutils-powerpc64le-linux-gnu)交叉工具和原 `Cargo.lock`。这是构建链对照，不是只改变一个链接参数的因果实验。
+
+[重建工具](../../packages/ziwei/tools/diagnostics/pnpm-rebuild.ts)在一次性 Linux runner 的 Docker 内构建，不向本机安装工具。源码只读挂载，Cargo 使用 `--locked`，不修改上游源码或依赖；保留 release 优化，取消符号剥离以支持取证。编译容器可联网下载固定依赖，后续启动探针仍断网、只读、非特权，使用原 QEMU、消费镜像与命令。
+
+`build.json` 记录源码提交、锁文件摘要、Rust／构建镜像、Dockerfile 摘要、实际工具版本日志、命令、二进制 SHA-256 和当前 CI 批次。它明确标记 `pnpm-rebuild-experiment`、`runtimeVerified: false`；启动工具经 `--rebuilt-receipt` 只接受同 commit／run／attempt、固定源码／版本／工具配置、完整构建和匹配字节。实验二进制及其许可证单独保存，不冒充官方归档，也不进入候选或正式发行门禁。
+
+原基线失败不会阻止重建及后续探针，也不会被成功对照掩盖：诊断工作流继续保留失败状态，各组结果独立检查。正常版本输出才表示启动通过；完整 Node 双版本／npm 与 pnpm 消费仍是另一项验收。实验未通过前不更改日常门禁、工具链、支持声明或公共依赖。
 
 **应按真实调用方划分交付物，不把七个 Rust triple 都等同于七个 Node npm 平台。**
 

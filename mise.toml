@@ -184,6 +184,10 @@ run = "pnpm exec -- node packages/ziwei/tools/candidate-runtime.ts"
 description = "独立复现 ppc64le pnpm 启动；无需构建产物或安装依赖"
 run = "node packages/ziwei/tools/diagnostics/pnpm-repro.ts"
 
+[tasks."diagnose:pnpm:rebuild"]
+description = "在一次性 Linux Docker 中重建固定 pnpm 源码；仅供隔离诊断"
+run = "node packages/ziwei/tools/diagnostics/pnpm-rebuild.ts"
+
 [tasks."check:node:tools:linux"]
 description = "验证 Linux 专用诊断脚本；与跨平台工具合同分开，Linux CI 必跑"
 run = "pnpm exec -- node node_modules/@rstest/core/bin/rstest.js --project node-tools-linux"

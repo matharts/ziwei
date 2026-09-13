@@ -134,7 +134,10 @@ test("pnpm diagnostic workflow is manual, bounded and independent of candidate b
     workflow,
     /push:|pull_request:|continue-on-error|needs:|download-artifact|pnpm install|build:node/,
   );
-  assert.match(workflow, /timeout-minutes: 10/);
+  assert.match(
+    workflow,
+    /timeout-minutes: \$\{\{ inputs.comparison == 'rebuild' && 65 \|\| 10 \}\}/,
+  );
   assert.match(workflow, /mise run diagnose:pnpm -- --output pnpm-repro-results/);
   assert.match(workflow, /if: \$\{\{ !cancelled\(\) \}\}/);
 });

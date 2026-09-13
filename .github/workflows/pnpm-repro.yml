@@ -13,6 +13,7 @@ on:
           - qemu
           - image
           - debug
+          - rebuild
 
 permissions:
   contents: read
@@ -20,7 +21,7 @@ permissions:
 jobs:
   reproduce:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: ${{ inputs.comparison == 'rebuild' && 65 || 10 }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -37,6 +38,22 @@ jobs:
           cache-image: false
       - name: Reproduce with baseline QEMU 10.2.3
         run: mise run diagnose:pnpm -- --output pnpm-repro-results-baseline --qemu baseline
+      - name: Fetch exact upstream source for the isolated rebuild
+        id: rebuild-source
+        if: ${{ !cancelled() && inputs.comparison == 'rebuild' && steps.baseline-qemu.outcome == 'success' }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: pnpm/pnpm
+          ref: 19eb39448649c926bc63b0e9fa16f0e340701460 # v12.4.1
+          path: target/pnpm-rebuild-source
+          persist-credentials: false
+      - name: Rebuild with Rust 1.97.0 and Debian GNU cross tools
+        id: rebuild
+        if: ${{ !cancelled() && steps.rebuild-source.outcome == 'success' }}
+        run: mise run diagnose:pnpm:rebuild -- --source target/pnpm-rebuild-source --output pnpm-rebuild-results
+      - name: Probe experimental binary with unchanged QEMU and userspace
+        if: ${{ !cancelled() && steps.rebuild.outcome == 'success' }}
+        run: mise run diagnose:pnpm -- --output pnpm-repro-results-rebuilt --qemu baseline --rebuilt-receipt pnpm-rebuild-results/build.json
       - name: Compare pnpm 12.4.0 with unchanged QEMU 10.2.3
         if: ${{ !cancelled() && inputs.comparison == 'pnpm' && steps.baseline-qemu.outcome == 'success' }}
         run: mise run diagnose:pnpm -- --output pnpm-repro-results-pnpm --qemu baseline --pnpm comparison
@@ -81,5 +98,10 @@ jobs:
             pnpm-repro-results-pnpm/
             pnpm-repro-results-image/
             pnpm-repro-results-debug/
+            pnpm-repro-results-rebuilt/
+            pnpm-rebuild-results/build.json
+            pnpm-rebuild-results/*.txt
+            pnpm-rebuild-results/pnpm
+            pnpm-rebuild-results/LICENSE
           if-no-files-found: error
           retention-days: 7
