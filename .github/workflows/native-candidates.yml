@@ -105,9 +105,55 @@ jobs:
           retention-days: 7
           compression-level: 0
 
+  pnpm-client:
+    name: Build pinned ppc64le pnpm test client
+    runs-on: ubuntu-24.04
+    # Independent of the Ziwei build; bounded image build (10m), compilation (50m), setup/upload.
+    timeout-minutes: 70
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
+        with:
+          install_args: node
+          cache: false
+      - name: Check out the exact unmodified pnpm source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: pnpm/pnpm
+          ref: 19eb39448649c926bc63b0e9fa16f0e340701460
+          path: target/pnpm-source
+          persist-credentials: false
+      - name: Rebuild the client for this run without reusing old experiment artifacts
+        run: mise run build:pnpm:ppc64le -- --source target/pnpm-source --output target/pnpm-client
+      - name: Preserve only the completed client and provenance for this batch
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: candidate-pnpm-${{ github.sha }}-${{ github.run_attempt }}
+          path: |
+            target/pnpm-client/pnpm
+            target/pnpm-client/build.json
+            target/pnpm-client/LICENSE
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 6
+      - name: Preserve build diagnostics even on failure
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: candidate-pnpm-build-${{ github.sha }}-${{ github.run_attempt }}
+          path: |
+            target/pnpm-client/build.json
+            target/pnpm-client/*.txt
+          if-no-files-found: error
+          retention-days: 7
+
   gnu-runtime:
     name: Emulated GNU consumers (${{ matrix.target }})
-    needs: [gnu-addon]
+    needs: [gnu-addon, pnpm-client]
+    # A client build failure must not suppress independent s390x observations.
+    if: ${{ !cancelled() && needs.gnu-addon.result == 'success' }}
     runs-on: ubuntu-24.04
     # Two bounded 15-minute consumers plus downloads, setup and evidence upload.
     timeout-minutes: 50
@@ -131,6 +177,12 @@ jobs:
         with:
           name: native-candidate-input-${{ github.sha }}-${{ github.run_attempt }}-${{ matrix.target }}
           path: target/native-candidate-input
+      - name: Download the same-run ppc64le client
+        if: matrix.target == 'powerpc64le-unknown-linux-gnu'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: candidate-pnpm-${{ github.sha }}-${{ github.run_attempt }}
+          path: target/pnpm-client
       # Privilege is limited to binfmt registration on this disposable runner.
       # The actual consumer containers have no network, no capabilities and read-only inputs.
       - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
@@ -139,7 +191,15 @@ jobs:
           platforms: ppc64le,s390x
           cache-image: false
       - name: Verify both Node versions and package managers under emulation
-        run: mise run check:node:candidate -- --target "${{ matrix.target }}" --input target/native-candidate-input --output target/native-candidate-results
+        env:
+          CANDIDATE_TARGET: ${{ matrix.target }}
+        shell: bash
+        run: |
+          pnpm_args=()
+          if [[ "$CANDIDATE_TARGET" == powerpc64le-unknown-linux-gnu ]]; then
+            pnpm_args+=(--pnpm-build target/pnpm-client/build.json)
+          fi
+          mise run check:node:candidate -- --target "$CANDIDATE_TARGET" --input target/native-candidate-input --output target/native-candidate-results "${pnpm_args[@]}"
       - name: Preserve emulation results, including failures
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -151,7 +211,7 @@ jobs:
 
   verify:
     name: Require candidate compile, static and emulated checks
-    needs: [core-check, gnu-addon, gnu-runtime]
+    needs: [core-check, gnu-addon, pnpm-client, gnu-runtime]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 1
@@ -161,7 +221,9 @@ jobs:
           CORE_RESULT: ${{ needs.core-check.result }}
           GNU_RESULT: ${{ needs.gnu-addon.result }}
           RUNTIME_RESULT: ${{ needs.gnu-runtime.result }}
+          PNPM_RESULT: ${{ needs.pnpm-client.result }}
         run: |
           test "$CORE_RESULT" = success
           test "$GNU_RESULT" = success
+          test "$PNPM_RESULT" = success
           test "$RUNTIME_RESULT" = success

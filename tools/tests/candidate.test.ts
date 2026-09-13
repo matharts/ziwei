@@ -379,7 +379,7 @@ test("candidate CI consumes sealed same-run inputs and requires both emulated ta
   const runtime = workflow.split("  gnu-runtime:")[1]!.split("  verify:")[0]!;
   for (const target of targets) assert.ok(runtime.includes(`- ${target}`));
   assert.ok(!runtime.includes("armv7"));
-  assert.match(workflow, /needs: \[core-check, gnu-addon, gnu-runtime\]/);
+  assert.match(workflow, /needs: \[core-check, gnu-addon, pnpm-client, gnu-runtime\]/);
   assert.match(workflow, /test "\$RUNTIME_RESULT" = success/);
   assert.equal(
     workflow.split(

@@ -149,6 +149,8 @@ Wasm 使用独立的 `bindings/wasm` 与 `packages/ziwei-wasm`，实现与浏览
 
 ppc64le／s390x 使用 `pack:node:candidate -- --target <target> --input <静态审计目录> --output <新目录>` 封存原始 addon，再由 Linux x64 Docker／QEMU 上的 `check:node:candidate -- --target <target> --input <候选目录> --output <新目录>` 运行双 Node／双客户端消费。两者都要求 `GITHUB_SHA`、`GITHUB_RUN_ID`、`GITHUB_RUN_ATTEMPT`；不接受混批或覆盖旧结果。候选使用独立清单，不扩大正式目标。固定运行时、隔离与结果边界见[仿真消费说明](../engineering/native-candidate-platforms.md#ppc64les390x-仿真消费)；仅配置任务不代表仿真通过，仿真通过也不代表真机与最低系统验收。依赖已生成公共文件的封存测试归入构建后的分发测试；`node-tools` 必须能在没有产品生成目录时独立运行。包管理器版本探针和安装都在消费夹具自己的目录执行，不继承调用工程配置。
 
+ppc64le 日常候选额外要求 `--pnpm-build <同批客户端目录>/build.json`。`build:pnpm:ppc64le` 从固定且未修改的上游源码生成测试客户端与构建凭据，独立 job 每轮重建；消费端核对固定配方、完整构建与同 commit／run／attempt，不下载历史实验 artifact 或跨 run 缓存。s390x 拒绝该参数并保持官方客户端。重建只服务候选 CI，不替换开发工具、不进入发行包；升级与过期恢复见[源码重建合同](../engineering/native-candidate-platforms.md#ppc64le-候选-ci-的源码重建客户端)。
+
 ## 按变更选择验证
 
 | 变更 | 验证范围 |

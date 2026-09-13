@@ -1,4 +1,4 @@
-# Experimental build environment only; never used by candidate consumers.
+# Build environment only; never used as the candidate consumer runtime.
 ARG RUST_IMAGE
 FROM ${RUST_IMAGE}
 

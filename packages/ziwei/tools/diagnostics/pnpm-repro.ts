@@ -13,8 +13,8 @@ import {
   verifyDownload,
 } from "../candidate-runtime.ts";
 import { currentBatch } from "../candidate.ts";
+import { readPnpmRebuild } from "../pnpm-rebuild.ts";
 import { capturePnpmCrash } from "./pnpm-gdb.ts";
-import { readPnpmRebuild } from "./pnpm-rebuild.ts";
 
 export const pnpmReproVersion = "12.4.1";
 export const pnpmComparisons = {
