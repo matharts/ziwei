@@ -120,10 +120,12 @@ export const dockerDiagnosticsScript = String.raw`
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+# Keep timing on stderr so a timeout retains the last stage without changing stdout JSON.
+# Avoid ConvertTo-Json here: loading that module early would perturb the queries being timed.
 $diagnosticClock = [System.Diagnostics.Stopwatch]::StartNew()
 function Write-DiagnosticStage([string]$stage) {
   $line = '{"stage":"' + $stage + '","elapsedMs":' + $diagnosticClock.ElapsedMilliseconds + ',"unixMs":' + [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() + '}'
-  [Console]::Error.WriteLine('[DEBUG-windows-diagnostics] ' + $line)
+  [Console]::Error.WriteLine('[windows-diagnostics] ' + $line)
   [Console]::Error.Flush()
 }
 Write-DiagnosticStage 'script-start'

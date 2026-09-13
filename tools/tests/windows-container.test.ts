@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -454,30 +454,13 @@ if (process.platform === "win32") {
       ],
       30_000,
     );
-    // Temporary same-runner comparison. Capture evidence before any assertion fails.
-    const mode = process.env.ZIWEI_WINDOWS_DIAGNOSTIC_MODE;
+    // Retain the partial stage stream on timeout; never expose unredacted host evidence.
     const diagnostic = JSON.stringify({
-      mode: mode ?? "local",
       startedAt,
-      node: process.version,
-      arch: process.arch,
-      batch: {
-        commit: process.env.GITHUB_SHA,
-        runId: process.env.GITHUB_RUN_ID,
-        runAttempt: process.env.GITHUB_RUN_ATTEMPT,
-      },
-      runnerImage: { name: process.env.ImageOS, version: process.env.ImageVersion },
-      scriptSha256: createHash("sha256").update(dockerDiagnosticsScript).digest("hex"),
       result: redactObservation(result),
     });
-    if (mode) {
-      assert.match(mode, /^(?:full|isolated)(?:-[1-3])?$/);
-      const output = fileURLToPath(new URL("../../target/windows-diagnostics/", import.meta.url));
-      mkdirSync(output, { recursive: true });
-      writeFileSync(join(output, `${mode}.json`), diagnostic + "\n", { flag: "wx" });
-    }
     assert.equal(result.error, undefined, diagnostic);
-    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.status, 0, diagnostic);
     const evidence = JSON.parse(result.stdout);
     assert.deepEqual(
       evidence.services.map((service: { name: string }) => service.name),
@@ -485,6 +468,18 @@ if (process.platform === "win32") {
     );
     assert.ok(Array.isArray(evidence.processes));
     assert.ok(Array.isArray(evidence.events));
+    const prefix = "[windows-diagnostics] ";
+    const stages = result.stderr
+      .split("\n")
+      .filter((line) => line.startsWith(prefix))
+      .map((line) => JSON.parse(line.slice(prefix.length)));
+    assert.equal(stages[0]?.stage, "script-start");
+    assert.equal(stages.at(-1)?.stage, "script-end");
+    for (const [index, stage] of stages.entries()) {
+      assert.ok(Number.isSafeInteger(stage.unixMs) && stage.unixMs > 0);
+      assert.ok(Number.isSafeInteger(stage.elapsedMs) && stage.elapsedMs >= 0);
+      if (index) assert.ok(stage.elapsedMs >= stages[index - 1].elapsedMs);
+    }
   });
 }
 

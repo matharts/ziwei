@@ -46,6 +46,8 @@ Node 任务通过 `pnpm exec` 执行，因此仍先经过开发版本校验；�
 
 跨平台工具合同不调用 Linux 专用 shell。此类检查放在 `tools/tests/linux`，由 `check:node:tools:linux` 显式执行，并作为主 CI Linux 原生任务的必需步骤；误在非 Linux 宿主执行会明确失败，不静默跳过。外部 pnpm／QEMU 复现位于 `packages/ziwei/tools/diagnostics`，由独立手动工作流运行；纯参数和失败分类测试仍保留在跨平台工具组。
 
+Windows 宿主诊断的 stdout 保持原有 JSON，stderr 用 `[windows-diagnostics]` 逐阶段记录开始／结束、相对耗时和时间戳，超时仍可保留最后完成的阶段。Windows 专属测试失败时附上启动时间与脱敏后的完整命令观察，不只输出退出错误；阶段记录不改变查询范围、超时或通过条件。
+
 ## Node 构建与类型检查
 
 ### Lint 与格式化
