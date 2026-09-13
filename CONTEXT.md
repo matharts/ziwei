@@ -118,6 +118,8 @@
 
 ### 宿主适配与工程
 
+- Wasm `wire.rs` 使用实例级固定数组惰性复用星曜和本命宫职的静态 JS 字符串，最多 162 个引用槽；数据仍读取 Rust 核心，不缓存输入、四化或查询结果。输出容器逐次新建，`dispose()` 只释放命盘，不清空实例级静态资料。Node、核心和公开输出合同不变，详见[静态字符串缓存](docs/architecture/wasm-adapter-design.md#静态字符串缓存)。
+
 - Node／Wasm 的输入捕获、结构化错误、出生档案、星曜、宫位和四化查询结果的只读投影及必要类型由私有 workspace 包 `@matharts/ziwei-shared` 管理；两个 Adapter 通过声明的包依赖使用根入口，不跨包读取 `src`。共享包先生成 ESM 与声明，再分别内联到两个自包含消费包中，不发布共享包、不新增消费端依赖；类身份按各包保持独立。加载、命盘持有、缓存、释放和限运投影仍由各 Adapter 管理，详见 [共享实现](docs/architecture/node-api-design.md#nodewasm-共享适配实现)。
 
 - 按 D-268，Android／OpenHarmony 的系统原生应用绑定已按用户要求暂停，不推进 Interface、SDK 或分发设计；保留宿主方向与已有候选核心检查，不宣称支持。移动网页和 WebView 继续使用独立 Wasm 包，其验收不能代替原生交付。恢复移动原生工作需要用户重新确认。

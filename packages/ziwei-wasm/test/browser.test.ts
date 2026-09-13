@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { fileURLToPath } from "node:url";
 
 import { test } from "@rstest/core";
 import { chromium, firefox, webkit } from "playwright";
@@ -11,6 +12,8 @@ import {
   resourceFailure,
   corsFailure,
   cspFailure,
+  metadataProjection,
+  metadataReuse,
 } from "./fixtures/browser.ts";
 import { queryCalls, invoke } from "./fixtures/queries.ts";
 import { serveAssets } from "./fixtures/server.ts";
@@ -54,6 +57,37 @@ test("webkit: Worker progress does not depend on animation frames", async () => 
 });
 
 for (const engine of [chromium, firefox, webkit]) {
+  test(`${engine.name()}: cold metadata projection retries and keeps chart ownership`, async () => {
+    const server = await serveAssets();
+    const browser = await engine.launch();
+    try {
+      const page = await browser.newPage();
+      await page.goto(server.origin);
+      assert.deepEqual(
+        await page.evaluate(metadataProjection, birth),
+        native.Ziwei.fromBirth(birth).toJSON(),
+      );
+    } finally {
+      await browser.close();
+      await server.close();
+    }
+  });
+
+  test(`${engine.name()}: metadata reuses bounded strings within each Wasm instance`, async () => {
+    const server = await serveAssets({ dist: fileURLToPath(new URL("..", import.meta.url)) });
+    const browser = await engine.launch();
+    try {
+      const page = await browser.newPage();
+      await page.goto(server.origin);
+      const instances = await page.evaluate(metadataReuse, birth);
+      assert.equal(instances.length, 2);
+      for (const instance of instances) assert.equal(instance.retained, 18 * 7 + 12 * 3);
+    } finally {
+      await browser.close();
+      await server.close();
+    }
+  });
+
   test(`${engine.name()}: default asset, all queries, lifecycle and non-isolated Worker consumer`, async () => {
     const server = await serveAssets({
       csp: "script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'; worker-src 'self'",

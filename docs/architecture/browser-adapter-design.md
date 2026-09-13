@@ -85,6 +85,7 @@ export declare function initialize(
 - 消息只传输入、请求标识、查询结果或 `toJSON()` 快照；不传 `Natal`、Wasm 指针、共享实例或绑定错误对象。调用方自己选择消息操作，不新增核心批量排盘规则。
 - `structuredClone` 不保留冻结描述符或自定义原型；接收端不能把快照宣称为活命盘、保持 `Object.isFrozen` 或错误 `instanceof`。示例若需要只读语义，应验证后按已知 DTO 再冻结；错误只传安全的 `name/message/code/detail`。[结构化克隆限制](https://developer.mozilla.org/en-US/docs/Web/API/Web_Workers_API/Structured_clone_algorithm)
 - 查询结果独立于命盘存在；Wasm 命盘采用显式 `dispose()` 与 GC 兜底，见 [Wasm 生命周期设计](wasm-adapter-design.md)。释放后即使属性已有缓存也拒绝访问；这一行为只属于 Wasm，不改变 Node 生命周期合同。
+- Wasm 实例仅共享有界的星曜／本命宫职静态字符串，见[缓存边界](wasm-adapter-design.md#静态字符串缓存)；不共享命盘 DTO 容器。逐盘 `dispose()` 不清空该缓存，各 Worker／Wasm 实例独立初始化，首次输出成本与预热后输出分别测量。
 - Worker `terminate()` 是应用放弃该 realm 的所有任务与实例，不是可恢复取消；异步消息层应清理等待请求。页面退出、重复创建/销毁 Worker、任务失败都需要资源回收测试。
 
 ## SSR、CSP 与跨源部署

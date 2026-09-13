@@ -1,9 +1,62 @@
 //! Private JavaScript projections, shared only inside this adapter.
 
 use js_sys::{Array, Object};
+use std::cell::OnceCell;
 use wasm_bindgen::prelude::*;
 
 pub type JsResult = Result<JsValue, JsValue>;
+
+// Lazy, finite caches owned by this Wasm instance, not by an individual Natal.
+// Only immutable strings are shared; every result tuple is still freshly owned.
+thread_local! {
+    static STAR_METADATA: [OnceCell<[JsValue; 7]>; ziwei::StarName::ALL.len()] =
+        const { [const { OnceCell::new() }; ziwei::StarName::ALL.len()] };
+    static PALACE_METADATA: [OnceCell<[JsValue; 3]>; ziwei::PalaceName::ALL.len()] =
+        const { [const { OnceCell::new() }; ziwei::PalaceName::ALL.len()] };
+}
+
+// Private cache coordinates, deliberately independent of Rust enum layout.
+fn star_slot(value: ziwei::StarName) -> usize {
+    use ziwei::StarName::*;
+    match value {
+        ZiWei => 0,
+        TianJi => 1,
+        TaiYang => 2,
+        WuQu => 3,
+        TianTong => 4,
+        LianZhen => 5,
+        TianFu => 6,
+        TaiYin => 7,
+        TanLang => 8,
+        JuMen => 9,
+        TianXiang => 10,
+        TianLiang => 11,
+        QiSha => 12,
+        PoJun => 13,
+        ZuoFu => 14,
+        YouBi => 15,
+        WenChang => 16,
+        WenQu => 17,
+    }
+}
+
+fn palace_slot(value: ziwei::PalaceName) -> usize {
+    use ziwei::PalaceName::*;
+    match value {
+        Ming => 0,
+        XiongDi => 1,
+        FuQi => 2,
+        ZiNv => 3,
+        CaiBo => 4,
+        JiE => 5,
+        QianYi => 6,
+        JiaoYou => 7,
+        GuanLu => 8,
+        TianZhai => 9,
+        FuDe => 10,
+        FuMu => 11,
+    }
+}
 
 /// Define data properties without invoking inherited setters on the result.
 pub fn record<const N: usize>(fields: [(&str, JsValue); N]) -> JsResult {
@@ -127,25 +180,48 @@ pub fn yin_yang(value: ziwei::YinYang) -> u8 {
 }
 
 pub fn star(value: &ziwei::Star) -> JsValue {
-    let category = match value.category() {
-        ziwei::StarCategory::Major => "Major",
-        ziwei::StarCategory::Minor => "Minor",
-        ziwei::StarCategory::Auxiliary => "Auxiliary",
-    };
-    let galaxy = match value.galaxy() {
-        ziwei::StarGalaxy::South => "South",
-        ziwei::StarGalaxy::Central => "Central",
-        ziwei::StarGalaxy::North => "North",
-    };
+    let [
+        name,
+        name_hans,
+        name_hant,
+        abbr_hans,
+        abbr_hant,
+        category,
+        galaxy,
+    ] = STAR_METADATA.with(|metadata| {
+        metadata[star_slot(value.name())]
+            .get_or_init(|| {
+                let category = match value.category() {
+                    ziwei::StarCategory::Major => "Major",
+                    ziwei::StarCategory::Minor => "Minor",
+                    ziwei::StarCategory::Auxiliary => "Auxiliary",
+                };
+                let galaxy = match value.galaxy() {
+                    ziwei::StarGalaxy::South => "South",
+                    ziwei::StarGalaxy::Central => "Central",
+                    ziwei::StarGalaxy::North => "North",
+                };
+                [
+                    star_name(value.name()).into(),
+                    value.name_hans().into(),
+                    value.name_hant().into(),
+                    value.abbr_hans().into(),
+                    value.abbr_hant().into(),
+                    category.into(),
+                    galaxy.into(),
+                ]
+            })
+            .clone()
+    });
     let self_transformations = value.self_transformations();
     tuple([
-        star_name(value.name()).into(),
-        value.name_hans().into(),
-        value.name_hant().into(),
-        value.abbr_hans().into(),
-        value.abbr_hant().into(),
-        category.into(),
-        galaxy.into(),
+        name,
+        name_hans,
+        name_hant,
+        abbr_hans,
+        abbr_hant,
+        category,
+        galaxy,
         nullable(value.birth_transformation().map(transformation)),
         nullable(self_transformations.inward().map(transformation)),
         nullable(self_transformations.outward().map(transformation)),
@@ -153,11 +229,22 @@ pub fn star(value: &ziwei::Star) -> JsValue {
 }
 
 pub fn palace(value: &ziwei::Palace) -> JsResult {
+    let [name, name_hans, name_hant] = PALACE_METADATA.with(|metadata| {
+        metadata[palace_slot(value.name())]
+            .get_or_init(|| {
+                [
+                    palace_name(value.name()).into(),
+                    value.name_hans().into(),
+                    value.name_hant().into(),
+                ]
+            })
+            .clone()
+    });
     let age = value.decade_age_range();
     Ok(tuple([
-        palace_name(value.name()).into(),
-        value.name_hans().into(),
-        value.name_hant().into(),
+        name,
+        name_hans,
+        name_hant,
         value.branch().index().into(),
         value.stem().index().into(),
         array(value.stars().iter().map(|value| Ok(star(value))))?,
@@ -261,6 +348,18 @@ export type NativeConstruction = { natal: NativeNatal; error: null } | { natal: 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn metadata_slots_cover_each_identity_once() {
+        assert_eq!(
+            ziwei::StarName::ALL.map(star_slot),
+            std::array::from_fn(|i| i)
+        );
+        assert_eq!(
+            ziwei::PalaceName::ALL.map(palace_slot),
+            std::array::from_fn(|i| i)
+        );
+    }
 
     #[test]
     fn numeric_year_projection_checks_js_precision_without_i32_narrowing() {
