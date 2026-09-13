@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -20,6 +20,7 @@ import {
   dockerDiagnosticsScript,
   observeCommand,
   redactDiagnostic,
+  redactObservation,
   waitForWindowsDocker,
 } from "../../packages/ziwei/tools/windows-docker.ts";
 import {
@@ -442,6 +443,7 @@ if (process.platform === "win32") {
   test("Windows Docker diagnostic script returns service, process and event evidence", () => {
     // Validate the script output independently of the production 10-second collection budget.
     // Cold PowerShell startup and event-log queries can take longer on shared Windows runners.
+    const startedAt = Date.now();
     const result = observeCommand(
       "powershell.exe",
       [
@@ -452,7 +454,29 @@ if (process.platform === "win32") {
       ],
       30_000,
     );
-    assert.equal(result.error, undefined);
+    // Temporary same-runner comparison. Capture evidence before any assertion fails.
+    const mode = process.env.ZIWEI_WINDOWS_DIAGNOSTIC_MODE;
+    const diagnostic = JSON.stringify({
+      mode: mode ?? "local",
+      startedAt,
+      node: process.version,
+      arch: process.arch,
+      batch: {
+        commit: process.env.GITHUB_SHA,
+        runId: process.env.GITHUB_RUN_ID,
+        runAttempt: process.env.GITHUB_RUN_ATTEMPT,
+      },
+      runnerImage: { name: process.env.ImageOS, version: process.env.ImageVersion },
+      scriptSha256: createHash("sha256").update(dockerDiagnosticsScript).digest("hex"),
+      result: redactObservation(result),
+    });
+    if (mode) {
+      assert.ok(mode === "full" || mode === "isolated");
+      const output = fileURLToPath(new URL("../../target/windows-diagnostics/", import.meta.url));
+      mkdirSync(output, { recursive: true });
+      writeFileSync(join(output, `${mode}.json`), diagnostic + "\n", { flag: "wx" });
+    }
+    assert.equal(result.error, undefined, diagnostic);
     assert.equal(result.status, 0, result.stderr);
     const evidence = JSON.parse(result.stdout);
     assert.deepEqual(

@@ -120,30 +120,48 @@ export const dockerDiagnosticsScript = String.raw`
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+$diagnosticClock = [System.Diagnostics.Stopwatch]::StartNew()
+function Write-DiagnosticStage([string]$stage) {
+  [Console]::Error.WriteLine('[DEBUG-windows-diagnostics] ' + ([ordered]@{
+    stage = $stage
+    elapsedMs = $diagnosticClock.ElapsedMilliseconds
+    unixMs = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+  } | ConvertTo-Json -Compress))
+  [Console]::Error.Flush()
+}
+Write-DiagnosticStage 'script-start'
 $services = @('docker', 'hns', 'vmcompute' | ForEach-Object {
   $name = $_
+  Write-DiagnosticStage "service-$name-start"
   try {
     $service = Get-Service -Name $name -ErrorAction Stop
     [ordered]@{ name = $name; status = [string]$service.Status; startType = [string]$service.StartType }
   } catch { [ordered]@{ name = $name; error = $_.Exception.Message } }
+  Write-DiagnosticStage "service-$name-end"
 })
+Write-DiagnosticStage 'processes-start'
 $processes = @(Get-Process -Name dockerd -ErrorAction SilentlyContinue | ForEach-Object {
   $process = $_
   try { [ordered]@{ id = $process.Id; path = $process.Path; startedAt = $process.StartTime.ToUniversalTime().ToString('o') } }
   catch { [ordered]@{ id = $process.Id; error = $_.Exception.Message } }
 })
+Write-DiagnosticStage 'processes-end'
 $since = (Get-Date).AddMinutes(-15)
 $events = @(foreach ($source in @(
   @{ LogName = 'Application'; ProviderName = 'docker'; StartTime = $since },
   @{ LogName = 'System'; ProviderName = 'Service Control Manager'; StartTime = $since }
 )) {
+  Write-DiagnosticStage ("events-" + $source.LogName + '-start')
   try {
     Get-WinEvent -FilterHashtable $source -MaxEvents 30 -ErrorAction Stop |
       Where-Object { $source.LogName -eq 'Application' -or $_.Message -match '(?i)docker|hns|vmcompute' } |
       ForEach-Object { [ordered]@{ time = $_.TimeCreated.ToUniversalTime().ToString('o'); id = $_.Id; level = $_.Level; message = $_.Message } }
   } catch { [ordered]@{ log = $source.LogName; error = $_.Exception.Message } }
+  Write-DiagnosticStage ("events-" + $source.LogName + '-end')
 })
+Write-DiagnosticStage 'serialize-start'
 [ordered]@{ services = $services; processes = $processes; events = $events } | ConvertTo-Json -Depth 6 -Compress
+Write-DiagnosticStage 'script-end'
 `;
 
 export function dockerDiagnostics() {

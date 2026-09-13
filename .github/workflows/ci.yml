@@ -57,9 +57,25 @@ jobs:
       - name: Release tests
         run: mise exec -- cargo test --workspace --all-features --release --locked
       - name: Install Node adapter development dependencies
+        id: node-dependencies
         run: mise exec -- pnpm install --frozen-lockfile
       - name: Node development runtime contracts
+        env:
+          ZIWEI_WINDOWS_DIAGNOSTIC_MODE: ${{ matrix.target == 'x86_64-pc-windows-msvc' && 'full' || '' }}
         run: mise run check:node:tools
+      - name: Compare isolated Windows diagnostic on the same runner
+        if: ${{ !cancelled() && matrix.target == 'x86_64-pc-windows-msvc' && steps.node-dependencies.outcome == 'success' }}
+        env:
+          ZIWEI_WINDOWS_DIAGNOSTIC_MODE: isolated
+        run: mise run check:node:tools -- -t "Windows Docker diagnostic script returns service, process and event evidence"
+      - name: Preserve Windows diagnostic stage evidence
+        if: ${{ !cancelled() && matrix.target == 'x86_64-pc-windows-msvc' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: windows-diagnostic-stages-${{ github.run_attempt }}
+          path: target/windows-diagnostics/*.json
+          if-no-files-found: warn
+          retention-days: 7
       - name: Linux diagnostic contracts
         if: runner.os == 'Linux'
         run: mise run check:node:tools:linux
