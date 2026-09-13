@@ -1,6 +1,6 @@
 # 七个原生候选平台：宿主、构建与验收矩阵
 
-当前状态：2026-09-14，[隔离重建实验](https://github.com/matharts/ziwei/actions/runs/34774152796)与[完整消费对照](https://github.com/matharts/ziwei/actions/runs/34775494954)已证明源码重建的 pnpm 可通过启动及双 Node／双客户端全部 16 个场景。用户随后确认将这条路径接入 ppc64le 日常候选 CI，实施合同见下节；本次正式接入的远端验证仍待完成，尚未合并或发布。官方二进制的启动故障保留在手动诊断中，不声称上游已修复。历史证据与实验边界见下文；当前范围以本页平台矩阵为准，仿真不替代真机验收。现有八目标结论沿用 [Node 分发设计](../architecture/node-distribution-proposal.md)。
+当前状态：2026-09-14，提交 `be772f9` 已将固定源码重建 pnpm 接入 ppc64le 日常候选 CI：[候选 CI](https://github.com/matharts/ziwei/actions/runs/34776793193)的 14 项任务与[常规 CI](https://github.com/matharts/ziwei/actions/runs/34776793142)的 21 项任务全部通过。ppc64le 使用本轮重建客户端，s390x 保持官方客户端，两架构双 Node／双客户端共 32 个消费场景均通过，下载后批次和摘要已核对。实现已推送临时分支，尚未合并或发布。官方二进制的启动故障保留在手动诊断中，不声称上游已修复。历史证据与实验边界见下文；当前范围以本页平台矩阵为准，仿真不替代真机验收。现有八目标结论沿用 [Node 分发设计](../architecture/node-distribution-proposal.md)。
 
 候选实现包含 [静态审计](../../packages/ziwei/tools/compatibility.ts)、[候选封存与消费](../../packages/ziwei/tools/candidate.ts)、[仿真控制器](../../packages/ziwei/tools/candidate-runtime.ts) 和独立的[候选 CI](../../.github/workflows/native-candidates.yml)。不改正式目标 manifest、依赖或公开 API，不安装本机 SDK、虚拟机或设备工具，不申请云资源，不发布。下文的实施路径与工期是项目建议，不是上游支持承诺。
 
@@ -20,6 +20,10 @@
 mise run build:pnpm:ppc64le -- --source <固定且未修改的上游源码目录> --output <新客户端目录>
 mise run check:node:candidate -- --target powerpc64le-unknown-linux-gnu --input <同批候选目录> --output <新结果目录> --pnpm-build <新客户端目录>/build.json
 ```
+
+首次日常验收对应提交 `be772f99e9f30897ee6f953b1021dc43b9eb9f73`、run `34776793193`、attempt 1。重建步骤用时 16 分 19 秒，整个候选工作流约 19 分 50 秒；这是本轮 CI 耗时，不是性能保证。构建 artifact `10323718884` 的 pnpm 为 57974968 字节、SHA-256 `33f02b192985516eb79662fca568325f676455b01b0a46feb3fb6205f565c431`，与此前隔离重建样本字节一致，但不据两次样本承诺一般性的可复现构建。
+
+ppc64le／s390x 消费 artifact 分别为 `10324405200`、`10323734082`，两份报告均为 `purpose: candidate-acceptance`、`passed: true`；前者来源为 `source-rebuild` 且内嵌本轮完整构建凭据，后者为 `official-registry`。Node 24.15.0、24.21.0 各通过 npm／pnpm 正常、禁用 optional、缺失、损坏四场景；四个消费容器均成功清理，实际 glibc 均为 2.36，端序分别为 LE／BE。两架构候选 tarball、内含 addon、消费凭据摘要及已加载模块路径均已对应核对，不混用实验 run 的候选产物。
 
 ### 独立 pnpm 启动诊断
 
