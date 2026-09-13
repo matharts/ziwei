@@ -14,12 +14,14 @@ on:
           - image
           - debug
           - rebuild
+          - consumer
 
 permissions:
   contents: read
 
 jobs:
   reproduce:
+    if: inputs.comparison != 'consumer'
     runs-on: ubuntu-24.04
     timeout-minutes: ${{ inputs.comparison == 'rebuild' && 65 || 10 }}
     steps:
@@ -103,5 +105,64 @@ jobs:
             pnpm-rebuild-results/*.txt
             pnpm-rebuild-results/pnpm
             pnpm-rebuild-results/LICENSE
+          if-no-files-found: error
+          retention-days: 7
+
+  consume-rebuilt:
+    if: inputs.comparison == 'consumer'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    permissions:
+      contents: read
+      actions: read
+    env:
+      CARGO_BUILD_TARGET: powerpc64le-unknown-linux-gnu
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
+        with:
+          install_args: rust node pnpm
+          cache: false
+      # Only the diagnostic tool comes from this earlier inspected run. Ziwei is
+      # built and sealed below with this run's own commit/run/attempt identity.
+      - name: Download the exact startup-verified pnpm experiment
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          github-token: ${{ github.token }}
+          run-id: 34774152796
+          artifact-ids: 10323128266
+          merge-multiple: true
+          path: target/pnpm-verified-input
+      - name: Install target and locked workspace dependencies
+        run: |
+          mise exec -- rustup target add "$CARGO_BUILD_TARGET"
+          mise exec -- pnpm install --frozen-lockfile
+      - name: Build with the existing GNU addon recipe
+        run: mise run build:node:gnu
+      - name: Audit and seal this run's exact Ziwei candidate
+        id: seal
+        run: |
+          mkdir -p target/native-candidate
+          cp packages/ziwei/native/ziwei-native.linux-ppc64-gnu.node target/native-candidate/
+          mise run check:node:gnu-candidate -- "$CARGO_BUILD_TARGET" target/native-candidate/ziwei-native.linux-ppc64-gnu.node > target/native-candidate/audit.json
+          mise run pack:node:candidate -- --target "$CARGO_BUILD_TARGET" --input target/native-candidate --output target/native-candidate-bundle
+      - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
+        with:
+          image: tonistiigi/binfmt@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0
+          platforms: ppc64le
+          cache-image: false
+      - name: Consume both Node versions with npm and the pinned experimental pnpm
+        run: mise run diagnose:pnpm:rebuild -- --mode consume --input target/native-candidate-bundle --receipt target/pnpm-verified-input/pnpm-rebuild-results/build.json --output target/pnpm-consumer-results
+      - name: Preserve candidate bytes and complete consumer evidence
+        if: ${{ !cancelled() && steps.seal.outcome == 'success' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: pnpm-rebuilt-consumer-${{ github.sha }}-${{ github.run_attempt }}
+          path: |
+            target/native-candidate/
+            target/native-candidate-bundle/
+            target/pnpm-consumer-results/
           if-no-files-found: error
           retention-days: 7

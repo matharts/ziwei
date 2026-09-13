@@ -1,11 +1,16 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { test } from "@rstest/core";
 
+import { runCandidateExperiment } from "../../packages/ziwei/tools/candidate-runtime.ts";
 import { digest } from "../../packages/ziwei/tools/candidate.ts";
 import {
   pnpmBuild,
+  readVerifiedPnpmBuild,
+  verifiedPnpmBuild,
   verifyPnpmRebuild,
 } from "../../packages/ziwei/tools/diagnostics/pnpm-rebuild.ts";
 import { runPnpmRepro } from "../../packages/ziwei/tools/diagnostics/pnpm-repro.ts";
@@ -90,4 +95,39 @@ test("rebuild is opt-in and cannot hide the baseline or replace the candidate ga
   assert.doesNotMatch(workflow, /continue-on-error/);
   assert.match(workflow, new RegExp(`ref: ${pnpmBuild.sourceCommit}`));
   assert.doesNotMatch(readFileSync(".github/workflows/native-candidates.yml", "utf8"), /rebuilt/);
+});
+
+test("consumer pins the previously verified tool independently of the new Ziwei cohort", async (t) => {
+  const directory = mkdtempSync(join(tmpdir(), "pnpm-verified-test-"));
+  t.onTestFinished(() => rmSync(directory, { recursive: true, force: true }));
+  const { binary, receipt } = fixture();
+  writeFileSync(join(directory, "pnpm"), binary);
+  writeFileSync(
+    join(directory, "build.json"),
+    JSON.stringify({ ...receipt, batch: verifiedPnpmBuild.batch }),
+  );
+  // Self-consistent receipt + bytes must not bypass the separately pinned actual CI digest.
+  assert.throws(() => readVerifiedPnpmBuild(join(directory, "build.json")), /固定摘要/);
+  await assert.rejects(
+    runCandidateExperiment("s390x-unknown-linux-gnu", "unused", "unused", { binary, receipt }),
+    /仅用于 ppc64le/,
+  );
+  await assert.rejects(
+    runCandidateExperiment("powerpc64le-unknown-linux-gnu", "unused", "unused", {
+      binary,
+      receipt: { ...receipt, completed: false },
+    }),
+  );
+
+  const workflow = readFileSync(".github/workflows/pnpm-repro.yml", "utf8");
+  const consumer = workflow.split("  consume-rebuilt:\n")[1]!;
+  assert.match(consumer, /if: inputs.comparison == 'consumer'/);
+  assert.ok(consumer.includes(`run-id: ${verifiedPnpmBuild.batch.runId}`));
+  assert.match(consumer, /artifact-ids: 10323128266/);
+  assert.match(consumer, /--mode consume/);
+  assert.match(consumer, /mise run pack:node:candidate/);
+  assert.doesNotMatch(consumer, /continue-on-error|GITHUB_SHA:|GITHUB_RUN_ID:|GITHUB_RUN_ATTEMPT:/);
+  const controller = readFileSync("packages/ziwei/tools/candidate-runtime.ts", "utf8");
+  const cli = controller.split("if (import.meta.main)")[1]!;
+  assert.doesNotMatch(cli, /experimentalPnpm|rebuilt/);
 });

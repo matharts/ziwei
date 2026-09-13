@@ -13,7 +13,11 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
-import { runCandidateCommand } from "../candidate-runtime.ts";
+import {
+  runCandidateCommand,
+  runCandidateExperiment,
+  verifyDownload,
+} from "../candidate-runtime.ts";
 import { currentBatch, digest, type Batch } from "../candidate.ts";
 
 // v12.4.1 tag, upstream rust-toolchain.toml and official rust:1.97.0-bookworm
@@ -24,6 +28,17 @@ export const pnpmBuild = {
   rust: "1.97.0",
   target: "powerpc64le-unknown-linux-gnu",
   builderImage: "rust@sha256:8fa55b2f3ddf97471ab6a767bfa3f37e6bad0986ba823e75fea57e2a2a5c3073",
+} as const;
+
+// A previously inspected tool artifact, not a Ziwei cohort. Preserve its original
+// build identity when consuming a newly built, independently validated cohort.
+export const verifiedPnpmBuild = {
+  batch: {
+    commit: "22c3c328b846a37a4c6499d2a942e874670efef1",
+    runId: "34774152796",
+    runAttempt: "1",
+  },
+  sha256: "33f02b192985516eb79662fca568325f676455b01b0a46feb3fb6205f565c431",
 } as const;
 
 export function verifyPnpmRebuild(value: unknown, binary: Buffer, batch: Batch) {
@@ -52,6 +67,12 @@ export function readPnpmRebuild(path: string, batch: Batch) {
   const binary = readFileSync(binaryPath);
   const receipt = verifyPnpmRebuild(JSON.parse(readFileSync(path, "utf8")), binary, batch);
   return { binary, receipt };
+}
+
+export function readVerifiedPnpmBuild(path: string) {
+  const rebuilt = readPnpmRebuild(path, verifiedPnpmBuild.batch);
+  verifyDownload(rebuilt.binary, verifiedPnpmBuild.sha256, "sha256");
+  return rebuilt;
 }
 
 export const pnpmBuildScript = [
@@ -216,8 +237,33 @@ export async function rebuildPnpm(source: string, output: string) {
 
 if (import.meta.main) {
   const { values } = parseArgs({
-    options: { source: { type: "string" }, output: { type: "string" } },
+    options: {
+      source: { type: "string" },
+      output: { type: "string" },
+      mode: { type: "string", default: "build" },
+      input: { type: "string" },
+      receipt: { type: "string" },
+    },
   });
-  assert.ok(values.source && values.output, "需要 --source 固定源码及 --output 新结果目录");
-  await rebuildPnpm(values.source, values.output);
+  assert.ok(values.output, "需要 --output 新结果目录");
+  if (values.mode === "consume") {
+    assert.ok(
+      values.input && values.receipt && !values.source,
+      "消费对照需要 --input 和 --receipt，不接受 --source",
+    );
+    const rebuilt = readVerifiedPnpmBuild(resolve(values.receipt));
+    await runCandidateExperiment(
+      pnpmBuild.target,
+      resolve(values.input),
+      resolve(values.output),
+      rebuilt,
+    );
+  } else {
+    assert.equal(values.mode, "build", "未知重建实验模式");
+    assert.ok(
+      values.source && !values.input && !values.receipt,
+      "重建需要 --source，不接受消费产物",
+    );
+    await rebuildPnpm(values.source, values.output);
+  }
 }

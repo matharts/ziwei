@@ -130,8 +130,9 @@ test("pnpm diagnostic workflow is manual, bounded and independent of candidate b
     "utf8",
   );
   assert.match(workflow, /on:\n  workflow_dispatch:/);
+  const reproduce = workflow.split("  reproduce:\n")[1]!.split("  consume-rebuilt:\n")[0]!;
   assert.doesNotMatch(
-    workflow,
+    reproduce,
     /push:|pull_request:|continue-on-error|needs:|download-artifact|pnpm install|build:node/,
   );
   assert.match(
@@ -168,7 +169,9 @@ test("QEMU comparison uses one runner, exact pins and failure-independent ordere
     new URL("../../.github/workflows/pnpm-repro.yml", import.meta.url),
     "utf8",
   );
-  assert.equal(workflow.match(/runs-on:/g)?.length, 1);
+  const reproduce = workflow.split("  reproduce:\n")[1]!.split("  consume-rebuilt:\n")[0]!;
+  assert.equal(reproduce.match(/runs-on:/g)?.length, 1);
+  assert.match(reproduce, /if: inputs.comparison != 'consumer'/);
   for (const [group, config] of Object.entries(qemuComparisons)) {
     assert.match(config.image, /^tonistiigi\/binfmt@sha256:[a-f0-9]{64}$/);
     assert.ok(workflow.includes(`image: ${config.image}`));

@@ -183,8 +183,18 @@ export async function runCandidateExperiment(
   target: CandidateTarget,
   cohort: string,
   output: string,
+  experimentalPnpm?: { binary: Buffer; receipt: Record<string, unknown> },
 ) {
   candidateTarget(target);
+  assert.ok(
+    !experimentalPnpm || target === "powerpc64le-unknown-linux-gnu",
+    "重建客户端仅用于 ppc64le 对照",
+  );
+  if (experimentalPnpm) {
+    assert.equal(experimentalPnpm.receipt.kind, "pnpm-rebuild-experiment");
+    assert.equal(experimentalPnpm.receipt.completed, true);
+    assert.deepEqual(experimentalPnpm.receipt.binary, digest(experimentalPnpm.binary));
+  }
   const batch = currentBatch();
   readCandidate(cohort, target, batch); // Fail before network or Docker on mixed/corrupt input.
   mkdirSync(dirname(output), { recursive: true });
@@ -192,6 +202,7 @@ export async function runCandidateExperiment(
   const runs: Record<string, unknown>[] = [];
   const report: Record<string, unknown> = {
     verification: "emulated",
+    purpose: experimentalPnpm ? "pnpm-rebuild-comparison" : "candidate-acceptance",
     passed: false,
     target,
     batch,
@@ -262,22 +273,34 @@ export async function runCandidateExperiment(
     const runtime = join(temporary, "runtime");
     mkdirSync(runtime);
     const pnpmUrl = `https://registry.npmjs.org/@pnpm/exe.linux-${platform.arch}/-/exe.linux-${platform.arch}-${pnpmVersion}.tgz`;
-    const pnpm = await download(pnpmUrl, candidateRuntimes[target].pnpmIntegrity, "sha512");
-    writeFileSync(
-      join(runtime, "pnpm"),
-      execFileSync("tar", ["-xOzf", "-", "package/pnpm"], {
-        input: pnpm,
-        timeout: 30_000,
-        maxBuffer: 96 * 1024 * 1024,
-      }),
-    );
+    if (experimentalPnpm) {
+      assert.equal(experimentalPnpm.receipt.version, pnpmVersion);
+      writeFileSync(join(runtime, "pnpm"), experimentalPnpm.binary);
+      report.pnpm = {
+        origin: "experimental-rebuild",
+        version: pnpmVersion,
+        binary: digest(experimentalPnpm.binary),
+        rebuild: experimentalPnpm.receipt,
+      };
+    } else {
+      const pnpm = await download(pnpmUrl, candidateRuntimes[target].pnpmIntegrity, "sha512");
+      writeFileSync(
+        join(runtime, "pnpm"),
+        execFileSync("tar", ["-xOzf", "-", "package/pnpm"], {
+          input: pnpm,
+          timeout: 30_000,
+          maxBuffer: 96 * 1024 * 1024,
+        }),
+      );
+      report.pnpm = {
+        origin: "official-registry",
+        version: pnpmVersion,
+        url: pnpmUrl,
+        archive: digest(pnpm),
+        binary: digest(readFileSync(join(runtime, "pnpm"))),
+      };
+    }
     chmodSync(join(runtime, "pnpm"), 0o755);
-    report.pnpm = {
-      version: pnpmVersion,
-      url: pnpmUrl,
-      archive: digest(pnpm),
-      binary: digest(readFileSync(join(runtime, "pnpm"))),
-    };
     for (const [nodeVersion, sha256] of Object.entries(candidateRuntimes[target].node)) {
       const nodeOutput = join(output, nodeVersion);
       mkdirSync(nodeOutput);

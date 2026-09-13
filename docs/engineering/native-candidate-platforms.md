@@ -1,6 +1,6 @@
 # 七个原生候选平台：宿主、构建与验收矩阵
 
-当前状态：2026-09-14，提交 `431aa92` 的[候选 CI](https://github.com/matharts/ziwei/actions/runs/34772938562)通过七目标核心检查、三项 GNU addon 交叉构建／静态审计及 s390x 双 Node／双客户端 QEMU 消费；ppc64le 消费任务仍失败，完整候选门禁未通过。官方 pnpm 文件中的异常分支已与 GDB 现场对应，已增加隔离重建实验，尚无修复结论。历史证据与实验边界见下文；当前范围以本页平台矩阵为准，仿真不替代真机验收。现有八目标结论沿用 [Node 分发设计](../architecture/node-distribution-proposal.md)。
+当前状态：2026-09-14，提交 `22c3c32` 的[常规 CI](https://github.com/matharts/ziwei/actions/runs/34774138829)已通过，日常候选门禁的 ppc64le 官方 pnpm 启动故障仍保留。同提交的[隔离重建实验](https://github.com/matharts/ziwei/actions/runs/34774152796)确认：官方产物仍崩溃，同一源码／Rust 版本经 Debian GNU 工具链重建后，原 QEMU／用户态下两项启动探针通过。完整消费对照待验，不将实验启动通过视为正式候选门禁修复。历史证据与实验边界见下文；当前范围以本页平台矩阵为准，仿真不替代真机验收。现有八目标结论沿用 [Node 分发设计](../architecture/node-distribution-proposal.md)。
 
 候选实现包含 [静态审计](../../packages/ziwei/tools/compatibility.ts)、[候选封存与消费](../../packages/ziwei/tools/candidate.ts)、[仿真控制器](../../packages/ziwei/tools/candidate-runtime.ts) 和独立的[候选 CI](../../.github/workflows/native-candidates.yml)。不改正式目标 manifest、依赖或公开 API，不安装本机 SDK、虚拟机或设备工具，不申请云资源，不发布。下文的实施路径与工期是项目建议，不是上游支持承诺。
 
@@ -67,6 +67,12 @@ mise run diagnose:pnpm -- --output <新的结果目录>
 `build.json` 记录源码提交、锁文件摘要、Rust／构建镜像、Dockerfile 摘要、实际工具版本日志、命令、二进制 SHA-256 和当前 CI 批次。它明确标记 `pnpm-rebuild-experiment`、`runtimeVerified: false`；启动工具经 `--rebuilt-receipt` 只接受同 commit／run／attempt、固定源码／版本／工具配置、完整构建和匹配字节。实验二进制及其许可证单独保存，不冒充官方归档，也不进入候选或正式发行门禁。
 
 原基线失败不会阻止重建及后续探针，也不会被成功对照掩盖：诊断工作流继续保留失败状态，各组结果独立检查。正常版本输出才表示启动通过；完整 Node 双版本／npm 与 pnpm 消费仍是另一项验收。实验未通过前不更改日常门禁、工具链、支持声明或公共依赖。
+
+提交 `22c3c328b846a37a4c6499d2a942e874670efef1` 的 [run 34774152796](https://github.com/matharts/ziwei/actions/runs/34774152796)（attempt 1）已完成重建。实际 Rust 1.97.0／LLVM 22.1.6、GCC 12.2.0、GNU ld 2.40；未改上游源码和锁文件。重建文件为 57974968 字节，SHA-256 为 `33f02b192985516eb79662fca568325f676455b01b0a46feb3fb6205f565c431`，下载后的字节与 build／probe 两份报告一致。两组使用相同 QEMU 10.2.3 和消费镜像：官方普通／追踪探针均出现 QEMU SIGSEGV，重建两探针均以 0 退出并输出 `12.4.1`，容器均清理成功。工作流仅因官方基线失败而保留失败状态。这证明该重建产物解决了本环境中的启动阻塞，不确定是哪一条构建链变化修正了异常调用，也不构成正式工具替换决定。
+
+手动选择 `comparison=consumer` 继续完整消费验证：独立 job 下载已核对的 artifact `10323128266`，同时固定其原始 build commit／run／attempt 与二进制 SHA-256；该工具产物过期或不匹配就失败，不自动寻找最新文件或重新构建代替。工具来源批次保持原样，**Ziwei 候选则必须在消费这次 CI 内重新构建、审计和封存**，沿用原有同 commit／run／attempt 检查，不改写 `GITHUB_*` 来冒充同批。
+
+消费入口只在 `diagnose:pnpm:rebuild -- --mode consume` 中开放，固定 ppc64le；日常 `check:node:candidate` 不开放重建客户端参数，正式工作流与官方客户端摘要不变。复用原来的固定 Node 24.15.0／24.21.0、只读断网容器、冷缓存注册表与 npm／pnpm 四场景合同。控制器报告用 `purpose: pnpm-rebuild-comparison` 和 `origin: experimental-rebuild` 明确区分实验与日常验收，并保留工具原始构建信息。此组不重复已完成的源码重建或把原基线失败变绿；其结果只回答“该固定实验 pnpm 能否完整消费新的 Ziwei 候选”。
 
 **应按真实调用方划分交付物，不把七个 Rust triple 都等同于七个 Node npm 平台。**
 
