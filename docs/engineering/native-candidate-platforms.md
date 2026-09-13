@@ -1,6 +1,6 @@
 # 七个原生候选平台：宿主、构建与验收矩阵
 
-当前状态：2026-09-14，提交 `22c3c32` 的[常规 CI](https://github.com/matharts/ziwei/actions/runs/34774138829)已通过，日常候选门禁的 ppc64le 官方 pnpm 启动故障仍保留。同提交的[隔离重建实验](https://github.com/matharts/ziwei/actions/runs/34774152796)确认：官方产物仍崩溃，同一源码／Rust 版本经 Debian GNU 工具链重建后，原 QEMU／用户态下两项启动探针通过。完整消费对照待验，不将实验启动通过视为正式候选门禁修复。历史证据与实验边界见下文；当前范围以本页平台矩阵为准，仿真不替代真机验收。现有八目标结论沿用 [Node 分发设计](../architecture/node-distribution-proposal.md)。
+当前状态：2026-09-14，提交 `22c3c32` 的[常规 CI](https://github.com/matharts/ziwei/actions/runs/34774138829)已通过，日常候选门禁的 ppc64le 官方 pnpm 启动故障仍保留。同提交的[隔离重建实验](https://github.com/matharts/ziwei/actions/runs/34774152796)确认重建产物在原 QEMU／用户态下启动通过；随后提交 `37796bc` 的[完整消费对照](https://github.com/matharts/ziwei/actions/runs/34775494954)通过双 Node／双客户端全部 16 个场景。该方案仅在临时分支验证，尚未正式接入日常候选门禁，也未合并或发布。历史证据与实验边界见下文；当前范围以本页平台矩阵为准，仿真不替代真机验收。现有八目标结论沿用 [Node 分发设计](../architecture/node-distribution-proposal.md)。
 
 候选实现包含 [静态审计](../../packages/ziwei/tools/compatibility.ts)、[候选封存与消费](../../packages/ziwei/tools/candidate.ts)、[仿真控制器](../../packages/ziwei/tools/candidate-runtime.ts) 和独立的[候选 CI](../../.github/workflows/native-candidates.yml)。不改正式目标 manifest、依赖或公开 API，不安装本机 SDK、虚拟机或设备工具，不申请云资源，不发布。下文的实施路径与工期是项目建议，不是上游支持承诺。
 
@@ -73,6 +73,12 @@ mise run diagnose:pnpm -- --output <新的结果目录>
 手动选择 `comparison=consumer` 继续完整消费验证：独立 job 下载已核对的 artifact `10323128266`，同时固定其原始 build commit／run／attempt 与二进制 SHA-256；该工具产物过期或不匹配就失败，不自动寻找最新文件或重新构建代替。工具来源批次保持原样，**Ziwei 候选则必须在消费这次 CI 内重新构建、审计和封存**，沿用原有同 commit／run／attempt 检查，不改写 `GITHUB_*` 来冒充同批。
 
 消费入口只在 `diagnose:pnpm:rebuild -- --mode consume` 中开放，固定 ppc64le；日常 `check:node:candidate` 不开放重建客户端参数，正式工作流与官方客户端摘要不变。复用原来的固定 Node 24.15.0／24.21.0、只读断网容器、冷缓存注册表与 npm／pnpm 四场景合同。控制器报告用 `purpose: pnpm-rebuild-comparison` 和 `origin: experimental-rebuild` 明确区分实验与日常验收，并保留工具原始构建信息。此组不重复已完成的源码重建或把原基线失败变绿；其结果只回答“该固定实验 pnpm 能否完整消费新的 Ziwei 候选”。
+
+提交 `37796bcf1dd6fa796701f63bd4cc86cf9a947f10` 的 [run 34775494954](https://github.com/matharts/ziwei/actions/runs/34775494954)（attempt 1）已全部通过，证据 artifact 为 `10323930265`。实际宿主为 QEMU 下的 Linux ppc64 little-endian、glibc 2.36；Node 24.15.0 与 24.21.0 各通过 npm／实验 pnpm 的正常、禁用 optional、缺包和损坏包四场景，合计 16 个。两份消费报告均记录实际加载的平台 `.node`；下载后重新核验两个 tarball、封存文件与原始 addon，字节一致，addon SHA-256 为 `9e24c395bdc7756affbffd861bf15f8306bd448a0d0745e28d927d39d5f2b312`。两次消费容器均清理成功，未改变测试断言或支持范围。
+
+补充静态对照：原故障点前的 40 字节指令片段在重建文件中唯一匹配。原 ELF `0x252d9e0` 的异常调用，对应重建 ELF `0x2521f20` 调用 `0xd1d940`；后者符号为 `plt_call.gettid@@GLIBC_2.30`。这与 [Rust 1.97 的 gettid 兼容路径](https://github.com/rust-lang/rust/blob/1.97.0/library/std/src/sys/thread/unix.rs#L333)及 [PowerPC 的系统调用号 207](https://github.com/torvalds/linux/blob/v6.17/arch/powerpc/kernel/syscalls/syscall.tbl#L267)一致。定位已收敛到该外部发布产物的启动调用，但尚未用最小链接实验区分 GNU linker、sysroot 和其他构建因素；不将整个构建链对照说成某条编译器补丁的因果证明。
+
+后续需决定是否正式维护这条源码重建客户端路径，或等待上游修正官方产物。当前授权仅完成临时分支的隔离验证，未切换日常工作流、向上游发 Issue、发布工具产物或合并分支。短期 Actions artifact 不能直接充当长期分发源；正式采用还需明确工具升级、可复现构建／缓存及过期恢复策略。此实验也不证明 POWER 真机、低于当前 glibc 的环境或其他候选平台已获支持。
 
 **应按真实调用方划分交付物，不把七个 Rust triple 都等同于七个 Node npm 平台。**
 
