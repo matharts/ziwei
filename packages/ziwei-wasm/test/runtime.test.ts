@@ -339,6 +339,55 @@ test("input errors and getter defense match the current native contract", () => 
   );
 });
 
+test("query validation preserves left-to-right errors before later omissions", () => {
+  const natal = runtime.Ziwei.fromBirth({
+    gender: 0,
+    birthYear: 1992,
+    birthMonth: 8,
+    birthDay: 15,
+    birthHour: 3,
+  });
+  const seen = new Set<string>();
+  try {
+    for (const call of queryCalls(runtime)) {
+      if (seen.has(call.method)) continue;
+      seen.add(call.method);
+      for (let i = 0; i < call.args.length; i++) {
+        for (let omitted = i + 1; omitted < call.args.length; omitted++) {
+          const invalid = call.args.map((value, index) => (index === i ? undefined : value));
+          const args = invalid.slice(0, omitted);
+          const capture = (values: readonly unknown[]) => {
+            try {
+              invoke(natal, { ...call, args: [...values] });
+            } catch (error) {
+              assert.ok(error instanceof ZiweiError);
+              return error.detail;
+            }
+            throw new Error("Expected query rejection");
+          };
+          const expected = capture(invalid);
+          assert.equal(expected.code, "INVALID_ARGUMENT");
+          if (expected.code === "INVALID_ARGUMENT") assert.equal(expected.reason, "type");
+          assert.deepEqual(capture(args), expected, call.method);
+        }
+      }
+    }
+    for (const call of [
+      () => Reflect.apply(natal.yearly, natal, [12]),
+      () => Reflect.apply(natal.yearly, natal, [12, undefined]),
+    ]) {
+      assert.throws(call, (error: unknown) => {
+        assert.ok(error instanceof ZiweiError);
+        assert.deepEqual(error.detail, { code: "INVALID_DECADE_INDEX", value: 12 });
+        return true;
+      });
+    }
+  } finally {
+    natal.dispose();
+  }
+  assert.throws(() => Reflect.apply(natal.yearly, natal, [12]), ZiweiLifecycleError);
+});
+
 test("repeated allocation, explicit cleanup and retained DTOs remain usable", () => {
   for (let i = 0; i < 1000; i++) {
     const natal = runtime.Ziwei.fromBirth({

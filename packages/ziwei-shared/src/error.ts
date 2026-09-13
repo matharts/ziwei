@@ -162,6 +162,27 @@ function isNativeFailure(value: unknown): value is NativeFailure {
   return value !== null && typeof value === "object" && Object.hasOwn(value, "code");
 }
 
+/** Native validates left to right; only its first omitted argument becomes missing. */
+export function unwrapQuery<T>(
+  result: T,
+  supplied: number,
+  ...names: string[]
+): Exclude<T, NativeFailure>;
+export function unwrapQuery(result: unknown, supplied: number, ...names: string[]): unknown {
+  if (!isNativeFailure(result)) return result;
+  const missing = names[supplied];
+  if (
+    missing !== undefined &&
+    result.code === "INVALID_ARGUMENT" &&
+    result.path === missing &&
+    result.reason === "type" &&
+    result.receivedType === "undefined"
+  ) {
+    throw argumentError([missing], "missing");
+  }
+  throw nativeError(result);
+}
+
 export function nativeError(failure: NativeFailure): ZiweiError {
   switch (failure.code) {
     case "INVALID_ARGUMENT":

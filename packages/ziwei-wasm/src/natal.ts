@@ -1,6 +1,7 @@
 import {
   nativeError,
   unwrap,
+  unwrapQuery,
   arity,
   projectProfile,
   projectStar as star,
@@ -100,13 +101,25 @@ class NatalHandle implements Natal {
   }
 
   decadeByBranch(decade: DecadeIndex, branch: Branch): Decade {
-    this.#arity(arguments.length, "decade", "branch");
-    return periodPalace(unwrap(this.#native.decadeByBranch(decade, branch)));
+    return periodPalace(
+      unwrapQuery(
+        this.#native.decadeByBranch(decade, branch),
+        arguments.length,
+        "decade",
+        "branch",
+      ),
+    );
   }
 
   decadePalaceByName(decade: DecadeIndex, name: PalaceName): Palace {
-    this.#arity(arguments.length, "decade", "name");
-    return palace(unwrap(this.#native.decadePalaceByName(decade, name)));
+    return palace(
+      unwrapQuery(
+        this.#native.decadePalaceByName(decade, name),
+        arguments.length,
+        "decade",
+        "name",
+      ),
+    );
   }
 
   decadeYears(decade: DecadeIndex): readonly DecadeYear[] {
@@ -119,18 +132,35 @@ class NatalHandle implements Natal {
   }
 
   yearly(decade: DecadeIndex, index: YearlyIndex): readonly Yearly[] {
-    this.#arity(arguments.length, "decade", "index");
-    return Object.freeze(unwrap(this.#native.yearly(decade, index)).map(periodPalace));
+    return Object.freeze(
+      unwrapQuery(this.#native.yearly(decade, index), arguments.length, "decade", "index").map(
+        periodPalace,
+      ),
+    );
   }
 
   yearlyByBranch(decade: DecadeIndex, yearly: YearlyIndex, branch: Branch): Yearly {
-    this.#arity(arguments.length, "decade", "yearly", "branch");
-    return periodPalace(unwrap(this.#native.yearlyByBranch(decade, yearly, branch)));
+    return periodPalace(
+      unwrapQuery(
+        this.#native.yearlyByBranch(decade, yearly, branch),
+        arguments.length,
+        "decade",
+        "yearly",
+        "branch",
+      ),
+    );
   }
 
   yearlyPalaceByName(decade: DecadeIndex, yearly: YearlyIndex, name: PalaceName): Palace {
-    this.#arity(arguments.length, "decade", "yearly", "name");
-    return palace(unwrap(this.#native.yearlyPalaceByName(decade, yearly, name)));
+    return palace(
+      unwrapQuery(
+        this.#native.yearlyPalaceByName(decade, yearly, name),
+        arguments.length,
+        "decade",
+        "yearly",
+        "name",
+      ),
+    );
   }
 
   oppositePalace(branch: Branch): Palace {
@@ -139,8 +169,14 @@ class NatalHandle implements Natal {
   }
 
   sanfangPalaces(branch: Branch, includeSelf: boolean): readonly Palace[] {
-    this.#arity(arguments.length, "branch", "includeSelf");
-    return Object.freeze(unwrap(this.#native.sanfangPalaces(branch, includeSelf)).map(palace));
+    return Object.freeze(
+      unwrapQuery(
+        this.#native.sanfangPalaces(branch, includeSelf),
+        arguments.length,
+        "branch",
+        "includeSelf",
+      ).map(palace),
+    );
   }
 
   sizhengPalaces(branch: Branch): readonly Palace[] {
@@ -170,8 +206,14 @@ class NatalHandle implements Natal {
   }
 
   palaceTransformation(sourceBranch: Branch, kind: Transformation): PalaceTransformation {
-    this.#arity(arguments.length, "sourceBranch", "kind");
-    return relation(unwrap(this.#native.palaceTransformation(sourceBranch, kind)));
+    return relation(
+      unwrapQuery(
+        this.#native.palaceTransformation(sourceBranch, kind),
+        arguments.length,
+        "sourceBranch",
+        "kind",
+      ),
+    );
   }
 
   palaceTransformations(sourceBranch: Branch): readonly PalaceTransformation[] {
@@ -202,8 +244,12 @@ class NatalHandle implements Natal {
   }
 
   palaceStar(branch: Branch, name: StarName): Star | null {
-    this.#arity(arguments.length, "branch", "name");
-    const raw = unwrap(this.#native.palaceStar(branch, name));
+    const raw = unwrapQuery(
+      this.#native.palaceStar(branch, name),
+      arguments.length,
+      "branch",
+      "name",
+    );
     return raw == null ? null : star(raw);
   }
 

@@ -110,6 +110,8 @@ Rust 专用的 TryFrom、get、Clone、Hash、Debug、Display、AsRef 不机械�
 
 3. 按声明顺序验证值；查询参数按从左到右验证。缺少参数为 missing；显式 undefined 为 type。数值依次检查 number、有限、整数、宿主表示范围；不使用 parseInt、位运算、截断或隐式 coercion。
 
+   多参数查询中，前面的非法值优先于后面的缺参。例如 `yearly(12)` 先报 `INVALID_DECADE_INDEX`，`yearly(0)` 才报 `index/missing`；`yearly(0, undefined)` 报 `index/type`。门面保留原生逐参验证的第一错误，仅将实际缺失位置的 `undefined/type` 转为 `missing`。
+
 4. 生年月日和限运索引先通过 0..255 的宿主整数检查，再调用核心 TryFrom；合法枚举先显式映射为核心值。Parameters 最后由核心 new 校验干支阴阳匹配。
 
 Native seam 同样必须拒绝非法数值，不能假设调用方必然经过 TypeScript 门面。推荐先接收 f64 并验证，再转整数；不能让自动 u8 转换先截断。月份范围、干支配对等领域判定仍交给核心，不在两层各维护一份规则。

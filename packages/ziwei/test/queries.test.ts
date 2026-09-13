@@ -267,6 +267,14 @@ test("query arguments retain exact paths, numeric reasons and structured domain 
   for (const [method, args, paths] of calls) {
     for (let i = 0; i < args.length; i++) {
       failure(() => invoke(natal[method], natal, ...args.slice(0, i)), paths[i], "missing");
+      // Earlier invalid values take precedence over a later omitted argument.
+      for (let omitted = i + 1; omitted < args.length; omitted++) {
+        failure(
+          () => invoke(natal[method], natal, ...args.slice(0, omitted).with(i, undefined)),
+          paths[i],
+          "type",
+        );
+      }
       for (const value of [undefined, null, {}, [], 1n, Symbol("invalid"), () => 2]) {
         const invalid = args.with(i, value);
         failure(() => invoke(natal[method], natal, ...invalid), paths[i], "type", value);
@@ -312,6 +320,8 @@ test("query arguments retain exact paths, numeric reasons and structured domain 
     );
   }
   for (const [method, args, code, value] of [
+    ["yearly", [12], "INVALID_DECADE_INDEX", 12],
+    ["yearlyByBranch", [0, 10], "INVALID_YEARLY_INDEX", 10],
     ["decade", [12], "INVALID_DECADE_INDEX", 12],
     ["decadeYears", [255], "INVALID_DECADE_INDEX", 255],
     ["yearly", [0, 10], "INVALID_YEARLY_INDEX", 10],
