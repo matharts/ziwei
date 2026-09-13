@@ -14,6 +14,7 @@
     "rstest.config.ts",
     "tools/tests/**/*.ts",
     "packages/ziwei/rslib.config.ts",
+    "packages/ziwei-shared/rslib.config.ts",
     "packages/ziwei/bench/**/*.ts",
     "packages/ziwei/tools/**/*.ts",
     "packages/ziwei/test/**/*.ts"

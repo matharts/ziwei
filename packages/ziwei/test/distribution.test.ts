@@ -286,7 +286,6 @@ test("staging validates all eight target manifests and refuses incomplete or unk
   const fixture = join(directory, "packages/ziwei");
   mkdirSync(join(fixture, "native"), { recursive: true });
   cpSync(join(packageRoot, "dist"), join(fixture, "dist"), { recursive: true });
-  cpSync(join(packageRoot, "src"), join(fixture, "src"), { recursive: true });
   for (const file of [
     "package.json",
     "README.md",
@@ -317,8 +316,8 @@ test("staging validates all eight target manifests and refuses incomplete or unk
     );
   for (const selected of [[], ["unknown-target"], [targets[0][0], targets[0][0]]])
     assert.throws(() => stage(selected));
-  // Non-entry JS and declarations are required too, even when absent from readdir.
-  for (const file of ["natal.js", "types.d.ts"]) {
+  // Both bundled JS and declarations are mandatory, even when absent from readdir.
+  for (const file of ["index.js", "index.d.ts"]) {
     rmSync(join(fixture, "dist", file));
     assert.throws(() => stage([targets[0][0]]), /ENOENT/);
     assert.equal(existsSync(output), false);

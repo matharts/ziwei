@@ -73,6 +73,173 @@ test("real Wasm matches every finite query against the native adapter for both i
   }
 });
 
+test("star, palace and transformation projections preserve ordered plain fields and explicit nulls", () => {
+  const assertRecord = (value: object, fields: string[]) => {
+    assert.equal(Object.getPrototypeOf(value), Object.prototype);
+    assert.deepEqual(Reflect.ownKeys(value), fields);
+    assertFrozen(value);
+    for (const field of fields) {
+      const descriptor = Object.getOwnPropertyDescriptor(value, field);
+      assert.ok(descriptor);
+      assert.ok(Object.hasOwn(descriptor, "value"));
+      assert.equal(descriptor.enumerable, true);
+      assert.equal(descriptor.writable, false);
+      assert.equal(descriptor.configurable, false);
+    }
+  };
+  for (const natal of [
+    runtime.Ziwei.fromBirth({
+      gender: 1,
+      birthYear: 1984,
+      birthMonth: 1,
+      birthDay: 6,
+      birthHour: 0,
+    }),
+    runtime.Ziwei.fromParameters({
+      gender: 1,
+      birthStem: 0,
+      birthBranch: 0,
+      birthMonth: 1,
+      ziweiBranch: 2,
+      birthHour: 0,
+    }),
+  ]) {
+    try {
+      // These structural expectations are independent of the Node adapter.
+      const located = [...natal.birthTransformations(), ...natal.selfTransformations()];
+      for (const value of located) {
+        assertRecord(value, ["palace", "star"]);
+        assert.deepEqual(value.star, natal.palaceStar(value.palace.branch, value.star.name));
+      }
+      for (const branch of runtime.Branch.ALL) {
+        const outgoing = natal.palaceTransformations(branch);
+        const incoming = natal.palaceTransformationSources(branch);
+        assertFrozen(outgoing);
+        assertFrozen(incoming);
+        for (const value of [...outgoing, ...incoming]) {
+          const single = natal.palaceTransformation(value.sourceBranch, value.transformation);
+          for (const record of [value, single]) {
+            assertRecord(record, ["sourceBranch", "targetBranch", "transformation", "star"]);
+          }
+          assert.deepEqual(single, value);
+        }
+      }
+      const palaces = [
+        ...natal.palaces,
+        ...natal.toJSON().palaces,
+        ...runtime.Branch.ALL.map((branch) => natal.palace(branch)),
+        ...located.map((value) => value.palace),
+      ];
+      for (const palace of palaces) {
+        assertRecord(palace, [
+          "name",
+          "nameHans",
+          "nameHant",
+          "branch",
+          "stem",
+          "stars",
+          "decadeAgeRange",
+        ]);
+        assert.ok(Array.isArray(palace.stars));
+        assert.ok(Array.isArray(palace.decadeAgeRange));
+        assert.equal(palace.decadeAgeRange.length, 2);
+      }
+      const stars = [
+        ...palaces.flatMap((palace) => palace.stars),
+        ...runtime.StarName.ALL.map((name) => natal.star(name)),
+        ...located.map((value) => value.star),
+      ];
+      for (const star of stars) {
+        assertRecord(star, [
+          "name",
+          "nameHans",
+          "nameHant",
+          "abbrHans",
+          "abbrHant",
+          "category",
+          "galaxy",
+          "birthTransformation",
+          "selfTransformations",
+        ]);
+        assertRecord(star.selfTransformations, ["inward", "outward"]);
+        for (const value of [
+          star.birthTransformation,
+          star.selfTransformations.inward,
+          star.selfTransformations.outward,
+        ])
+          assert.ok(value === null || ["A", "B", "C", "D"].includes(value));
+      }
+      assert.ok(stars.some((star) => star.birthTransformation === null));
+      assert.ok(stars.some((star) => star.selfTransformations.inward === null));
+      assert.ok(stars.some((star) => star.selfTransformations.outward === null));
+    } finally {
+      natal.dispose();
+    }
+  }
+});
+
+test("profile projection retries failed freezes without bypassing disposal or caching failures", () => {
+  const charts = [
+    runtime.Ziwei.fromBirth({
+      gender: 1,
+      birthYear: 1984,
+      birthMonth: 1,
+      birthDay: 6,
+      birthHour: 0,
+    }),
+    runtime.Ziwei.fromParameters({
+      gender: 1,
+      birthStem: 0,
+      birthBranch: 0,
+      birthMonth: 1,
+      ziweiBranch: 2,
+      birthHour: 0,
+    }),
+  ];
+  try {
+    for (const natal of charts) {
+      const freeze = Object.freeze;
+      const failure = new Error("injected profile freeze failure");
+      let palaces;
+      try {
+        Object.freeze = <T>(value: T): Readonly<T> => {
+          if (value && typeof value === "object" && "gender" in value && "birthYear" in value)
+            throw failure;
+          return freeze(value);
+        };
+        palaces = natal.palaces;
+        assert.throws(
+          () => natal.profile,
+          (error) => error === failure,
+        );
+      } finally {
+        Object.freeze = freeze;
+      }
+      const profile = natal.profile;
+      assert.equal(natal.profile, profile);
+      assert.equal(natal.palaces, palaces);
+      assert.equal(Object.getPrototypeOf(profile), Object.prototype);
+      assert.deepEqual(Reflect.ownKeys(profile), [
+        "gender",
+        "birthStem",
+        "birthBranch",
+        "birthMonth",
+        "birthHour",
+        "birthYear",
+        "birthDay",
+      ]);
+      assertFrozen(profile);
+      const expected = structuredClone(profile);
+      natal.dispose();
+      assert.throws(() => natal.profile, ZiweiLifecycleError);
+      assert.deepEqual(profile, expected);
+      assertFrozen(profile);
+    }
+  } finally {
+    for (const natal of charts) natal.dispose();
+  }
+});
+
 test("all output ownership and explicit disposal contracts are preserved", () => {
   const natal = runtime.Ziwei.fromBirth({
     gender: 0,
@@ -82,6 +249,14 @@ test("all output ownership and explicit disposal contracts are preserved", () =>
     birthHour: 3,
   });
   const snapshot = natal.toJSON();
+  const retained = [
+    natal.birthTransformations(),
+    natal.selfTransformations(),
+    natal.palaceTransformations(2),
+    natal.palaceTransformation(2, "A"),
+    natal.palaceTransformationSources(2),
+  ];
+  const expected = structuredClone(retained);
   assert.equal(natal.profile, natal.profile);
   assert.equal(natal.palaces, natal.palaces);
   assertFrozen(snapshot);
@@ -95,6 +270,8 @@ test("all output ownership and explicit disposal contracts are preserved", () =>
     assert.throws(() => invoke(natal, call), ZiweiLifecycleError);
   assert.equal(snapshot.palaces.length, 12);
   assertFrozen(snapshot);
+  assert.deepEqual(retained, expected);
+  for (const result of retained) assertFrozen(result);
 });
 
 test("input errors and getter defense match the current native contract", () => {
@@ -135,6 +312,8 @@ test("input errors and getter defense match the current native contract", () => 
     const expected = captured(reference.Ziwei.fromBirth);
     assert.ok(actual instanceof ZiweiError);
     assert.ok(expected instanceof reference.ZiweiError);
+    assert.equal(actual instanceof reference.ZiweiError, false);
+    assert.equal(expected instanceof ZiweiError, false);
     assert.deepEqual(actual.detail, expected.detail);
     assert.equal(actual.message, expected.message);
   }

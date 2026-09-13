@@ -1,5 +1,6 @@
+import { capture } from "@matharts/ziwei-shared";
+
 import * as native from "../native/binding.cjs";
-import { capture } from "./input.js";
 import { natal } from "./natal.js";
 import type { Birth, Parameters, Natal } from "./types.js";
 
@@ -18,13 +19,13 @@ export type {
 } from "./types.js";
 export type { NatalSnapshot } from "./types.js";
 export type { Birth, Parameters, Profile, Natal, BirthMonth, BirthDay } from "./types.js";
-export { ZiweiError } from "./error.js";
+export { ZiweiError } from "@matharts/ziwei-shared";
 export type {
   ArgumentFailureReason,
   ReceivedValue,
   ZiweiErrorCode,
   ZiweiErrorDetail,
-} from "./error.js";
+} from "@matharts/ziwei-shared";
 
 const birthFields = ["gender", "birthYear", "birthMonth", "birthDay", "birthHour"];
 const parameterFields = [

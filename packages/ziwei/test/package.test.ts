@@ -55,11 +55,21 @@ test("the packed package loads from an independent consumer without install scri
     default: "./dist/index.js",
   });
   for (const entry of readdirSync(installedPackage)) assert.ok(allowedFiles.has(entry), entry);
-  // bundle: false emits one ESM module and declaration per source module.
-  const expectedDist = readdirSync(join(packageRoot, "src"))
-    .filter((file) => file.endsWith(".ts"))
-    .flatMap((file) => [file.replace(/\.ts$/, ".js"), file.replace(/\.ts$/, ".d.ts")]);
-  assert.deepEqual(readdirSync(join(installedPackage, "dist")).sort(), expectedDist.sort());
+  // The private workspace dependency is embedded in both JS and declarations.
+  assert.deepEqual(
+    readdirSync(join(installedPackage, "dist"), { recursive: true, encoding: "utf8" }).sort(),
+    ["index.d.ts", "index.js"],
+  );
+  for (const file of ["index.js", "index.d.ts"]) {
+    assert.doesNotMatch(
+      readFileSync(join(installedPackage, "dist", file), "utf8"),
+      /@matharts\/ziwei-shared|ziwei-shared\/src|ziwei\/src\/shared/,
+    );
+  }
+  assert.doesNotMatch(
+    readFileSync(join(installedPackage, "dist", "index.d.ts"), "utf8"),
+    /projectProfile|projectStar|projectPalace|projectLocatedStar|projectPalaceTransformation|StarTuple|PalaceTuple/,
+  );
   const consumerSource = `
     import { Ziwei, Branch, StarName, type Natal, type NatalSnapshot, type DecadeYear } from '@matharts/ziwei';
     const natal: Natal = Ziwei.fromBirth({ gender: 1, birthYear: 1984, birthMonth: 1, birthDay: 6, birthHour: Branch.Zi });
@@ -142,6 +152,8 @@ test("the packed package loads from an independent consumer without install scri
     assert.throws(() => queried.yearly(0, 10), error => error instanceof ZiweiError && error.code === 'INVALID_YEARLY_INDEX');
     assert.equal(cjs.Ziwei.fromParameters({ gender: 1, birthStem: 0, birthBranch: 0, birthMonth: 1, ziweiBranch: 2, birthHour: 0 }).palaces[0].name, 'Ming');
     assert.throws(() => cjs.Ziwei.fromBirth(null), ZiweiError);
+    assert.throws(() => Branch.yinYang(99), ZiweiError);
+    assert.throws(() => Ziwei.fromBirth({ gender: 1, birthYear: 1984, birthMonth: 13, birthDay: 1, birthHour: 0 }), ZiweiError);
     console.log('consumer-ok');
   `,
     ],

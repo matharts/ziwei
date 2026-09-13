@@ -2,15 +2,15 @@ import { defineConfig } from "@rslib/core";
 
 export default defineConfig({
   source: {
-    entry: { index: ["src/**/*.ts"] },
+    entry: { index: "./src/index.ts" },
     tsconfigPath: "./tsconfig.json",
   },
   lib: [
     {
       format: "esm",
-      bundle: false,
+      bundle: true,
       syntax: "es2022",
-      dts: { abortOnError: true },
+      dts: { bundle: { bundledPackages: ["@matharts/ziwei-shared"] }, abortOnError: true },
     },
   ],
   output: {

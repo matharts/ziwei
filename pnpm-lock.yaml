@@ -217,9 +217,27 @@ importers:
 
   packages/ziwei:
     devDependencies:
+      '@matharts/ziwei-shared':
+        specifier: workspace:*
+        version: link:../ziwei-shared
+      '@microsoft/api-extractor':
+        specifier: 'catalog:'
+        version: 7.59.1(@types/node@24.13.4)
       '@napi-rs/cli':
         specifier: 'catalog:'
         version: 3.9.1(@emnapi/core@1.9.2)(@emnapi/runtime@1.9.2)(@types/node@24.13.4)(supports-color@8.1.1)
+      '@rslib/core':
+        specifier: 'catalog:'
+        version: 1.0.0(@microsoft/api-extractor@7.59.1(@types/node@24.13.4))(typescript@7.0.2)
+      typescript:
+        specifier: 'catalog:'
+        version: 7.0.2
+
+  packages/ziwei-shared:
+    devDependencies:
+      '@microsoft/api-extractor':
+        specifier: 'catalog:'
+        version: 7.59.1(@types/node@24.13.4)
       '@rslib/core':
         specifier: 'catalog:'
         version: 1.0.0(@microsoft/api-extractor@7.59.1(@types/node@24.13.4))(typescript@7.0.2)
@@ -232,6 +250,9 @@ importers:
       '@matharts/ziwei':
         specifier: workspace:*
         version: link:../ziwei
+      '@matharts/ziwei-shared':
+        specifier: workspace:*
+        version: link:../ziwei-shared
       '@microsoft/api-extractor':
         specifier: 'catalog:'
         version: 7.59.1(@types/node@24.13.4)

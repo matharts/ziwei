@@ -94,6 +94,18 @@ test("public package smoke records complete samples and protects existing output
   assert.ok(
     record.fingerprints.source.files.some((file: { path: string }) => file.path === "mise.toml"),
   );
+  for (const path of [
+    "packages/ziwei-shared/src/error.ts",
+    "packages/ziwei-shared/src/input.ts",
+    "packages/ziwei-shared/package.json",
+    "packages/ziwei-shared/tsconfig.json",
+    "packages/ziwei-shared/rslib.config.ts",
+  ]) {
+    assert.ok(
+      record.fingerprints.source.files.some((file: { path: string }) => file.path === path),
+      path,
+    );
+  }
   assert.equal(record.runtime.node, process.version);
   assert.equal(record.runtime.v8, process.versions.v8);
   assert.match(record.runtime.nativeLibrary, /ziwei-native.*\.node$/);
@@ -214,6 +226,7 @@ function fixture(t: TestContext) {
     "crates/ziwei/src",
     "bindings/node/src",
     "packages/ziwei/src",
+    "packages/ziwei-shared/src",
     "packages/ziwei/bench",
     "Cargo.toml",
     "Cargo.lock",
@@ -226,6 +239,9 @@ function fixture(t: TestContext) {
     "packages/ziwei/package.json",
     "packages/ziwei/tsconfig.json",
     "packages/ziwei/rslib.config.ts",
+    "packages/ziwei-shared/package.json",
+    "packages/ziwei-shared/tsconfig.json",
+    "packages/ziwei-shared/rslib.config.ts",
     "mise.toml",
   ]) {
     const destination = join(root, path);

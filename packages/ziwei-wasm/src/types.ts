@@ -1,8 +1,43 @@
+import type {
+  Gender as SharedGender,
+  BirthMonth,
+  BirthDay,
+  Profile,
+  Stem as SharedStem,
+  Branch as SharedBranch,
+  PalaceName,
+  StarName,
+  StarCategory,
+  StarGalaxy,
+  Transformation,
+  Star,
+  Palace,
+  LocatedStar,
+  PalaceTransformation,
+} from "@matharts/ziwei-shared";
+
+export type {
+  BirthMonth,
+  BirthDay,
+  Profile,
+  PalaceName,
+  StarName,
+  StarCategory,
+  StarGalaxy,
+  Transformation,
+  Star,
+  Palace,
+  SelfTransformations,
+  DecadeAgeRange,
+  LocatedStar,
+  PalaceTransformation,
+} from "@matharts/ziwei-shared";
+
 export type YinYang = 0 | 1;
 export type FiveElement = "Water" | "Wood" | "Metal" | "Earth" | "Fire";
-export type Gender = 0 | 1;
-export type Stem = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
-export type Branch = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11;
+export type Gender = SharedGender;
+export type Stem = SharedStem;
+export type Branch = SharedBranch;
 export type Zodiac =
   | "Rat"
   | "Ox"
@@ -17,41 +52,6 @@ export type Zodiac =
   | "Dog"
   | "Pig";
 export type FiveElementBureau = 2 | 3 | 4 | 5 | 6;
-export type PalaceName =
-  | "Ming"
-  | "XiongDi"
-  | "FuQi"
-  | "ZiNv"
-  | "CaiBo"
-  | "JiE"
-  | "QianYi"
-  | "JiaoYou"
-  | "GuanLu"
-  | "TianZhai"
-  | "FuDe"
-  | "FuMu";
-export type StarName =
-  | "ZiWei"
-  | "TianJi"
-  | "TaiYang"
-  | "WuQu"
-  | "TianTong"
-  | "LianZhen"
-  | "TianFu"
-  | "TaiYin"
-  | "TanLang"
-  | "JuMen"
-  | "TianXiang"
-  | "TianLiang"
-  | "QiSha"
-  | "PoJun"
-  | "ZuoFu"
-  | "YouBi"
-  | "WenChang"
-  | "WenQu";
-export type StarCategory = "Major" | "Minor" | "Auxiliary";
-export type StarGalaxy = "South" | "Central" | "North";
-export type Transformation = "A" | "B" | "C" | "D";
 
 type IdentitySet<K extends string> = { readonly [P in K]: P };
 
@@ -114,38 +114,6 @@ export interface ReadyZiweiRuntime extends IdentityRuntime {
   }>;
 }
 
-export interface SelfTransformations {
-  readonly inward: Transformation | null;
-  readonly outward: Transformation | null;
-}
-
-export interface Star {
-  readonly name: StarName;
-  readonly nameHans: string;
-  readonly nameHant: string;
-  readonly abbrHans: string;
-  readonly abbrHant: string;
-  readonly category: StarCategory;
-  readonly galaxy: StarGalaxy;
-  readonly birthTransformation: Transformation | null;
-  readonly selfTransformations: SelfTransformations;
-}
-
-/** 两端均包含的虚岁区间。 */
-export type DecadeAgeRange = readonly [start: number, end: number];
-
-export interface Palace {
-  readonly name: PalaceName;
-  readonly nameHans: string;
-  readonly nameHant: string;
-  readonly branch: Branch;
-  readonly stem: Stem;
-  readonly stars: readonly Star[];
-  readonly decadeAgeRange: DecadeAgeRange;
-}
-
-export type BirthMonth = number;
-export type BirthDay = number;
 /** 零基大限序号，运行时验证 0..11。 */
 export type DecadeIndex = number;
 /** 大限内零基流年序号，运行时验证 0..9。 */
@@ -167,20 +135,6 @@ export interface Parameters {
   readonly ziweiBranch: Branch;
   readonly birthHour: Branch;
 }
-
-interface ProfileBase {
-  readonly gender: Gender;
-  readonly birthStem: Stem;
-  readonly birthBranch: Branch;
-  readonly birthMonth: BirthMonth;
-  readonly birthHour: Branch;
-}
-
-export type Profile = ProfileBase &
-  (
-    | { readonly birthYear: number; readonly birthDay: BirthDay }
-    | { readonly birthYear: null; readonly birthDay: null }
-  );
 
 /** 不可变本命事实与同步、按需查询；只能通过 Ziwei 创建。 */
 export interface Natal {
@@ -249,16 +203,4 @@ export interface DecadeYear {
 export interface PeriodIndices {
   readonly decade: DecadeIndex;
   readonly yearly: YearlyIndex;
-}
-
-export interface LocatedStar {
-  readonly palace: Palace;
-  readonly star: Star;
-}
-
-export interface PalaceTransformation {
-  readonly sourceBranch: Branch;
-  readonly targetBranch: Branch;
-  readonly transformation: Transformation;
-  readonly star: StarName;
 }

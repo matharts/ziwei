@@ -1,5 +1,16 @@
-import type { NativeFailure } from "../native/binding.cjs";
-import type { Branch, Stem } from "./types.js";
+import type { Branch, Stem } from "./identity-types.js";
+
+/** Private transport shape: Node omits empty fields; Wasm explicitly uses null. */
+interface NativeFailure {
+  readonly code: string;
+  readonly message: string;
+  readonly path?: string | null;
+  readonly reason?: string | null;
+  readonly receivedType?: string | null;
+  readonly value?: number | null;
+  readonly stem?: number | null;
+  readonly branch?: number | null;
+}
 
 export type ArgumentFailureReason =
   | "missing"
@@ -141,7 +152,8 @@ function isBranch(value: number): value is Branch {
 }
 
 /** Internal native union: only expected failures carry a code field. */
-export function unwrap<T>(result: T | NativeFailure): T {
+export function unwrap<T>(result: T): Exclude<T, NativeFailure>;
+export function unwrap(result: unknown): unknown {
   if (isNativeFailure(result)) throw nativeError(result);
   return result;
 }

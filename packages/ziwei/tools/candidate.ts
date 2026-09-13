@@ -3,7 +3,6 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   copyFileSync,
-  cpSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
@@ -170,8 +169,7 @@ export async function packCandidate(
       private: true,
       napi: { ...source.napi, targets: [target] },
     });
-    cpSync(join(packageRoot, "src"), join(fixture, "src"), { recursive: true });
-    for (const file of distributionFiles(packageRoot).filter((file) => file !== "LICENSE")) {
+    for (const file of distributionFiles().filter((file) => file !== "LICENSE")) {
       copyFileSync(join(packageRoot, file), join(fixture, file));
     }
     copyFileSync(join(root, "LICENSE"), join(temporary, "LICENSE"));

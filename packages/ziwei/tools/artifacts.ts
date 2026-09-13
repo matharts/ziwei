@@ -40,7 +40,7 @@ function contract(packageRoot: string) {
   const source = readJson(join(packageRoot, "package.json"));
   const targets: string[] = source.napi.targets;
   assert.ok(targets.length > 0 && new Set(targets).size === targets.length, "目标配置不可空或重复");
-  const commonFiles = distributionFiles(packageRoot).sort();
+  const commonFiles = distributionFiles().sort();
   const platforms = targets.map((target) => {
     const { platformArchABI: suffix } = parseTriple(target);
     return {
@@ -77,7 +77,14 @@ function archiveFiles(tarball: string, files: string[]) {
   })
     .trim()
     .split(/\r?\n/);
-  const directories = new Set(["package/", "package/dist/", "package/native/"]);
+  const directories = new Set<string>();
+  for (const file of files) {
+    const parts = ["package", ...file.split("/")];
+    for (let length = 1; length < parts.length; length++) {
+      directories.add(`${parts.slice(0, length).join("/")}/`);
+    }
+  }
+  assert.equal(new Set(entries).size, entries.length, "归档路径不得重复");
   assert.deepEqual(
     entries.filter((entry) => !directories.has(entry)).sort(),
     files.map((file) => `package/${file}`).sort(),

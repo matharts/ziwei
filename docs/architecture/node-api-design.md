@@ -409,6 +409,18 @@ rtk proxy mise exec -- npm exec --yes --package=typescript@5.9.3 -- tsc --projec
 
 旧目录不再存在；其中旧的 `native/`、`dist/` 和 `node_modules/` 已转存至本机 `/tmp/ziwei-node-layout.jh9Ajw/node`，可在系统清理临时目录前取回，新目录已从锁文件重新安装并构建。未删除源码，未提交、推送或发布，npm scope 权限未核验。
 
+### Node／Wasm 共享适配实现
+
+两个消费包保持独立。宿主无关实现归属私有 workspace 包 `@matharts/ziwei-shared`，位于 `packages/ziwei-shared`：`input.ts` 捕获自身数据属性和缺参，`error.ts` 转换结构化错误，`projection.ts` 提供出生档案、星曜、宫位及四化查询结果的只读投影和必要类型，`identity-types.ts` 保存错误和投影需要的身份类型。Module 的 Interface 仅通过根 `exports` 提供；两个 Adapter 声明 `workspace:*` 开发依赖并按包名导入，移除原先的转发文件，不跨包读取 `src` 或扩大 `rootDir`。共享实现不导入任何原生绑定或宿主入口；私有错误传输形状同时接受 Node 省略的字段与 Wasm 显式的 `null`。解包只排除预期错误载荷，不改变校验顺序、中文错误、未知失败处理或不可变合同。
+
+`projectStar`／`projectPalace` 接受宿主无关的只读元组，由两侧生成绑定的返回类型通过结构兼容检查接入，不用类型断言或导入生成声明。转换保留原有字段及其顺序、显式 `null`、普通对象和深层冻结；宫位星曜数组重新投影，年龄区间沿用绑定返回的独立数组并原地冻结，不增加复制或缓存。
+
+`projectLocatedStar` 组合已有宫位、星曜投影；`projectPalaceTransformation` 按原顺序复制源宫、目标宫、化象和星曜四个字段再冻结，不直接返回传输对象。共享模块同时定义 `Profile`、`Star`、`Palace`、`SelfTransformations`、`DecadeAgeRange`、`LocatedStar`、`PalaceTransformation` 及必要值类型。两侧查询调用与结果排序保持不变，运行时枚举仍归各 Adapter；转换函数和私有元组不进入消费端公开声明，不改变现有公开入口或引入四化计算。
+
+`projectProfile` 保留原字段顺序和年份／日期成对约束，兼容 Node 省略字段与 Wasm 显式 `null`；缺失统一输出 `null`，矛盾状态仍抛出原中文错误。转换只复制与冻结数据，类型仍以联合表达成对状态，不读取命盘或保存缓存。两侧 getter 仅在转换成功后保存结果；Wasm 在读取缓存前检查释放状态。`Gender`、`BirthMonth`、`BirthDay` 的类型归属随必要依赖集中，取值合同及 `Birth`／`Parameters` 输入模型不变。
+
+`build:shared` 先生成独立 ESM 与声明，两个 Adapter 的 TS 构建均依赖它；共享构建失败阻止后续消费包构建。Node 改为单入口打包，保留外置原生加载器；Wasm 继续单入口打包，保留独立 Wasm 资源。两包的 JS 和声明均内联共享模块，安装后不依赖仓库、私有 workspace 包或对方宿主包。共享包不发布。两个已构建包分别持有自己的 `ZiweiError` 类，保留各包的 `instanceof` 身份，不承诺跨包互认。安装产物测试覆盖准确文件集合、无私有依赖残留、声明解析及两侧错误身份。初始化、命盘持有、实例缓存、释放和限运投影仍由各 Adapter 管理，不提取整份 `types.ts` 或统一后端持有层。
+
 ### 绑定分层优化（2026-09-09）
 
 保留两项内部改动：输出名称借用核心静态字符串，取消临时 Rust `String` 分配；输入捕获单遍选择最小未知字符串 key，不再构造并排序额外 key 数组。必填字段的捕获顺序、每个描述符读取一次、未知字符串 key 优先于 symbol、中文错误和深层只读合同均不变。输入字段数固定，未知 key 处理由排序改为线性扫描；正常输入仍执行全部校验。

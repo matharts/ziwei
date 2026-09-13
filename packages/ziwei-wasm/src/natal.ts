@@ -1,6 +1,15 @@
+import {
+  nativeError,
+  unwrap,
+  arity,
+  projectProfile,
+  projectStar as star,
+  projectPalace as palace,
+  projectLocatedStar as locatedStar,
+  projectPalaceTransformation as relation,
+} from "@matharts/ziwei-shared";
+
 import type * as native from "../generated/ziwei_wasm.js";
-import { nativeError, unwrap } from "./error.js";
-import { arity } from "./input.js";
 import { ZiweiLifecycleError } from "./lifecycle.js";
 import type {
   Branch,
@@ -213,26 +222,7 @@ class NatalHandle implements Natal {
   get profile(): Profile {
     const value = this.#native;
     if (this.#profile !== undefined) return this.#profile;
-    const raw = value.profile;
-    const base = {
-      gender: raw.gender,
-      birthStem: raw.birthStem,
-      birthBranch: raw.birthBranch,
-      birthMonth: raw.birthMonth,
-      birthHour: raw.birthHour,
-    };
-    // The union is established by runtime checks, not asserted into existence.
-    if (raw.birthYear == null && raw.birthDay == null) {
-      this.#profile = Object.freeze({ ...base, birthYear: null, birthDay: null });
-    } else if (raw.birthYear != null && raw.birthDay != null) {
-      this.#profile = Object.freeze({
-        ...base,
-        birthYear: raw.birthYear,
-        birthDay: raw.birthDay,
-      });
-    } else {
-      throw new Error("原生出生档案的年份与日期状态不一致");
-    }
+    this.#profile = projectProfile(value.profile);
     return this.#profile;
   }
 }
@@ -240,59 +230,6 @@ class NatalHandle implements Natal {
 // Keep the holder and its constructor inaccessible through prototype traversal.
 Object.defineProperty(NatalHandle.prototype, "constructor", { value: undefined });
 Object.freeze(NatalHandle.prototype);
-
-function star(raw: native.NativeStar): Star {
-  // Decode the generated private tuple once; only named, frozen data escapes.
-  const [
-    name,
-    nameHans,
-    nameHant,
-    abbrHans,
-    abbrHant,
-    category,
-    galaxy,
-    birthTransformation,
-    inward,
-    outward,
-  ] = raw;
-  return Object.freeze({
-    name,
-    nameHans,
-    nameHant,
-    abbrHans,
-    abbrHant,
-    category,
-    galaxy,
-    birthTransformation,
-    selfTransformations: Object.freeze({ inward, outward }),
-  });
-}
-
-function palace(raw: native.NativePalace): Palace {
-  const [name, nameHans, nameHant, branch, stem, stars, decadeAgeRange] = raw;
-  return Object.freeze({
-    name,
-    nameHans,
-    nameHant,
-    branch,
-    stem,
-    stars: Object.freeze(stars.map(star)),
-    decadeAgeRange: Object.freeze(decadeAgeRange),
-  });
-}
-
-function locatedStar(raw: native.NativeLocatedStar): LocatedStar {
-  return Object.freeze({ palace: palace(raw.palace), star: star(raw.star) });
-}
-
-function relation(raw: native.NativePalaceTransformation): PalaceTransformation {
-  return Object.freeze({
-    sourceBranch: raw.sourceBranch,
-    targetBranch: raw.targetBranch,
-    transformation: raw.transformation,
-    star: raw.star,
-  });
-}
 
 function periodPalace(raw: native.NativePeriodPalace): Decade | Yearly {
   return Object.freeze({ name: raw.name, nameHans: raw.nameHans, nameHant: raw.nameHant });

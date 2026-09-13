@@ -30,13 +30,16 @@ test("Rslib rejects type errors even in a source file not imported by the entry"
   mkdirSync(join(directory, "src"));
   mkdirSync(join(directory, "node_modules"));
   // A standalone project must resolve its own compiler, without a bin shim's NODE_PATH.
-  symlinkSync(
-    dirname(packageRequire.resolve("typescript/package.json")),
-    join(directory, "node_modules/typescript"),
-    "junction",
-  );
+  for (const name of ["typescript", "@microsoft/api-extractor"]) {
+    const destination = join(directory, "node_modules", name);
+    mkdirSync(dirname(destination), { recursive: true });
+    symlinkSync(dirname(packageRequire.resolve(`${name}/package.json`)), destination, "junction");
+  }
   cpSync(join(packageRoot, "tsconfig.json"), join(directory, "tsconfig.json"));
-  writeFileSync(join(directory, "package.json"), JSON.stringify({ private: true, type: "module" }));
+  writeFileSync(
+    join(directory, "package.json"),
+    JSON.stringify({ name: "ziwei-build-fixture", private: true, type: "module" }),
+  );
   writeFileSync(join(directory, "src/index.ts"), "export const valid: number = 42;\n");
   const build = () =>
     spawnSync(

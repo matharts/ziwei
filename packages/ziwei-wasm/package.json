@@ -20,6 +20,7 @@
   },
   "devDependencies": {
     "@matharts/ziwei": "workspace:*",
+    "@matharts/ziwei-shared": "workspace:*",
     "@microsoft/api-extractor": "catalog:",
     "@rslib/core": "catalog:",
     "@rstest/core": "catalog:",

@@ -64,7 +64,9 @@ Oxfmt 读取根 [.editorconfig](../../.editorconfig)：TypeScript 和 JSON 使�
 
 ### 产物与模块模式
 
-`build:node:ts` 使用 Catalog 锁定的 Rslib，配置位于 [rslib.config.ts](../../packages/ziwei/rslib.config.ts)。采用 `bundle: false`、单份 ESM 与 ES2022 输出，保持 `dist/*.js` 和 `dist/*.d.ts` 路径；根包和 TS 包均为 `type: module`。
+`build:node:ts` 使用 Catalog 锁定的 Rslib，配置位于 [rslib.config.ts](../../packages/ziwei/rslib.config.ts)。采用单入口打包、ESM 与 ES2022 输出，产物为 `dist/index.js` 和 `dist/index.d.ts`；根包和 TS 包均为 `type: module`。
+
+Node 与 Wasm 的 TS 构建都先通过 `build:shared` 构建私有 `@matharts/ziwei-shared`，通过包根入口使用其 ESM 与声明，并分别内联到消费包产物。共享包只作为 workspace 开发依赖，不跨包读取 `src`，不留下私有包运行时或类型引用。单项 TS 构建仍接受自身 CLI 选项，但不会把它们传给共享构建；共享构建失败阻止消费包构建。共享代码修改后重新运行对应 TS 构建，单包 `--watch` 不承诺自动监听共享源码。
 
 `import` 与 `require(ESM)` 解析到同一入口，不再维护 CJS 实现或桥接文件。公开模块图不允许 top-level await。`native/binding.cjs` 与 `.node` 由 napi 生成，外置并交给 Node 加载。
 

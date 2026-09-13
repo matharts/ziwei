@@ -1,5 +1,5 @@
-import { unwrap } from "./error.js";
-import { arity } from "./input.js";
+import { unwrap, arity } from "@matharts/ziwei-shared";
+
 import type {
   YinYang,
   Gender,

@@ -59,6 +59,8 @@
 
 Node-API 与 `wasm-bindgen` 的编译目标、错误模型、对象生命周期和序列化方式不同，因此实现为独立 adapter。两者不互相引入运行时依赖；Node 仅作为 Wasm 差分测试的开发依赖。
 
+两侧相同的 JavaScript 输入捕获、结构化错误，以及出生档案、星曜、宫位和四化查询结果的只读投影归属私有 `@matharts/ziwei-shared` Module，通过包根 Interface 使用，不导入对方源码。共享包独立构建后内联到两侧 JS 与声明，不成为消费端依赖；加载、句柄、缓存、释放和限运投影仍由各 Adapter 管理，见 [D-269 共享实现](node-api-design.md#nodewasm-共享适配实现)。
+
 相反，当前的本命计算、查询和期间计算共享同一个不可变 `Natal`，没有第二个实现，也没有独立运行时；把它们拆为 `core`、`query`、门面三层只会扩大 interface，降低 locality。
 
 ### 依赖只能向内
@@ -106,6 +108,7 @@ ziwei-wasm ───────────────────────
 │           ├── input.rs
 │           └── error.rs
 ├── packages/
+│   ├── ziwei-shared/              # 私有 workspace 模块；输入、错误与只读投影，构建时内联、不发布
 │   ├── ziwei-wasm/                # @matharts/ziwei-wasm；显式初始化、浏览器 ESM 与测试
 │   └── ziwei/                     # npm 包 @matharts/ziwei
 │       ├── package.json
@@ -114,8 +117,6 @@ ziwei-wasm ───────────────────────
 │       ├── src/                   # TypeScript 门面、只读与错误外观
 │       │   ├── index.ts           # 公开导出与 Ziwei 入口
 │       │   ├── natal.ts           # 私有包装、查询、深层只读与两个属性缓存
-│       │   ├── input.ts
-│       │   ├── error.ts
 │       │   └── types.ts
 │       ├── test/                  # Node、Worker、类型与独立打包消费端
 │       ├── tools/                 # 私有分发组装、同批校验与 GNU 二进制兼容性检查

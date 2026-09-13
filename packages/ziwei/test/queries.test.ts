@@ -115,6 +115,46 @@ test("relative palaces and transformation queries preserve core order and all si
   assert.equal(ren.birthTransformations()[2].star.name, "ZuoFu");
 });
 
+test("transformation query projections retain ordered frozen own data fields", () => {
+  const assertRecord = (value: object, fields: string[]) => {
+    assert.equal(Object.getPrototypeOf(value), Object.prototype);
+    assert.deepEqual(Reflect.ownKeys(value), fields);
+    assert.ok(Object.isFrozen(value));
+    for (const field of fields) {
+      const descriptor = Object.getOwnPropertyDescriptor(value, field);
+      assert.ok(descriptor);
+      assert.ok(Object.hasOwn(descriptor, "value"));
+      assert.equal(descriptor.enumerable, true);
+      assert.equal(descriptor.writable, false);
+      assert.equal(descriptor.configurable, false);
+    }
+  };
+  for (const natal of charts()) {
+    for (const located of [natal.birthTransformations(), natal.selfTransformations()]) {
+      assert.ok(Object.isFrozen(located));
+      for (const value of located) {
+        assertRecord(value, ["palace", "star"]);
+        assert.ok(Object.isFrozen(value.palace));
+        assert.ok(Object.isFrozen(value.star));
+        assert.deepEqual(value.star, natal.palaceStar(value.palace.branch, value.star.name));
+      }
+    }
+    for (const palace of natal.palaces) {
+      const outgoing = natal.palaceTransformations(palace.branch);
+      const incoming = natal.palaceTransformationSources(palace.branch);
+      assert.ok(Object.isFrozen(outgoing));
+      assert.ok(Object.isFrozen(incoming));
+      for (const value of [...outgoing, ...incoming]) {
+        const single = natal.palaceTransformation(value.sourceBranch, value.transformation);
+        for (const record of [value, single]) {
+          assertRecord(record, ["sourceBranch", "targetBranch", "transformation", "star"]);
+        }
+        assert.deepEqual(single, value);
+      }
+    }
+  }
+});
+
 test("single palace and star queries locate the hand-derived Jia Zi facts", () => {
   // Independent expected locations: core fixtures/README.md and jia_zi_fire_six.csv.
   for (const natal of charts()) {

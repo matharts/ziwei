@@ -85,6 +85,20 @@ const tasks: Record<
     path: "bin/rslib.js",
     args: ["build"],
   },
+  "build:shared": {
+    cwd: "packages/ziwei-shared",
+    package: "@rslib/core",
+    bin: "rslib",
+    path: "bin/rslib.js",
+    args: ["build"],
+  },
+  "build:wasm:ts": {
+    cwd: "packages/ziwei-wasm",
+    package: "@rslib/core",
+    bin: "rslib",
+    path: "bin/rslib.js",
+    args: ["build"],
+  },
   "test:node": {
     cwd: ".",
     package: "@rstest/core",
@@ -248,7 +262,7 @@ test("Node native task alone defaults x64 CRT to static and preserves explicit d
   assert.equal(result.status, 0, result.stderr);
   assert.deepEqual(
     rows(result.stdout).map((row) => row.crtFlags),
-    ["-C target-feature=+crt-static", undefined, undefined, undefined],
+    ["-C target-feature=+crt-static", undefined, undefined, undefined, undefined],
   );
   env.CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS = "-C target-feature=-crt-static";
   const diagnostic = run(["run", "build:node:native"]);
@@ -270,7 +284,11 @@ for (const activated of [true, false]) {
     assert.equal(blocked.status, 19, blocked.stderr);
     // check:node traverses the native build, TS build, package tests and type check.
     for (const [task, expected] of [
-      ["check:node", ["build:node:native", "build:node:ts", "test:node", "check:node:types"]],
+      [
+        "check:node",
+        ["build:node:native", "build:shared", "build:node:ts", "test:node", "check:node:types"],
+      ],
+      ["build:wasm:ts", ["build:shared", "build:wasm:ts"]],
       ["check:typescript", ["check:typescript"]],
       ["lint:node", ["lint:node"]],
       ["lint:node:fix", ["lint:node:fix"]],
@@ -325,12 +343,13 @@ test("GNU builds pass use-napi-cross before Cargo arguments and then build TypeS
   const result = run(["run", "build:node:gnu"]);
   assert.equal(result.status, 0, result.stderr);
   const output = rows(result.stdout);
-  assert.equal(output.length, 2);
+  assert.equal(output.length, 3);
   for (const row of output) assertRuntime(row);
   assert.deepEqual(
     output.map((row) => row.args),
     [
       ["build", "--use-napi-cross", ...tasks["build:node:native"].args.slice(1)],
+      tasks["build:shared"].args,
       tasks["build:node:ts"].args,
     ],
   );
@@ -428,26 +447,31 @@ test("the documented direct CLI entry preserves literal arguments and the select
   assert.deepEqual(output[0].args, [...spec.args, ...literalArgs]);
 });
 
-test("leaf tasks accept ordinary CLI options without invoking aggregate builds", (t) => {
+test("leaf tasks preserve CLI options while building only required dependencies", (t) => {
   const { run } = fixture(t);
   for (const [task, args] of [
     ["test:node", ["-t", "palace"]],
     ["build:node:ts", ["--watch"]],
+    ["build:wasm:ts", ["--watch"]],
   ] as const) {
     const result = run(["run", task, "--", ...args]);
     assert.equal(result.status, 0, result.stderr);
     assert.deepEqual(
       rows(result.stdout).map((row) => row.args),
-      [[...tasks[task].args, ...args]],
+      [
+        ...(task === "test:node" ? [] : [tasks["build:shared"].args]),
+        [...tasks[task].args, ...args],
+      ],
     );
   }
 });
 
 for (const [failed, expected] of [
   ["build:node:native", []],
-  ["build:node:ts", ["build:node:native"]],
-  ["test:node", ["build:node:native", "build:node:ts"]],
-  ["check:node:types", ["build:node:native", "build:node:ts", "test:node"]],
+  ["build:shared", ["build:node:native"]],
+  ["build:node:ts", ["build:node:native", "build:shared"]],
+  ["test:node", ["build:node:native", "build:shared", "build:node:ts"]],
+  ["check:node:types", ["build:node:native", "build:shared", "build:node:ts", "test:node"]],
 ] as const) {
   test(`a ${failed} failure preserves diagnostics and stops subsequent checks`, (t) => {
     const { run, cliPaths } = fixture(t, { activated: false });
@@ -465,3 +489,11 @@ for (const [failed, expected] of [
     );
   });
 }
+
+test("a failed shared build prevents the Wasm TypeScript build", (t) => {
+  const { run, cliPaths } = fixture(t);
+  writeFileSync(cliPaths["build:shared"], "process.exit(23);\n");
+  const result = run(["run", "build:wasm:ts"]);
+  assert.equal(result.status, 23);
+  assert.deepEqual(rows(result.stdout), []);
+});

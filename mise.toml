@@ -40,6 +40,7 @@ run = [
 
 [tasks."build:wasm:ts"]
 description = "通过 Rslib 构建浏览器 ESM、声明与 Wasm 资源；需已有胶水"
+depends = ["build:shared"]
 dir = "packages/ziwei-wasm"
 run = "pnpm exec -- node node_modules/@rslib/core/bin/rslib.js build"
 
@@ -97,7 +98,13 @@ run = [
 
 [tasks."build:node:ts"]
 description = "通过 Rslib 构建 ESM 与类型声明；需已有原生绑定"
+depends = ["build:shared"]
 dir = "packages/ziwei"
+run = "pnpm exec -- node node_modules/@rslib/core/bin/rslib.js build"
+
+[tasks."build:shared"]
+description = "构建宿主无关的共享适配模块；私有且不发布"
+dir = "packages/ziwei-shared"
 run = "pnpm exec -- node node_modules/@rslib/core/bin/rslib.js build"
 
 [tasks."test:node"]

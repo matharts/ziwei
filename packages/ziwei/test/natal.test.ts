@@ -353,7 +353,7 @@ test("every star projection owns its nullable fields and exposes only frozen pla
     "galaxy",
     "birthTransformation",
     "selfTransformations",
-  ].sort();
+  ];
   for (const natal of [
     Ziwei.fromBirth({ gender: 1, birthYear: 1984, birthMonth: 1, birthDay: 6, birthHour: 0 }),
     Ziwei.fromParameters({
@@ -375,9 +375,11 @@ test("every star projection owns its nullable fields and exposes only frozen pla
     ];
     for (const star of stars) {
       assert.ok(star);
-      assert.deepEqual(Reflect.ownKeys(star).sort(), fieldNames);
+      assert.deepEqual(Reflect.ownKeys(star), fieldNames);
       assert.equal(Object.getPrototypeOf(star), Object.prototype);
-      assert.deepEqual(Reflect.ownKeys(star.selfTransformations).sort(), ["inward", "outward"]);
+      assert.ok(Object.isFrozen(star));
+      assert.equal(Object.getPrototypeOf(star.selfTransformations), Object.prototype);
+      assert.deepEqual(Reflect.ownKeys(star.selfTransformations), ["inward", "outward"]);
       for (const [value, key] of [
         [star, "birthTransformation"],
         [star.selfTransformations, "inward"],
@@ -402,15 +404,7 @@ test("all palace projections retain named, frozen own data properties", () => {
     birthDay: 6,
     birthHour: 0,
   });
-  const fields = [
-    "name",
-    "nameHans",
-    "nameHant",
-    "branch",
-    "stem",
-    "stars",
-    "decadeAgeRange",
-  ].sort();
+  const fields = ["name", "nameHans", "nameHant", "branch", "stem", "stars", "decadeAgeRange"];
   const palaces = [
     ...natal.palaces,
     ...natal.toJSON().palaces,
@@ -431,7 +425,7 @@ test("all palace projections retain named, frozen own data properties", () => {
   ];
   for (const palace of palaces) {
     assert.equal(Object.getPrototypeOf(palace), Object.prototype);
-    assert.deepEqual(Reflect.ownKeys(palace).sort(), fields);
+    assert.deepEqual(Reflect.ownKeys(palace), fields);
     for (const key of fields) {
       const descriptor = Object.getOwnPropertyDescriptor(palace, key);
       assert.ok(descriptor);

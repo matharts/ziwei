@@ -49,6 +49,13 @@ test("the real tarball has independent ESM/types and Vite/Rslib production consu
     }
     const declaration = await readFile(join(installed, "dist", "index.d.ts"), "utf8");
     assert.doesNotMatch(declaration, /generated\/|NativeNatal|Symbol\.dispose|ESNext\.Disposable/);
+    assert.doesNotMatch(declaration, /ziwei\/src|@matharts\/ziwei-shared|shared\//);
+    assert.doesNotMatch(
+      declaration,
+      /projectProfile|projectStar|projectPalace|projectLocatedStar|projectPalaceTransformation|StarTuple|PalaceTuple/,
+    );
+    const entry = await readFile(join(installed, "dist", "index.js"), "utf8");
+    assert.doesNotMatch(entry, /ziwei\/src|@matharts\/ziwei-shared|native\/binding|node:/);
     const main = join(directory, "main.ts");
     await writeFile(
       main,

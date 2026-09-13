@@ -50,7 +50,12 @@ function writeJSON(path: string, value: unknown) {
 }
 function sourceFingerprint() {
   return fingerprint(root, [
-    ...["crates/ziwei/src", "bindings/node/src", "packages/ziwei/src"].map((path) => ({
+    ...[
+      "crates/ziwei/src",
+      "bindings/node/src",
+      "packages/ziwei/src",
+      "packages/ziwei-shared/src",
+    ].map((path) => ({
       path,
       directory: true,
     })),
@@ -66,6 +71,9 @@ function sourceFingerprint() {
       "packages/ziwei/package.json",
       "packages/ziwei/tsconfig.json",
       "packages/ziwei/rslib.config.ts",
+      "packages/ziwei-shared/package.json",
+      "packages/ziwei-shared/tsconfig.json",
+      "packages/ziwei-shared/rslib.config.ts",
       "mise.toml",
     ].map((path) => ({ path })),
     { path: ".cargo", directory: true, optional: true },

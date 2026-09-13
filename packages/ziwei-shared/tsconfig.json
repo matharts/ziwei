@@ -1,10 +1,9 @@
 {
   "compilerOptions": {
-    "rootDir": ".",
     "target": "ES2022",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
-    "lib": ["ES2022", "ESNext.Disposable", "DOM", "DOM.Iterable"],
+    "lib": ["ES2022"],
     "types": [],
     "strict": true,
     "verbatimModuleSyntax": true,
@@ -12,7 +11,8 @@
     "exactOptionalPropertyTypes": true,
     "noImplicitReturns": true,
     "noEmit": true,
-    "noEmitOnError": true
+    "noEmitOnError": true,
+    "rootDir": "src"
   },
-  "include": ["src/**/*.ts", "generated/asset.ts"]
+  "include": ["src/**/*.ts"]
 }

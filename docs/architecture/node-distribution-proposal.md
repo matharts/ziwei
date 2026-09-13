@@ -119,6 +119,8 @@ mise run pack:node -- --target aarch64-apple-darwin
 
 ## 同批产物封存与汇总
 
+公共 JS／声明按单入口打包合同固定为 `dist/index.js`、`dist/index.d.ts`，私有 workspace 模块已内联到这两个文件，不从源码目录或实际输出反推必需集合。归档路径统一使用 `/`。暂存逐项校验非空普通文件，拒绝额外文件或目录；归档只允许白名单文件及其必要父目录，并拒绝重复路径。正式与候选封存共用该清单；独立安装同时验证 JS 与声明不残留私有包依赖。
+
 [产物工具](../../packages/ziwei/tools/artifacts.ts)把单目标消费端验收与完整分发分开。目标清单仍来自主包的 `napi.targets`；公共文件集合与本地打包共用契约，不另维护平台列表。
 
 1. 单目标消费端通过后，`capture:node` 封存刚才测试的主包／平台包 tarball，不重新打包或编译。封存目录 `node-distribution-<attempt>-<target>/` 含两个 tarball 和最后写入的 `manifest.json`，记录提交、run ID、attempt、包名、版本、目标及文件大小／SHA-256。同一封存目录不可覆盖。

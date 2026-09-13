@@ -1,6 +1,35 @@
+import { unwrap, arity } from "@matharts/ziwei-shared";
+import type {
+  Gender as SharedGender,
+  BirthMonth,
+  BirthDay,
+  Profile,
+  Stem as SharedStem,
+  Branch as SharedBranch,
+  PalaceName as SharedPalaceName,
+  StarName as SharedStarName,
+  StarCategory as SharedStarCategory,
+  StarGalaxy as SharedStarGalaxy,
+  Transformation as SharedTransformation,
+  Star,
+  Palace,
+  LocatedStar,
+  PalaceTransformation,
+} from "@matharts/ziwei-shared";
+
+export type {
+  BirthMonth,
+  BirthDay,
+  Profile,
+  Star,
+  Palace,
+  SelfTransformations,
+  DecadeAgeRange,
+  LocatedStar,
+  PalaceTransformation,
+} from "@matharts/ziwei-shared";
+
 import * as native from "../native/binding.cjs";
-import { unwrap } from "./error.js";
-import { arity } from "./input.js";
 
 const identities = native.identities();
 
@@ -16,7 +45,7 @@ export const FiveElement = Object.freeze({
 } as const);
 export type FiveElement = (typeof FiveElement)[keyof typeof FiveElement];
 
-export type Gender = 0 | 1;
+export type Gender = SharedGender;
 export const Gender = Object.freeze({
   Female: 0,
   Male: 1,
@@ -43,7 +72,7 @@ export const Stem = Object.freeze({
     return unwrap(native.stemYinYang(value));
   },
 } as const);
-export type Stem = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
+export type Stem = SharedStem;
 
 /** 子 = 0；时辰不是 0..23 的钟表小时。 */
 export const Branch = Object.freeze({
@@ -69,7 +98,7 @@ export const Branch = Object.freeze({
     return unwrap(native.branchZodiac(value));
   },
 } as const);
-export type Branch = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11;
+export type Branch = SharedBranch;
 
 export const Zodiac = Object.freeze({
   Rat: "Rat",
@@ -110,7 +139,7 @@ const palaceNames = {
   FuDe: "FuDe",
   FuMu: "FuMu",
 } as const;
-export type PalaceName = (typeof palaceNames)[keyof typeof palaceNames];
+export type PalaceName = SharedPalaceName;
 export const PalaceName = Object.freeze({
   ...palaceNames,
   ALL: Object.freeze<PalaceName[]>(identities.palaces),
@@ -136,7 +165,7 @@ const starNames = {
   WenChang: "WenChang",
   WenQu: "WenQu",
 } as const;
-export type StarName = (typeof starNames)[keyof typeof starNames];
+export type StarName = SharedStarName;
 export const StarName = Object.freeze({
   ...starNames,
   ALL: Object.freeze<StarName[]>(identities.stars),
@@ -147,14 +176,14 @@ export const StarCategory = Object.freeze({
   Minor: "Minor",
   Auxiliary: "Auxiliary",
 } as const);
-export type StarCategory = (typeof StarCategory)[keyof typeof StarCategory];
+export type StarCategory = SharedStarCategory;
 
 export const StarGalaxy = Object.freeze({
   South: "South",
   Central: "Central",
   North: "North",
 } as const);
-export type StarGalaxy = (typeof StarGalaxy)[keyof typeof StarGalaxy];
+export type StarGalaxy = SharedStarGalaxy;
 
 const transformations = {
   A: "A",
@@ -162,44 +191,12 @@ const transformations = {
   C: "C",
   D: "D",
 } as const;
-export type Transformation = (typeof transformations)[keyof typeof transformations];
+export type Transformation = SharedTransformation;
 export const Transformation = Object.freeze({
   ...transformations,
   ALL: Object.freeze<Transformation[]>(identities.transformations),
 });
 
-export interface SelfTransformations {
-  readonly inward: Transformation | null;
-  readonly outward: Transformation | null;
-}
-
-export interface Star {
-  readonly name: StarName;
-  readonly nameHans: string;
-  readonly nameHant: string;
-  readonly abbrHans: string;
-  readonly abbrHant: string;
-  readonly category: StarCategory;
-  readonly galaxy: StarGalaxy;
-  readonly birthTransformation: Transformation | null;
-  readonly selfTransformations: SelfTransformations;
-}
-
-/** 两端均包含的虚岁区间。 */
-export type DecadeAgeRange = readonly [start: number, end: number];
-
-export interface Palace {
-  readonly name: PalaceName;
-  readonly nameHans: string;
-  readonly nameHant: string;
-  readonly branch: Branch;
-  readonly stem: Stem;
-  readonly stars: readonly Star[];
-  readonly decadeAgeRange: DecadeAgeRange;
-}
-
-export type BirthMonth = number;
-export type BirthDay = number;
 /** 零基大限序号，运行时验证 0..11。 */
 export type DecadeIndex = number;
 /** 大限内零基流年序号，运行时验证 0..9。 */
@@ -221,20 +218,6 @@ export interface Parameters {
   readonly ziweiBranch: Branch;
   readonly birthHour: Branch;
 }
-
-interface ProfileBase {
-  readonly gender: Gender;
-  readonly birthStem: Stem;
-  readonly birthBranch: Branch;
-  readonly birthMonth: BirthMonth;
-  readonly birthHour: Branch;
-}
-
-export type Profile = ProfileBase &
-  (
-    | { readonly birthYear: number; readonly birthDay: BirthDay }
-    | { readonly birthYear: null; readonly birthDay: null }
-  );
 
 /** 不可变本命事实与同步、按需查询；只能通过 Ziwei 创建。 */
 export interface Natal {
@@ -301,16 +284,4 @@ export interface DecadeYear {
 export interface PeriodIndices {
   readonly decade: DecadeIndex;
   readonly yearly: YearlyIndex;
-}
-
-export interface LocatedStar {
-  readonly palace: Palace;
-  readonly star: Star;
-}
-
-export interface PalaceTransformation {
-  readonly sourceBranch: Branch;
-  readonly targetBranch: Branch;
-  readonly transformation: Transformation;
-  readonly star: StarName;
 }

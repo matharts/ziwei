@@ -33,17 +33,12 @@ const writeJson = (path: string, value: unknown) =>
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
 
 /** Shared file contract for local packing and cross-runner artifact verification. */
-export function distributionFiles(packageRoot: string) {
-  // Rslib's bundle:false contract emits one JS module and declaration per source.
-  // Derive the required set from source, never from potentially incomplete output.
-  const distFiles = readdirSync(join(packageRoot, "src"))
-    .filter((file) => file.endsWith(".ts"))
-    .flatMap((file) => [file.replace(/\.ts$/, ".js"), file.replace(/\.ts$/, ".d.ts")]);
-  if (!distFiles.includes("index.js") || !distFiles.includes("index.d.ts")) {
-    throw new Error("缺少构建入口，请先运行 mise run build:node");
-  }
+export function distributionFiles() {
+  // Both JS and declarations are bundled from the single public entry.
+  // Keep the required set independent of potentially incomplete build output.
   return [
-    ...distFiles.map((file) => `dist/${file}`),
+    "dist/index.js",
+    "dist/index.d.ts",
     "native/binding.cjs",
     "native/binding.d.cts",
     "README.md",
@@ -67,9 +62,13 @@ export async function stageDistribution(
     const { platformArchABI: suffix } = parseTriple(target);
     return { target, suffix, binary: `${source.napi.binaryName}.${suffix}.node` };
   });
-  const files = distributionFiles(packageRoot).filter((file) => file !== "LICENSE");
-  if (readdirSync(join(packageRoot, "dist")).some((file) => !files.includes(`dist/${file}`))) {
-    throw new Error("dist 含有非预期文件，请重新构建");
+  const files = distributionFiles().filter((file) => file !== "LICENSE");
+  for (const entry of readdirSync(join(packageRoot, "dist"))) {
+    const file = `dist/${entry}`;
+    const stat = lstatSync(join(packageRoot, "dist", entry));
+    if (!stat.isFile() || !files.includes(file)) {
+      throw new Error("dist 含有非预期文件，请重新构建");
+    }
   }
   // Preflight before creating any output. Do not silently omit missing targets.
   for (const file of [

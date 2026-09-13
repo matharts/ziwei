@@ -36,7 +36,6 @@ const captured: string[] = [];
 try {
   mkdirSync(join(fixture, "native"), { recursive: true });
   for (const file of [
-    "src",
     "dist",
     "README.md",
     "AGENTS.md",
@@ -60,6 +59,18 @@ try {
   ];
   for (const [, suffix] of targets)
     writeFileSync(join(fixture, "native", `ziwei-native.${suffix}.node`), `fixture-${suffix}`);
+  // Bundling does not weaken the exact-file preflight.
+  const rejectedOutput = join(directory, "rejected-staging");
+  const extra = join(fixture, "dist/unexpected.js");
+  writeFileSync(extra, "export {};\n");
+  await assert.rejects(stageDistribution(fixture, rejectedOutput, [targets[0]![0]!]), /非预期文件/);
+  rmSync(extra);
+  const entry = join(fixture, "dist/index.js");
+  const savedEntry = join(directory, "saved-index.js");
+  renameSync(entry, savedEntry);
+  await assert.rejects(stageDistribution(fixture, rejectedOutput, [targets[0]![0]!]), /ENOENT/);
+  renameSync(savedEntry, entry);
+  assert.equal(existsSync(rejectedOutput), false);
   const staged = await stageDistribution(
     fixture,
     join(directory, "staging"),

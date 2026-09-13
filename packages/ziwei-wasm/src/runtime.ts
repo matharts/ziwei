@@ -1,5 +1,6 @@
+import { capture } from "@matharts/ziwei-shared";
+
 import { createIdentities } from "./identities.js";
-import { capture } from "./input.js";
 import { natal } from "./natal.js";
 import type { Birth, Parameters, Natal, ReadyZiweiRuntime } from "./types.js";
 

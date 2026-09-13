@@ -118,6 +118,8 @@
 
 ### 宿主适配与工程
 
+- Node／Wasm 的输入捕获、结构化错误、出生档案、星曜、宫位和四化查询结果的只读投影及必要类型由私有 workspace 包 `@matharts/ziwei-shared` 管理；两个 Adapter 通过声明的包依赖使用根入口，不跨包读取 `src`。共享包先生成 ESM 与声明，再分别内联到两个自包含消费包中，不发布共享包、不新增消费端依赖；类身份按各包保持独立。加载、命盘持有、缓存、释放和限运投影仍由各 Adapter 管理，详见 [共享实现](docs/architecture/node-api-design.md#nodewasm-共享适配实现)。
+
 - 按 D-268，Android／OpenHarmony 的系统原生应用绑定已按用户要求暂停，不推进 Interface、SDK 或分发设计；保留宿主方向与已有候选核心检查，不宣称支持。移动网页和 WebView 继续使用独立 Wasm 包，其验收不能代替原生交付。恢复移动原生工作需要用户重新确认。
 
 - D-267 将另外七个候选原生目标与 Wasm／浏览器纳入必做范围，实施进度见[跨平台交付计划](docs/architecture/cross-platform-delivery-plan.md)。独立 `bindings/wasm` 与 `packages/ziwei-wasm` 共用唯一 Rust 核心；浏览器显式初始化后提供同步 API，独立 `dispose()` 管理 Wasm 命盘，不修改 Node 的公开接口。候选编译、静态审计、真实宿主运行和发布分别验收，Wasm 不能替代 Android／OpenHarmony 的原生验收。

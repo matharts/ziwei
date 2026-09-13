@@ -20,6 +20,8 @@
     }
   },
   "devDependencies": {
+    "@matharts/ziwei-shared": "workspace:*",
+    "@microsoft/api-extractor": "catalog:",
     "@napi-rs/cli": "catalog:",
     "@rslib/core": "catalog:",
     "typescript": "catalog:"

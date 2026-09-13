@@ -318,6 +318,12 @@
 | --- | --- | --- |
 | D-268 | Android 两个 ABI 与 OpenHarmony arm64 面向系统原生应用设计宿主绑定；移动网页与 WebView 继续使用独立 Wasm 包。移动原生交付不再以常规 Node npm 平台包为默认目标，不维护非官方 Node 移植。复用唯一 Rust 核心，不改变现有 Node／Wasm Interface；Wasm 验收不能代替移动原生验收。 | 用户确认宿主方向；JNI／Kotlin、Native API／ArkTS 的具体 Interface、SDK 版本、分发格式及设备矩阵仍需设计和验证。不代表绑定已实现或允许发布；保留现有候选核心检查。 |
 
+## JavaScript Adapter 共享实现
+
+| ID | 决策 | 状态 |
+| --- | --- | --- |
+| D-269 | Node／Wasm 保持两个独立 npm 消费包，不新增消费端共享依赖。输入捕获、错误转换、`Profile`、`Star`、`Palace`、`LocatedStar`、`PalaceTransformation` 只读投影及必要类型归属私有 workspace 包 `@matharts/ziwei-shared`；两侧声明包依赖、使用根入口，共享包先构建 ESM 与声明，再分别内联到消费包产物。Node 单入口打包但原生加载器仍外置，Wasm 初始化与资源方式不变。保留字段、顺序、显式 `null`、冻结和包内错误身份；加载、持有、缓存、释放和限运投影不提取。 | 用户否定首版 `packages/ziwei/src/shared` 跨包源码导入，2026-09-13 确认改用独立私有 workspace 模块，随后分步确认星曜、宫位、四化查询结果及出生档案的投影和必要类型；不发布共享包、不改变 Rust 核心或公开合同。 |
+
 ## 暂缓决策
 
 | ID | 决策 | 状态 |
