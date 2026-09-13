@@ -122,11 +122,8 @@ $ProgressPreference = 'SilentlyContinue'
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 $diagnosticClock = [System.Diagnostics.Stopwatch]::StartNew()
 function Write-DiagnosticStage([string]$stage) {
-  [Console]::Error.WriteLine('[DEBUG-windows-diagnostics] ' + ([ordered]@{
-    stage = $stage
-    elapsedMs = $diagnosticClock.ElapsedMilliseconds
-    unixMs = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
-  } | ConvertTo-Json -Compress))
+  $line = '{"stage":"' + $stage + '","elapsedMs":' + $diagnosticClock.ElapsedMilliseconds + ',"unixMs":' + [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() + '}'
+  [Console]::Error.WriteLine('[DEBUG-windows-diagnostics] ' + $line)
   [Console]::Error.Flush()
 }
 Write-DiagnosticStage 'script-start'

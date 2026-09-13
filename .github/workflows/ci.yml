@@ -65,9 +65,18 @@ jobs:
         run: mise run check:node:tools
       - name: Compare isolated Windows diagnostic on the same runner
         if: ${{ !cancelled() && matrix.target == 'x86_64-pc-windows-msvc' && steps.node-dependencies.outcome == 'success' }}
-        env:
-          ZIWEI_WINDOWS_DIAGNOSTIC_MODE: isolated
-        run: mise run check:node:tools -- -t "Windows Docker diagnostic script returns service, process and event evidence"
+        shell: pwsh
+        run: |
+          $failed = $false
+          foreach ($sample in 1..3) {
+            $env:ZIWEI_WINDOWS_DIAGNOSTIC_MODE = "full-$sample"
+            mise run check:node:tools
+            if ($LASTEXITCODE -ne 0) { $failed = $true }
+            $env:ZIWEI_WINDOWS_DIAGNOSTIC_MODE = "isolated-$sample"
+            mise run check:node:tools -- -t "Windows Docker diagnostic script returns service, process and event evidence"
+            if ($LASTEXITCODE -ne 0) { $failed = $true }
+          }
+          if ($failed) { exit 1 }
       - name: Preserve Windows diagnostic stage evidence
         if: ${{ !cancelled() && matrix.target == 'x86_64-pc-windows-msvc' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7

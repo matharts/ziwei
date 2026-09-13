@@ -471,7 +471,7 @@ if (process.platform === "win32") {
       result: redactObservation(result),
     });
     if (mode) {
-      assert.ok(mode === "full" || mode === "isolated");
+      assert.match(mode, /^(?:full|isolated)(?:-[1-3])?$/);
       const output = fileURLToPath(new URL("../../target/windows-diagnostics/", import.meta.url));
       mkdirSync(output, { recursive: true });
       writeFileSync(join(output, `${mode}.json`), diagnostic + "\n", { flag: "wx" });
