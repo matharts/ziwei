@@ -35,6 +35,7 @@ import {
   type CandidateReceipt,
   type CandidateTarget,
 } from "../../packages/ziwei/tools/candidate.ts";
+import { readWorkflow, requireSuccess, script } from "./workflow.ts";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
 const source = JSON.parse(readFileSync(join(root, "packages/ziwei/package.json"), "utf8"));
@@ -375,21 +376,37 @@ test("candidate consumer fails closed and will not overwrite an existing result"
 });
 
 test("candidate CI consumes sealed same-run inputs and requires both emulated targets", () => {
-  const workflow = readFileSync(join(root, ".github/workflows/native-candidates.yml"), "utf8");
-  const runtime = workflow.split("  gnu-runtime:")[1]!.split("  verify:")[0]!;
-  for (const target of targets) assert.ok(runtime.includes(`- ${target}`));
-  assert.ok(!runtime.includes("armv7"));
-  assert.match(workflow, /needs: \[core-check, gnu-addon, gnu-runtime\]/);
-  assert.match(workflow, /test "\$RUNTIME_RESULT" = success/);
+  const workflow = readWorkflow("native-candidates");
+  const runtime = workflow.jobs["gnu-runtime"]!;
+  assert.deepEqual(runtime.strategy?.matrix.target, [...targets]);
+  assert.deepEqual(workflow.jobs.verify!.needs, [
+    "core-check",
+    "gnu-addon",
+    "pnpm-client",
+    "gnu-runtime",
+  ]);
+  assert.match(script(workflow.jobs.verify!), /test "\$RUNTIME_RESULT" = success/);
   assert.equal(
-    workflow.split(
-      "name: native-candidate-input-${{ github.sha }}-${{ github.run_attempt }}-${{ matrix.target }}",
-    ).length - 1,
+    Object.values(workflow.jobs)
+      .flatMap((job) => job.steps)
+      .filter(
+        (item) =>
+          item.with?.name ===
+          "native-candidate-input-${{ github.sha }}-${{ github.run_attempt }}-${{ matrix.target }}",
+      ).length,
     2,
   );
-  assert.match(runtime, /docker\/setup-qemu-action@[a-f0-9]{40}/);
-  assert.match(runtime, /image: tonistiigi\/binfmt@sha256:[a-f0-9]{64}/);
-  assert.match(runtime, /mise run check:node:candidate/);
-  assert.match(runtime, /if: \$\{\{ !cancelled\(\) \}\}/);
-  assert.doesNotMatch(runtime, /continue-on-error|build:node|cargo build/);
+  const qemu = runtime.steps.filter((item) => item.uses?.startsWith("docker/setup-qemu-action@"));
+  assert.equal(qemu.length, 1);
+  assert.match(qemu[0]!.uses!, /^docker\/setup-qemu-action@[a-f0-9]{40}$/);
+  assert.match(String(qemu[0]!.with?.image), /^tonistiigi\/binfmt@sha256:[a-f0-9]{64}$/);
+  assert.match(script(runtime), /mise run check:node:candidate/);
+  assert.ok(
+    runtime.steps.some(
+      (item) =>
+        item.uses?.startsWith("actions/upload-artifact@") && item.if === "${{ !cancelled() }}",
+    ),
+  );
+  requireSuccess(runtime);
+  assert.doesNotMatch(script(runtime), /build:node|cargo build/);
 });

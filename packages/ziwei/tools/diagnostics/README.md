@@ -9,4 +9,6 @@
 - 测试：参数、结果分类与工作流约束继续在跨平台 `check:node:tools` 中执行；需要 Linux shell 的检查由 `check:node:tools:linux` 执行，并接入主 CI 的 Linux 原生任务，不用跳过测试代替隔离。
 - 维护终点：定位上游修复后，先验证修复版本的原始启动与完整候选消费。之后收敛到必要的回归用例，保留固定摘要、运行链接及结论，再撤下过时对照模式。不因为故障仍存在就继续扩展无假设的版本矩阵。
 
+源码重建机制已由日常候选 CI 与手动对照共用，实现在上级 `pnpm-rebuild.ts`／Dockerfile，不属于本目录。这里的 `pnpm-rebuild.ts` 仅保留手动入口与旧实验 artifact 的固定批次／摘要校验；过期即失败，不自动寻找替代品。日常候选每轮重新构建，不依赖这个旧产物。详见[日常合同](../../../../docs/engineering/native-candidate-platforms.md#ppc64le-候选-ci-的源码重建客户端)。
+
 Windows 日常验收不放入本目录：运行环境／材料校验由 `windows-runtime.ts` 负责，Docker 就绪与只读故障证据由 `windows-docker.ts` 负责，`windows-container.ts` 负责容器及消费场景编排。完整 CRT 对照仍须显式选择，不进入默认验收场景。

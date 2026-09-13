@@ -22,8 +22,10 @@ import {
   currentBatch,
   digest,
   readCandidate,
+  type Batch,
   type CandidateTarget,
 } from "./candidate.ts";
+import { readPnpmRebuild, verifyPnpmRebuild } from "./pnpm-rebuild.ts";
 
 const execute = promisify(execFile);
 export function runCandidateCommand(
@@ -179,19 +181,47 @@ export function candidateDockerArgs(input: {
   ];
 }
 
+export function readCandidatePnpm(target: CandidateTarget, path: string | undefined, batch: Batch) {
+  candidateTarget(target);
+  if (target === "powerpc64le-unknown-linux-gnu") {
+    assert.ok(path, "ppc64le 候选验收需要 --pnpm-build 同批源码重建凭据");
+    return readPnpmRebuild(resolve(path), batch);
+  }
+  assert.equal(path, undefined, "s390x 必须使用官方 pnpm，不接受重建客户端");
+  return undefined;
+}
+
 export async function runCandidateExperiment(
   target: CandidateTarget,
   cohort: string,
   output: string,
+  rebuiltPnpm?: { binary: Buffer; receipt: Record<string, unknown> },
 ) {
   candidateTarget(target);
+  assert.ok(!rebuiltPnpm || target === "powerpc64le-unknown-linux-gnu", "重建客户端仅用于 ppc64le");
   const batch = currentBatch();
+  assert.ok(
+    target !== "powerpc64le-unknown-linux-gnu" || rebuiltPnpm,
+    "ppc64le 候选验收需要源码重建客户端",
+  );
+  const comparison = rebuiltPnpm?.receipt.kind === "pnpm-rebuild-experiment";
+  if (rebuiltPnpm) {
+    // Historical artifact comparisons are only constructed by the diagnostic
+    // entrypoint with an independently pinned digest; daily CLI rejects that kind.
+    verifyPnpmRebuild(
+      rebuiltPnpm.receipt,
+      rebuiltPnpm.binary,
+      comparison ? (rebuiltPnpm.receipt.batch as Batch) : batch,
+      comparison ? "pnpm-rebuild-experiment" : "pnpm-source-build",
+    );
+  }
   readCandidate(cohort, target, batch); // Fail before network or Docker on mixed/corrupt input.
   mkdirSync(dirname(output), { recursive: true });
   mkdirSync(output);
   const runs: Record<string, unknown>[] = [];
   const report: Record<string, unknown> = {
     verification: "emulated",
+    purpose: comparison ? "pnpm-rebuild-comparison" : "candidate-acceptance",
     passed: false,
     target,
     batch,
@@ -262,22 +292,34 @@ export async function runCandidateExperiment(
     const runtime = join(temporary, "runtime");
     mkdirSync(runtime);
     const pnpmUrl = `https://registry.npmjs.org/@pnpm/exe.linux-${platform.arch}/-/exe.linux-${platform.arch}-${pnpmVersion}.tgz`;
-    const pnpm = await download(pnpmUrl, candidateRuntimes[target].pnpmIntegrity, "sha512");
-    writeFileSync(
-      join(runtime, "pnpm"),
-      execFileSync("tar", ["-xOzf", "-", "package/pnpm"], {
-        input: pnpm,
-        timeout: 30_000,
-        maxBuffer: 96 * 1024 * 1024,
-      }),
-    );
+    if (rebuiltPnpm) {
+      assert.equal(rebuiltPnpm.receipt.version, pnpmVersion);
+      writeFileSync(join(runtime, "pnpm"), rebuiltPnpm.binary);
+      report.pnpm = {
+        origin: comparison ? "experimental-rebuild" : "source-rebuild",
+        version: pnpmVersion,
+        binary: digest(rebuiltPnpm.binary),
+        rebuild: rebuiltPnpm.receipt,
+      };
+    } else {
+      const pnpm = await download(pnpmUrl, candidateRuntimes[target].pnpmIntegrity, "sha512");
+      writeFileSync(
+        join(runtime, "pnpm"),
+        execFileSync("tar", ["-xOzf", "-", "package/pnpm"], {
+          input: pnpm,
+          timeout: 30_000,
+          maxBuffer: 96 * 1024 * 1024,
+        }),
+      );
+      report.pnpm = {
+        origin: "official-registry",
+        version: pnpmVersion,
+        url: pnpmUrl,
+        archive: digest(pnpm),
+        binary: digest(readFileSync(join(runtime, "pnpm"))),
+      };
+    }
     chmodSync(join(runtime, "pnpm"), 0o755);
-    report.pnpm = {
-      version: pnpmVersion,
-      url: pnpmUrl,
-      archive: digest(pnpm),
-      binary: digest(readFileSync(join(runtime, "pnpm"))),
-    };
     for (const [nodeVersion, sha256] of Object.entries(candidateRuntimes[target].node)) {
       const nodeOutput = join(output, nodeVersion);
       mkdirSync(nodeOutput);
@@ -419,12 +461,15 @@ export async function runCandidateExperiment(
 
 if (import.meta.main) {
   const { values } = parseArgs({
-    options: { target: { type: "string" }, input: { type: "string" }, output: { type: "string" } },
+    options: {
+      target: { type: "string" },
+      input: { type: "string" },
+      output: { type: "string" },
+      "pnpm-build": { type: "string" },
+    },
   });
   assert.ok(values.target && values.input && values.output);
-  await runCandidateExperiment(
-    candidateTarget(values.target),
-    resolve(values.input),
-    resolve(values.output),
-  );
+  const target = candidateTarget(values.target);
+  const pnpm = readCandidatePnpm(target, values["pnpm-build"], currentBatch());
+  await runCandidateExperiment(target, resolve(values.input), resolve(values.output), pnpm);
 }

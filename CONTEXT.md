@@ -118,6 +118,8 @@
 
 ### 宿主适配与工程
 
+- 按 D-271，ppc64le 候选 CI 使用同批固定源码重建的 pnpm 测试客户端；不替换开发工具或发行包，其他目标保持原路径。维护与升级边界见[候选客户端合同](docs/engineering/native-candidate-platforms.md#ppc64le-候选-ci-的源码重建客户端)，仿真通过不代表正式平台支持。
+
 - Wasm `wire.rs` 使用实例级固定数组惰性复用星曜和本命宫职的静态 JS 字符串，最多 162 个引用槽；数据仍读取 Rust 核心，不缓存输入、四化或查询结果。输出容器逐次新建，`dispose()` 只释放命盘，不清空实例级静态资料。Node、核心和公开输出合同不变，详见[静态字符串缓存](docs/architecture/wasm-adapter-design.md#静态字符串缓存)。
 
 - Node／Wasm 的输入捕获、结构化错误、出生档案、星曜、宫位和四化查询结果的只读投影及必要类型由私有 workspace 包 `@matharts/ziwei-shared` 管理；两个 Adapter 通过声明的包依赖使用根入口，不跨包读取 `src`。共享包先生成 ESM 与声明，再分别内联到两个自包含消费包中，不发布共享包、不新增消费端依赖；类身份按各包保持独立。加载、命盘持有、缓存、释放和限运投影仍由各 Adapter 管理，详见 [共享实现](docs/architecture/node-api-design.md#nodewasm-共享适配实现)。

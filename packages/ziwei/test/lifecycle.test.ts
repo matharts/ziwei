@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
-import { once } from "node:events";
 import { createRequire } from "node:module";
 import { Worker } from "node:worker_threads";
 
 import { test } from "@rstest/core";
+import type { TestContext } from "@rstest/core";
 
 import * as esm from "@matharts/ziwei";
 
@@ -138,14 +138,44 @@ test("full i32 years and birth day boundaries preserve exact profile values", ()
   );
 });
 
-test("independent Worker environments construct charts and return detached plain profiles", async () => {
+// Observe both message and exit: an early exit must not leave a message promise pending.
+function workerResult(worker: Worker, t: TestContext) {
+  t.onTestFinished(async () => {
+    await worker.terminate();
+  });
+  return new Promise<Record<string, unknown>>((resolve, reject) => {
+    let message: Record<string, unknown> | undefined;
+    worker.once("message", (value: unknown) => {
+      if (value !== null && typeof value === "object" && !Array.isArray(value)) {
+        message = value as Record<string, unknown>;
+      }
+    });
+    worker.once("error", reject);
+    worker.once("exit", (code) => {
+      if (code !== 0) reject(new Error(`Worker exited with code ${code}`));
+      else if (message === undefined) reject(new Error("Worker exited without a result object"));
+      else resolve(message);
+    });
+  });
+}
+
+test("Worker failure before a message preserves the exit or error diagnostic", async (t) => {
+  for (const [source, expected] of [
+    ["process.exit(2)", /Worker exited with code 2/],
+    ["process.exit(0)", /Worker exited without a result object/],
+    ['throw new Error("worker failure fixture")', /worker failure fixture/],
+  ] as const) {
+    await assert.rejects(workerResult(new Worker(source, { eval: true }), t), expected);
+  }
+});
+
+test("independent Worker environments construct charts and return detached plain profiles", async (t) => {
   await Promise.all(
     Array.from({ length: 4 }, async () => {
       const worker = new Worker(new URL("./worker.ts", import.meta.url), {
         workerData: birth,
       });
-      const exit = once(worker, "exit");
-      const [message] = await once(worker, "message");
+      const message = await workerResult(worker, t);
       const natal = esm.Ziwei.fromBirth(birth);
       assert.deepEqual(message, {
         profile: natal.profile,
@@ -161,7 +191,6 @@ test("independent Worker environments construct charts and return detached plain
       assert.equal(Object.isFrozen(message.palaces), false);
       assert.equal(Object.isFrozen(message.query), false);
       assert.equal(Object.isFrozen(message.snapshot), false);
-      assert.deepEqual(await exit, [0]);
     }),
   );
 });

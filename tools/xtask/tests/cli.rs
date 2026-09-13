@@ -1,8 +1,9 @@
 use serde_json::Value;
 use std::{
     fs,
+    io::Write,
     path::PathBuf,
-    process::{Command, Output},
+    process::{Command, Output, Stdio},
 };
 
 fn root() -> PathBuf {
@@ -20,8 +21,122 @@ fn cli(args: &[&str]) -> Output {
         .unwrap()
 }
 
+// These commands are the entry points to workload preparation/building. Use native
+// probes, not shell wrappers, so the same observation works on Windows and Unix.
+struct NoWorkload {
+    directory: tempfile::TempDir,
+    log: PathBuf,
+}
+
+impl NoWorkload {
+    fn new() -> Self {
+        let directory = tempfile::tempdir().unwrap();
+        let log = directory.path().join("commands.log");
+        let executable = directory
+            .path()
+            .join(format!("probe{}", std::env::consts::EXE_SUFFIX));
+        let mut compiler = Command::new("rustc")
+            .args(["--crate-name", "command_probe", "-"])
+            .arg("-o")
+            .arg(&executable)
+            .stdin(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        compiler
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(
+                br#"
+fn main() {
+    use std::io::Write;
+    let mut log = std::fs::OpenOptions::new().create(true).append(true)
+        .open(std::env::var_os("ZIWEI_TEST_COMMAND_LOG").unwrap()).unwrap();
+    writeln!(log, "{:?}", std::env::args_os().collect::<Vec<_>>()).unwrap();
+    std::process::exit(73);
+}
+"#,
+            )
+            .unwrap();
+        let output = compiler.wait_with_output().unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        for program in ["git", "cargo", "rustc"] {
+            fs::copy(
+                &executable,
+                directory
+                    .path()
+                    .join(format!("{program}{}", std::env::consts::EXE_SUFFIX)),
+            )
+            .unwrap();
+        }
+        let fixture = Self { directory, log };
+        // Positive control: verify PATH lookup and marker writing before relying on
+        // marker absence. Keep this entry as the baseline instead of clearing it.
+        let probe = fixture.command("git").arg("--version").output().unwrap();
+        assert_eq!(probe.status.code(), Some(73));
+        assert!(!fs::read(&fixture.log).unwrap().is_empty());
+        fixture
+    }
+
+    fn command(&self, executable: &str) -> Command {
+        let mut command = Command::new(executable);
+        command
+            .current_dir(self.directory.path())
+            .env("PATH", self.directory.path())
+            .env("ZIWEI_TEST_COMMAND_LOG", &self.log);
+        command
+    }
+
+    fn cli(&self, args: &[&str]) -> Output {
+        let commands = fs::read(&self.log).unwrap();
+        let artifacts = artifact_directories();
+        let output = self
+            .command(env!("CARGO_BIN_EXE_ziwei-xtask"))
+            .args(args)
+            .output()
+            .unwrap();
+        assert_eq!(
+            fs::read(&self.log).unwrap(),
+            commands,
+            "{args:?} launched a workload command"
+        );
+        assert_eq!(
+            artifact_directories(),
+            artifacts,
+            "{args:?} created artifacts"
+        );
+        output
+    }
+}
+
+fn artifact_directories() -> Vec<Option<Vec<PathBuf>>> {
+    // xtask resolves these from CARGO_MANIFEST_DIR, not its current directory.
+    [
+        "target/benchmarks",
+        "target/benchmarks/read-path",
+        "target/package-checks",
+    ]
+    .into_iter()
+    .map(|path| match fs::read_dir(root().join(path)) {
+        Ok(entries) => {
+            let mut paths: Vec<_> = entries.map(|entry| entry.unwrap().path()).collect();
+            paths.sort();
+            Some(paths)
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => panic!("Cannot inspect {path}: {error}"),
+    })
+    .collect()
+}
+
 #[test]
 fn invalid_flags_fail_before_creating_or_measuring_anything() {
+    let fixture = NoWorkload::new();
     for args in [
         vec!["benchmark", "smoke", "--baseline", "missing.json"],
         vec!["benchmark", "calibrate", "--runs", "1"],
@@ -31,7 +146,7 @@ fn invalid_flags_fail_before_creating_or_measuring_anything() {
         vec!["benchmark-read", "smoke", "--unknown"],
         vec!["check-package", "--unknown"],
     ] {
-        let output = cli(&args);
+        let output = fixture.cli(&args);
         assert!(!output.status.success(), "{args:?}");
         assert!(output.stdout.is_empty());
     }
@@ -180,13 +295,14 @@ fn inline_values_preserve_option_validation() {
 
 #[test]
 fn help_does_not_run_the_workload() {
+    let fixture = NoWorkload::new();
     for args in [
         vec!["--help"],
         vec!["benchmark", "smoke", "--help"],
         vec!["benchmark-read", "--help"],
         vec!["check-package", "--help"],
     ] {
-        let output = cli(&args);
+        let output = fixture.cli(&args);
         assert!(output.status.success());
         assert!(!output.stdout.is_empty());
         assert!(output.stderr.is_empty());

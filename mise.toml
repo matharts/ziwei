@@ -184,9 +184,21 @@ run = "pnpm exec -- node packages/ziwei/tools/candidate-runtime.ts"
 description = "独立复现 ppc64le pnpm 启动；无需构建产物或安装依赖"
 run = "node packages/ziwei/tools/diagnostics/pnpm-repro.ts"
 
+[tasks."diagnose:pnpm:rebuild"]
+description = "在一次性 Linux Docker 中重建固定 pnpm 源码；仅供隔离诊断"
+run = "node packages/ziwei/tools/diagnostics/pnpm-rebuild.ts"
+
+[tasks."build:pnpm:ppc64le"]
+description = "从固定上游源码重建 ppc64le 候选 CI 客户端；不替换开发工具或发布"
+run = "node packages/ziwei/tools/pnpm-rebuild.ts"
+
 [tasks."check:node:tools:linux"]
 description = "验证 Linux 专用诊断脚本；与跨平台工具合同分开，Linux CI 必跑"
 run = "pnpm exec -- node node_modules/@rstest/core/bin/rstest.js --project node-tools-linux"
+
+[tasks."check:node:diagnostics:windows"]
+description = "在真实 Windows 宿主验证诊断采集；独立运行，不作为产品 CI 前置门禁"
+run = "pnpm exec -- node node_modules/@rstest/core/bin/rstest.js --project windows-diagnostics"
 
 [tasks."check:typescript"]
 description = "严格检查 TypeScript 配置、测试和工具；需先构建 Node 包"

@@ -1,10 +1,29 @@
 # 七个原生候选平台：宿主、构建与验收矩阵
 
-当前状态：2026-09-12，提交 `c30dd7e` 的[候选 CI](https://github.com/matharts/ziwei/actions/runs/34687240792)再次通过七目标核心检查、三项 GNU addon 交叉构建／静态审计及 s390x 双 Node／双客户端 QEMU 消费；ppc64le 消费任务仍失败，完整候选门禁未通过。已有独立复现与 GDB 调用点证据见下方历史记录；具体根因未确定，不把追踪中的空地址信息等同于最终调用点。七目标仍属于完整交付范围，仿真不替代真机验收。现有八目标结论沿用 [Node 分发设计](../architecture/node-distribution-proposal.md)。
+当前状态：2026-09-14，提交 `be772f9` 已将固定源码重建 pnpm 接入 ppc64le 日常候选 CI：[候选 CI](https://github.com/matharts/ziwei/actions/runs/34776793193)的 14 项任务与[常规 CI](https://github.com/matharts/ziwei/actions/runs/34776793142)的 21 项任务全部通过。ppc64le 使用本轮重建客户端，s390x 保持官方客户端，两架构双 Node／双客户端共 32 个消费场景均通过，下载后批次和摘要已核对。实现已推送临时分支，尚未合并或发布。官方二进制的启动故障保留在手动诊断中，不声称上游已修复。历史证据与实验边界见下文；当前范围以本页平台矩阵为准，仿真不替代真机验收。现有八目标结论沿用 [Node 分发设计](../architecture/node-distribution-proposal.md)。
 
 候选实现包含 [静态审计](../../packages/ziwei/tools/compatibility.ts)、[候选封存与消费](../../packages/ziwei/tools/candidate.ts)、[仿真控制器](../../packages/ziwei/tools/candidate-runtime.ts) 和独立的[候选 CI](../../.github/workflows/native-candidates.yml)。不改正式目标 manifest、依赖或公开 API，不安装本机 SDK、虚拟机或设备工具，不申请云资源，不发布。下文的实施路径与工期是项目建议，不是上游支持承诺。
 
 ## 结论与推荐
+
+### ppc64le 候选 CI 的源码重建客户端
+
+按 D-271，日常候选 CI 仅为 ppc64le 使用源码重建的 pnpm 测试客户端；s390x 和现有八个正式目标保持原路径。这个 pnpm 不进入 Ziwei npm 包，不替换开发机的 mise／devEngines，不作为官方 pnpm 发布或正式平台支持的证明。
+
+- **构建与来源**：独立 `pnpm-client` job 与 Ziwei 构建并行，每次从固定上游 commit、原始 `Cargo.lock`、Rust 1.97.0、固定摘要镜像和指定 GNU 包版本重新构建，不修改上游源码。通用[重建模块](../../packages/ziwei/tools/pnpm-rebuild.ts)与 Dockerfile 位于正常工具目录；`diagnostics/` 仅保留手动比较及历史产物入口。构建使用 release 优化并保留符号，记录实际工具版本；不声称不同 runner 间字节可复现。
+- **同批验证**：构建凭据使用 `kind: pnpm-source-build`，保留 `runtimeVerified: false`，并记录 commit／run／attempt、源码、锁文件、Dockerfile／构建脚本和二进制摘要。构建与清理全部成功后才上传供消费的客户端。日常入口 `--pnpm-build` 只接受同批、固定配方和匹配字节；历史 `pnpm-rebuild-experiment` 凭据不能用于日常门禁。缺失或无效输入直接失败，不回退到官方故障产物或寻找旧 artifact。
+- **完整门禁**：两版 Node 均执行原 npm／pnpm 的正常、禁用 optional、缺失、损坏四类场景。报告保持 `purpose: candidate-acceptance`，显式记录 `pnpm.origin: source-rebuild` 及完整构建凭据。源码重建、七目标核心、三项静态审计、两目标仿真均为必需结果；构建成功不能替代消费成功。
+- **保留与恢复**：只在同一 run 内传递客户端，不使用跨 run 的可执行缓存；Actions artifact 过期后重跑全部任务生成新批次，不依赖实验 artifact ID。构建日志与失败凭据短期保存；编译镜像与 Cargo 中间缓存不上传。代价是每轮都承担重建时间与下载成本，当前不引入额外缓存信任边界。
+- **升级与退出**：pnpm 升级时必须同步源码 commit、锁文件、Rust／镜像／GNU 配方和根版本约束，重新运行完整候选验收。上游修复官方产物后，先通过手动启动与完整消费对照，再明确切回官方客户端；不能自动切换或因为官方版本号相同而复用其字节。继续保留真机、最低 CPU／系统及发布的独立验收边界。
+
+```sh
+mise run build:pnpm:ppc64le -- --source <固定且未修改的上游源码目录> --output <新客户端目录>
+mise run check:node:candidate -- --target powerpc64le-unknown-linux-gnu --input <同批候选目录> --output <新结果目录> --pnpm-build <新客户端目录>/build.json
+```
+
+首次日常验收对应提交 `be772f99e9f30897ee6f953b1021dc43b9eb9f73`、run `34776793193`、attempt 1。重建步骤用时 16 分 19 秒，整个候选工作流约 19 分 50 秒；这是本轮 CI 耗时，不是性能保证。构建 artifact `10323718884` 的 pnpm 为 57974968 字节、SHA-256 `33f02b192985516eb79662fca568325f676455b01b0a46feb3fb6205f565c431`，与此前隔离重建样本字节一致，但不据两次样本承诺一般性的可复现构建。
+
+ppc64le／s390x 消费 artifact 分别为 `10324405200`、`10323734082`，两份报告均为 `purpose: candidate-acceptance`、`passed: true`；前者来源为 `source-rebuild` 且内嵌本轮完整构建凭据，后者为 `official-registry`。Node 24.15.0、24.21.0 各通过 npm／pnpm 正常、禁用 optional、缺失、损坏四场景；四个消费容器均成功清理，实际 glibc 均为 2.36，端序分别为 LE／BE。两架构候选 tarball、内含 addon、消费凭据摘要及已加载模块路径均已对应核对，不混用实验 run 的候选产物。
 
 ### 独立 pnpm 启动诊断
 
@@ -56,6 +75,30 @@ mise run diagnose:pnpm -- --output <新的结果目录>
 
 这确认了仿真现场中通向未映射地址的具体调用点，不等于已确定 pnpm 构建、链接或 QEMU 的根因。下一项应对照官方归档中的原始 ELF 指令及重定位，判断此分支是否已存在于发布字节中，再决定是否需要符号或真机对照；本轮不修补外部二进制、不改变候选门禁和正式支持范围。
 
+#### 原始 ELF 与隔离重建
+
+2026-09-14 对照相同 SHA-256 的官方文件：ELF 偏移 `0x252d9e0` 为小端指令 `0x49ad2621`，解码为相对调用 `0x4000000`；加上现场加载偏移 `0x100000000` 后，目标与 GDB 的 `PC = 0x104000000` 一致。目标不在任何 `PT_LOAD` 段内，调用点也无动态 RELA 记录。这表明异常分支已存在于发布字节中；尚未定位具体源码符号、编译器或链接器缺陷。
+
+用户已授权临时分支上的隔离重建与 Linux CI。手动诊断选择 `comparison=rebuild`：先执行原官方基线，再从 [pnpm v12.4.1 固定提交](https://github.com/pnpm/pnpm/tree/19eb39448649c926bc63b0e9fa16f0e340701460)重建 `pnpm-cli`。官方 [Rust 配置](https://github.com/pnpm/pnpm/blob/19eb39448649c926bc63b0e9fa16f0e340701460/rust-toolchain.toml)的 1.97.0 不变，使用固定摘要的 [Rust Bookworm 镜像](https://hub.docker.com/_/rust)、[GCC 12.2](https://packages.debian.org/bookworm/gcc-12-powerpc64le-linux-gnu)／[binutils 2.40](https://packages.debian.org/bookworm/binutils-powerpc64le-linux-gnu)交叉工具和原 `Cargo.lock`。这是构建链对照，不是只改变一个链接参数的因果实验。
+
+[重建工具](../../packages/ziwei/tools/pnpm-rebuild.ts)在一次性 Linux runner 的 Docker 内构建，不向本机安装工具。源码只读挂载，Cargo 使用 `--locked`，不修改上游源码或依赖；保留 release 优化，取消符号剥离以支持取证。编译容器可联网下载固定依赖，后续启动探针仍断网、只读、非特权，使用原 QEMU、消费镜像与命令。
+
+最初实验的 `build.json` 标记为 `pnpm-rebuild-experiment`、`runtimeVerified: false`，记录源码、锁文件、Rust／镜像、Dockerfile、命令、二进制摘要和批次。该历史凭据仅供固定摘要的旧消费对照，不进入日常门禁。现行手动重建复用上节通用构建器，生成 `pnpm-source-build`；启动工具经 `--rebuilt-receipt` 核对同批、固定配方和完整构建，仍不把启动成功当作完整消费验收。两种产物都不冒充官方归档或进入 Ziwei 发行包。
+
+原基线失败不会阻止重建及后续探针，也不会被成功对照掩盖：诊断工作流继续保留失败状态，各组结果独立检查。正常版本输出才表示启动通过；完整 Node 双版本／npm 与 pnpm 消费仍是另一项验收。实验未通过前不更改日常门禁、工具链、支持声明或公共依赖。
+
+提交 `22c3c328b846a37a4c6499d2a942e874670efef1` 的 [run 34774152796](https://github.com/matharts/ziwei/actions/runs/34774152796)（attempt 1）已完成重建。实际 Rust 1.97.0／LLVM 22.1.6、GCC 12.2.0、GNU ld 2.40；未改上游源码和锁文件。重建文件为 57974968 字节，SHA-256 为 `33f02b192985516eb79662fca568325f676455b01b0a46feb3fb6205f565c431`，下载后的字节与 build／probe 两份报告一致。两组使用相同 QEMU 10.2.3 和消费镜像：官方普通／追踪探针均出现 QEMU SIGSEGV，重建两探针均以 0 退出并输出 `12.4.1`，容器均清理成功。工作流仅因官方基线失败而保留失败状态。这证明该重建产物解决了本环境中的启动阻塞，不确定是哪一条构建链变化修正了异常调用，也不构成正式工具替换决定。
+
+手动选择 `comparison=consumer` 继续完整消费验证：独立 job 下载已核对的 artifact `10323128266`，同时固定其原始 build commit／run／attempt 与二进制 SHA-256；该工具产物过期或不匹配就失败，不自动寻找最新文件或重新构建代替。工具来源批次保持原样，**Ziwei 候选则必须在消费这次 CI 内重新构建、审计和封存**，沿用原有同 commit／run／attempt 检查，不改写 `GITHUB_*` 来冒充同批。
+
+旧产物的消费对照只在 `diagnose:pnpm:rebuild -- --mode consume` 中开放，固定 ppc64le，不能通过日常入口传入。复用原来的固定 Node 24.15.0／24.21.0、只读断网容器、冷缓存注册表与 npm／pnpm 四场景合同。控制器报告用 `purpose: pnpm-rebuild-comparison` 和 `origin: experimental-rebuild` 明确区分实验与日常验收，并保留工具原始构建信息。此组不重复已完成的源码重建或把原基线失败变绿；其结果只回答“该固定实验 pnpm 能否完整消费新的 Ziwei 候选”。
+
+提交 `37796bcf1dd6fa796701f63bd4cc86cf9a947f10` 的 [run 34775494954](https://github.com/matharts/ziwei/actions/runs/34775494954)（attempt 1）已全部通过，证据 artifact 为 `10323930265`。实际宿主为 QEMU 下的 Linux ppc64 little-endian、glibc 2.36；Node 24.15.0 与 24.21.0 各通过 npm／实验 pnpm 的正常、禁用 optional、缺包和损坏包四场景，合计 16 个。两份消费报告均记录实际加载的平台 `.node`；下载后重新核验两个 tarball、封存文件与原始 addon，字节一致，addon SHA-256 为 `9e24c395bdc7756affbffd861bf15f8306bd448a0d0745e28d927d39d5f2b312`。两次消费容器均清理成功，未改变测试断言或支持范围。
+
+补充静态对照：原故障点前的 40 字节指令片段在重建文件中唯一匹配。原 ELF `0x252d9e0` 的异常调用，对应重建 ELF `0x2521f20` 调用 `0xd1d940`；后者符号为 `plt_call.gettid@@GLIBC_2.30`。这与 [Rust 1.97 的 gettid 兼容路径](https://github.com/rust-lang/rust/blob/1.97.0/library/std/src/sys/thread/unix.rs#L333)及 [PowerPC 的系统调用号 207](https://github.com/torvalds/linux/blob/v6.17/arch/powerpc/kernel/syscalls/syscall.tbl#L267)一致。定位已收敛到该外部发布产物的启动调用，但尚未用最小链接实验区分 GNU linker、sysroot 和其他构建因素；不将整个构建链对照说成某条编译器补丁的因果证明。
+
+上述隔离验证完成后，用户确认正式维护 ppc64le 候选 CI 的源码重建客户端，维护与恢复策略见上节。未向上游发 Issue、发布工具产物或合并分支。此实验也不证明 POWER 真机、低于当前 glibc 的环境或其他候选平台已获支持。
+
 **应按真实调用方划分交付物，不把七个 Rust triple 都等同于七个 Node npm 平台。**
 
 - Linux armv7、ppc64le、s390x 和 FreeBSD x64：继续以现有 Node API 为目标，先解决运行时与测试客户端。
@@ -90,7 +133,7 @@ Rust 1.98.0 文档将前五项列为 Tier 2 with Host Tools，两个 Android 目
 | 目标 | CPU／ABI／libc | 预期宿主与主要缺口 | 优先路径 |
 | --- | --- | --- | --- |
 | `armv7-unknown-linux-gnueabihf` | 32 位 ARMv7-A，小端，hard-float，glibc | Node `linux/arm`；没有两个固定版本的官方二进制，缺真实 ARMv7 环境及 pnpm 客户端 | 官方源码固定版本试构建 Node；交叉编译 addon，ARMv7 真机验收 |
-| `powerpc64le-unknown-linux-gnu` | 64 位 POWER，小端，glibc | Node `linux/ppc64`；至少 POWER8；已交叉构建和静态审计，QEMU 下 npm 消费通过、pnpm 启动崩溃，仍缺原生机器 | 修复外部启动阻塞并重验完整消费；POWER 原生远程验收 |
+| `powerpc64le-unknown-linux-gnu` | 64 位 POWER，小端，glibc | Node `linux/ppc64`；至少 POWER8；已交叉构建和静态审计，源码重建 pnpm 的双 Node／双客户端 QEMU 对照通过；仍缺原生机器 | 接入日常源码重建门禁；POWER 原生远程验收 |
 | `s390x-unknown-linux-gnu` | 64 位 s390x，大端，glibc | Node `linux/s390x`；已交叉构建、静态审计并通过双 Node／双客户端 QEMU 消费；仍缺 IBM Z/LinuxONE 真机验收 | 保留仿真回归；补原生环境和最低系统的完整公开合同 |
 | `x86_64-unknown-freebsd` | 64 位 x86，小端，FreeBSD libc | Node `freebsd/x64`；缺固定版本 Node 和 VM 验收；pnpm 包已有，尚未实测 | 固定 FreeBSD VM 内构建／运行，宿主控制交付证据 |
 | `aarch64-unknown-linux-ohos` | 64 位 ARM，小端，OHOS sysroot／musl 系 ABI | Rust 的 `target_os=linux` 不意味着普通 Linux Node；ArkTS Native API 与 Node npm 合同有差异 | 推荐 OpenHarmony 原生适配；先确认实际产品宿主，不套用 glibc／Alpine 产物 |
@@ -228,7 +271,7 @@ Node 候选的最低与开发 Node 测试均消费同一已封存 addon，不重
 
 1. GNU 构建 job 静态审计后，用 `pack:node:candidate` 封存原始 addon 和当次公共文件，不重新编译。复用既有打包器，仅临时包副本允许当前候选；正式八目标清单不变。
 2. `candidate.json` 使用独立的 `node-candidate` 类型，包含 commit／run／attempt、目标、包版本、两个 tarball 与 addon 的大小和摘要；归档校验完成后才写清单。它不是正式 `batch.json`，不能进入八目标汇总或发布路径。
-3. `check:node:candidate` 在 Linux x64 控制机上校验同批输入，再下载固定摘要的官方 Node 24.15.0、24.21.0 和 pnpm 12.4.1 客户端。QEMU action、binfmt 镜像和基础镜像均固定完整 SHA；摘要与版本来源集中于[控制器](../../packages/ziwei/tools/candidate-runtime.ts)。Node 摘要来自[最低版本清单](https://nodejs.org/dist/v24.15.0/SHASUMS256.txt)与[开发版本清单](https://nodejs.org/dist/v24.21.0/SHASUMS256.txt)，pnpm 摘要来自上文两个平台包的固定版本元数据。
+3. `check:node:candidate` 在 Linux x64 控制机上校验同批输入，再下载固定摘要的官方 Node 24.15.0、24.21.0。s390x 下载官方 pnpm 12.4.1；ppc64le 必须经 `--pnpm-build` 提供本轮源码重建客户端，见上节。QEMU action、binfmt 镜像和基础镜像均固定完整 SHA；运行时摘要集中于[控制器](../../packages/ziwei/tools/candidate-runtime.ts)，源码构建配方集中于[构建器](../../packages/ziwei/tools/pnpm-rebuild.ts)。Node 摘要来自[最低版本清单](https://nodejs.org/dist/v24.15.0/SHASUMS256.txt)与[开发版本清单](https://nodejs.org/dist/v24.21.0/SHASUMS256.txt)。
 4. 两版 Node 使用同一份候选包和同一固定的 `24.15.0-bookworm-slim` 用户态。实际执行挂载的官方 Node 二进制，不依赖镜像预装版本；2026-09-12 查询的开发版镜像标签缺少 s390x，不能用浮动标签假装两目标齐全。消费容器无外网、无额外 capabilities，输入只读；仅本地注册表、临时缓存和结果目录可写。
 5. 消费端检查实际 OS、CPU、端序、Node 与 glibc，随后通过安装后的公开包验证双入口、查询、错误身份、缓存、冻结、Worker 和 ESM／require 身份。npm／pnpm 各执行正常、禁用 optional、缺失包、损坏包四种场景，使用独立临时目录、锁文件与冷缓存。一个客户端或 Node 版本失败，不阻止另一个留下独立结果。
 6. 每版 `consumer.json`、stdout／stderr 与总 `experiment.json` 单独保存，始终标记 `verification: "emulated"`，仅完整通过后置 `passed: true`。失败返回非零并保存已产生的结果；汇总 gate 同时要求编译、静态审计与两目标仿真成功，不使用 `continue-on-error`。

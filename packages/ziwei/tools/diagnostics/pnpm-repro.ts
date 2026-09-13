@@ -12,6 +12,8 @@ import {
   runCandidateCommand,
   verifyDownload,
 } from "../candidate-runtime.ts";
+import { currentBatch } from "../candidate.ts";
+import { readPnpmRebuild } from "../pnpm-rebuild.ts";
 import { capturePnpmCrash } from "./pnpm-gdb.ts";
 
 export const pnpmReproVersion = "12.4.1";
@@ -139,7 +141,13 @@ export async function runPnpmRepro(
   pnpm = "baseline",
   image = "baseline",
   debug = false,
+  rebuiltReceipt?: string,
 ) {
+  assert.ok(
+    !rebuiltReceipt ||
+      (qemu === "baseline" && pnpm === "baseline" && image === "baseline" && !debug),
+    "重建对照必须固定 QEMU、pnpm 版本、基础镜像和普通探针",
+  );
   assert.ok(
     !debug || (qemu === "baseline" && pnpm === "baseline" && image === "baseline"),
     "GDB 取证必须固定全部基线",
@@ -155,6 +163,7 @@ export async function runPnpmRepro(
   const archiveUrl = `https://registry.npmjs.org/@pnpm/exe.linux-ppc64/-/exe.linux-ppc64-${selectedPnpm.version}.tgz`;
   assert.equal(process.platform, "linux", "复现要求 Linux x64 Docker/QEMU 宿主");
   assert.equal(process.arch, "x64", "复现要求 Linux x64 Docker/QEMU 宿主");
+  const rebuilt = rebuiltReceipt ? readPnpmRebuild(rebuiltReceipt, currentBatch()) : undefined;
   mkdirSync(output); // Never overwrite previous evidence.
   const temporary = mkdtempSync(join(tmpdir(), "pnpm-repro-"));
   const report: Record<string, unknown> = {
@@ -162,7 +171,9 @@ export async function runPnpmRepro(
     passed: false,
     image: selectedImage,
     imageGroup: image,
-    archiveUrl,
+    archiveUrl: rebuilt ? null : archiveUrl,
+    artifactOrigin: rebuilt ? "experimental-rebuild" : "official-registry",
+    rebuild: rebuilt?.receipt ?? null,
     sha: process.env.GITHUB_SHA ?? null,
     run: process.env.GITHUB_RUN_ID ?? null,
     attempt: process.env.GITHUB_RUN_ATTEMPT ?? null,
@@ -214,23 +225,29 @@ export async function runPnpmRepro(
       save();
       verifyQemuVersion(version.stdout, selectedQemu.version);
     }
-    const response = await fetch(archiveUrl, { signal: AbortSignal.timeout(120_000) });
-    assert.ok(response.ok && response.body, "pnpm 下载失败");
-    const chunks: Buffer[] = [];
-    let size = 0;
-    for await (const chunk of response.body) {
-      size += chunk.length;
-      assert.ok(size <= 128 * 1024 * 1024, "pnpm 下载超出大小上限");
-      chunks.push(Buffer.from(chunk));
+    let binary: Buffer;
+    if (rebuilt) {
+      binary = rebuilt.binary;
+      report.binarySha256 = rebuilt.receipt.binary;
+    } else {
+      const response = await fetch(archiveUrl, { signal: AbortSignal.timeout(120_000) });
+      assert.ok(response.ok && response.body, "pnpm 下载失败");
+      const chunks: Buffer[] = [];
+      let size = 0;
+      for await (const chunk of response.body) {
+        size += chunk.length;
+        assert.ok(size <= 128 * 1024 * 1024, "pnpm 下载超出大小上限");
+        chunks.push(Buffer.from(chunk));
+      }
+      const archive = Buffer.concat(chunks);
+      report.archiveSha256 = verifyDownload(archive, selectedPnpm.integrity, "sha512");
+      binary = execFileSync("tar", ["-xzOf", "-", "package/pnpm"], {
+        input: archive,
+        timeout: 30_000,
+        maxBuffer: 128 * 1024 * 1024,
+      });
+      report.binarySha256 = verifyDownload(binary, selectedPnpm.binarySha256, "sha256");
     }
-    const archive = Buffer.concat(chunks);
-    report.archiveSha256 = verifyDownload(archive, selectedPnpm.integrity, "sha512");
-    const binary = execFileSync("tar", ["-xzOf", "-", "package/pnpm"], {
-      input: archive,
-      timeout: 30_000,
-      maxBuffer: 128 * 1024 * 1024,
-    });
-    report.binarySha256 = verifyDownload(binary, selectedPnpm.binarySha256, "sha256");
     const binaryPath = join(temporary, "pnpm");
     writeFileSync(binaryPath, binary);
     chmodSync(binaryPath, 0o755);
@@ -367,8 +384,16 @@ if (import.meta.main) {
       pnpm: { type: "string" },
       image: { type: "string" },
       debug: { type: "boolean", default: false },
+      "rebuilt-receipt": { type: "string" },
     },
   });
   assert.ok(values.output, "需要 --output 新结果目录");
-  await runPnpmRepro(resolve(values.output), values.qemu, values.pnpm, values.image, values.debug);
+  await runPnpmRepro(
+    resolve(values.output),
+    values.qemu,
+    values.pnpm,
+    values.image,
+    values.debug,
+    values["rebuilt-receipt"],
+  );
 }

@@ -40,11 +40,19 @@ Node 任务通过 `pnpm exec` 执行，因此仍先经过开发版本校验；�
 
 ### 工具回归
 
+工作流合同解析 YAML 后检查 job、依赖、条件、矩阵和 action 参数；需要定位的步骤使用稳定 `id`，不依赖显示名称、缩进或文本切片。脚本断言只检查明确的命令合同，忽略空行和整行注释，不把静态匹配当作实际执行证据。关键命令保留被注释后必须失败的反例；真实命令、失败传播与平台运行仍由对应工具测试和 CI 验证。
+
 `mise run check:node:tools` 验证真实 mise 任务的 PATH 遮蔽、有／无激活记录、嵌套 Node、工作目录、执行顺序和每一阶段的失败传播。复杂参数统一通过文档规定的直接 CLI 入口验证，覆盖空白、中文、引号、换行、尾随反斜杠、变量、通配符及 pnpm 同名选项；不重复遍历各工具，也不要求第三方工具的已知错误持续存在。
+
+xtask 的帮助和非法参数测试同时观察已知产物目录与外部命令调用。原生命令探针阻止真实负载启动，并以正向控制验证探针有效；仅检查退出码或更换工作目录不能证明没有产生工作，因为 xtask 的产物根目录由 manifest 位置确定。
 
 路径使用原生 realpath 比较。CI 在各平台包测试前执行，不触发性能测量；本机通过不能替代 Windows 实机验收。工具测试只信任自己创建的临时 mise 配置，不修改全局信任列表。Rslib 隔离夹具显式提供 TypeScript 依赖，不依赖工具 bin shim 注入的 `NODE_PATH`。
 
 跨平台工具合同不调用 Linux 专用 shell。此类检查放在 `tools/tests/linux`，由 `check:node:tools:linux` 显式执行，并作为主 CI Linux 原生任务的必需步骤；误在非 Linux 宿主执行会明确失败，不静默跳过。外部 pnpm／QEMU 复现位于 `packages/ziwei/tools/diagnostics`，由独立手动工作流运行；纯参数和失败分类测试仍保留在跨平台工具组。
+
+Windows 宿主诊断的 stdout 保持原有 JSON，stderr 用 `[windows-diagnostics]` 逐阶段记录开始／结束、相对耗时和时间戳，超时仍可保留最后完成的阶段。Windows 专属测试失败时附上启动时间与脱敏后的完整命令观察，不只输出退出错误；阶段记录不改变查询范围、超时或通过条件。
+
+真实宿主采集测试位于 `tools/tests/diagnostics/windows.test.ts`，通过 `check:node:diagnostics:windows` 显式执行；误在非 Windows 宿主执行会明确失败，不静默跳过。[Windows 宿主诊断工作流](../../.github/workflows/windows-diagnostics.yml) 在相关源文件、测试或工具配置变化时覆盖 x64／arm64，也可手动触发。失败仍使该工作流失败，但它不是主 CI 的产品验收前置条件；Docker 就绪、超时与失败传播、脱敏等确定性工具合同及真实 npm／pnpm 消费验收继续由主 CI 执行。
 
 ## Node 构建与类型检查
 
@@ -116,13 +124,14 @@ Rslib 负责 JS 与声明输出；`tsconfig.json` 保留严格类型规则并设
 
 ## Node 测试框架
 
-Node 侧统一使用锁定版本的 `@rstest/core`（JavaScript 框架，不是 Rust 的 rstest crate），由根 [rstest.config.ts](../../rstest.config.ts) 聚合四个互不重叠的项目。配置不导入产品源码；`node:assert/strict` 断言保持不变。
+Node 侧统一使用锁定版本的 `@rstest/core`（JavaScript 框架，不是 Rust 的 rstest crate），由根 [rstest.config.ts](../../rstest.config.ts) 聚合互不重叠的项目。配置不导入产品源码；`node:assert/strict` 断言保持不变。
 
 | 项目 | 范围 | 根目录命令 |
 | --- | --- | --- |
 | `ziwei` | 包 API、原生边界、Worker、GC 与独立打包消费端 | `mise run check:node`：先构建，再运行测试与 TypeScript 合同 |
 | `node-tools` | 开发命令、运行时选择、参数、退出码与 Rslib 构建合同 | `mise run check:node:tools` |
 | `node-tools-linux` | 需要 Linux 宿主和 shell 的诊断合同 | `mise run check:node:tools:linux`；Linux CI 必跑 |
+| `windows-diagnostics` | 真实 Windows 服务、进程及事件日志采集 | `mise run check:node:diagnostics:windows`；独立工作流 |
 | `node-bench` | 基准记录器与 CLI 合同；只有 smoke，不设性能门禁 | `mise run check:node:bench` |
 
 ### 选择测试
@@ -130,6 +139,8 @@ Node 侧统一使用锁定版本的 `@rstest/core`（JavaScript 框架，不是 
 已经构建时，可用 `mise run test:node -- -t palace` 筛选测试，或 `mise run test:node -- --watch` 持续运行；复杂参数使用上文直接 CLI 入口。`mise exec -- pnpm exec -- node node_modules/@rstest/core/bin/rstest.js list --filesOnly` 核验各项目的发现范围，TypeScript 负例仍由独立 `tsc` 任务编译，不作为运行时测试。
 
 ### 隔离与串行执行
+
+测试取得服务器、浏览器或 Worker 后立即登记 `onTestFinished` 清理，每项资源独立登记，避免后续创建失败或一项清理失败阻止其他资源回收。Worker 等待同时监听 `message`、`error` 和 `exit`，无消息退出应直接报告，不等整体测试超时；收到消息后仍须核对退出结果。
 
 基准工具会重新构建同一份 `dist`，常规验证应按上述分组命令串行执行，不要同时运行 `ziwei` 消费端测试与 `node-bench` 构建冒烟。
 
@@ -148,6 +159,8 @@ Wasm 使用独立的 `bindings/wasm` 与 `packages/ziwei-wasm`，实现与浏览
 新增候选原生平台通过[独立 CI](../../.github/workflows/native-candidates.yml)检查七目标核心可编译性，并构建、静态审计三个 GNU addon。`check:node:gnu-candidate` 接受 Rust target 和实际 `.node` 文件，需要 GNU readelf；它不读取或生成八目标批次，不代替目标 CPU／OS 的运行测试。当前支持声明和环境缺口见[候选矩阵](../engineering/native-candidate-platforms.md)。
 
 ppc64le／s390x 使用 `pack:node:candidate -- --target <target> --input <静态审计目录> --output <新目录>` 封存原始 addon，再由 Linux x64 Docker／QEMU 上的 `check:node:candidate -- --target <target> --input <候选目录> --output <新目录>` 运行双 Node／双客户端消费。两者都要求 `GITHUB_SHA`、`GITHUB_RUN_ID`、`GITHUB_RUN_ATTEMPT`；不接受混批或覆盖旧结果。候选使用独立清单，不扩大正式目标。固定运行时、隔离与结果边界见[仿真消费说明](../engineering/native-candidate-platforms.md#ppc64les390x-仿真消费)；仅配置任务不代表仿真通过，仿真通过也不代表真机与最低系统验收。依赖已生成公共文件的封存测试归入构建后的分发测试；`node-tools` 必须能在没有产品生成目录时独立运行。包管理器版本探针和安装都在消费夹具自己的目录执行，不继承调用工程配置。
+
+ppc64le 日常候选额外要求 `--pnpm-build <同批客户端目录>/build.json`。`build:pnpm:ppc64le` 从固定且未修改的上游源码生成测试客户端与构建凭据，独立 job 每轮重建；消费端核对固定配方、完整构建与同 commit／run／attempt，不下载历史实验 artifact 或跨 run 缓存。s390x 拒绝该参数并保持官方客户端。重建只服务候选 CI，不替换开发工具、不进入发行包；升级与过期恢复见[源码重建合同](../engineering/native-candidate-platforms.md#ppc64le-候选-ci-的源码重建客户端)。
 
 ## 按变更选择验证
 
