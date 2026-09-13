@@ -21,15 +21,17 @@
 
 各 Adapter 分别修改自己的 Rust／TS 目录与测试；根 manifest、锁文件、mise 和主 CI 由集成工作线统一调整。候选平台使用独立 workflow，不改既有八目标分发 manifest。没有真实消费需求前，不创建占位包或通用转发层。
 
-## 推荐的宿主分工
+## 已确认的宿主分工
 
-用户尚不确定 Android／OpenHarmony 应采用哪一种宿主方式。建议按实际应用场景交付，而不是把十五个 Rust 原生目标一律解释成十五个常规 Node 包；以下为待确认方案，不修改既有 Node 合同。
+执行状态（2026-09-13）：Android／OpenHarmony 系统原生绑定已按用户要求暂停，以下方向仅供恢复工作时参考；不安装 SDK、不新增绑定包，已有候选检查保留。移动网页／WebView 的 Wasm 工作继续，不受暂停影响。
+
+用户已按 [D-268](v1-decision-map.md#移动宿主选择)确认 Android／OpenHarmony 面向系统原生应用，移动网页与 WebView 使用 Wasm。不把十五个 Rust 原生目标一律解释成十五个常规 Node 包；以下宿主方向已确认，具体 SDK、Interface、分发形式及设备矩阵仍待设计，不修改既有 Node 合同。
 
 | 调用场景 | 推荐路线 | 不应混淆的结论 |
 | --- | --- | --- |
 | 真正的 Node.js 应用 | 保留 `@matharts/ziwei` 与 Node-API 产物；扩展具备合规 Node 运行时的目标 | 需要逐目标核验运行时和包管理器，不从 target 名称推导可运行 |
 | 网页、移动浏览器与 WebView | 独立 `wasm-bindgen` 单线程 Adapter；已实施私有包 `@matharts/ziwei-wasm` | 各浏览器／WebView 仍须实测；Wasm 不替代 Android／OpenHarmony 原生目标 |
-| Android 系统应用 | 优先研究 JNI／Kotlin 薄适配，复用 Rust 核心 | 属于新的宿主 Interface 和交付形式，需确认后实施；不以维护非官方 Node 移植为默认前提 |
+| Android 系统应用 | 优先研究 JNI／Kotlin 薄适配，复用 Rust 核心 | 宿主方向已确认；具体 Interface、SDK 和分发待设计，不以维护非官方 Node 移植为前提 |
 | OpenHarmony 系统应用 | 优先研究 Native API／ArkTS 薄适配，复用 Rust 核心 | 官方 NAPI 基于 Node.js N-API，但宿主加载器不同；不能推定现有 napi8 addon 或 npm 门面直接兼容 |
 
 Android 的 Node 支持限制、OpenHarmony 宿主差异和原生替代路线的官方依据见[原生平台矩阵](../engineering/native-candidate-platforms.md)。若调用方确实需要移动系统中的 Node.js 应用，应另行锁定具体 Node 移植及其维护、安装与验收合同，而不是静默降低 Node 门槛。
@@ -56,9 +58,9 @@ Wasm 与浏览器按推荐方案实施：独立 `bindings/wasm` 与 `@matharts/z
 | `powerpc64le-unknown-linux-gnu` | 候选，必须推进 | 锁定 ppc64le 工具链、字节序与实际运行环境 |
 | `s390x-unknown-linux-gnu` | 候选，必须推进 | 核对大端与实际运行环境，不照搬现有小端产物检查 |
 | `x86_64-unknown-freebsd` | 候选，必须推进 | 锁定 FreeBSD 用户态、Node 及 VM／原生测试环境 |
-| `aarch64-unknown-linux-ohos` | 候选，必须推进 | 先明确 Node.js 应用或系统应用内嵌宿主，再确定 Interface |
-| `aarch64-linux-android` | 候选，必须推进 | 同上，不默认将 Android 原生产物视作常规 Node 平台包 |
-| `armv7-linux-androideabi` | 候选，必须推进 | 同上，并单独验证 32 位表示与 CPU 要求 |
+| `aarch64-unknown-linux-ohos` | 暂停，未支持 | 保留系统原生应用方向与核心检查；恢复需用户确认 |
+| `aarch64-linux-android` | 暂停，未支持 | 保留系统原生应用方向与核心检查；不推进绑定或 SDK |
+| `armv7-linux-androideabi` | 暂停，未支持 | 同上；不以 arm64 或 Wasm 验收代替此 ABI |
 
 Wasm 与浏览器不计入十五个原生 target 的数量，也不自动作为原生模块加载失败时的回退路径。
 

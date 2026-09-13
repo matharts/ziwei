@@ -310,6 +310,14 @@
 | --- | --- | --- |
 | D-267 | 另外七个原生候选目标与 Wasm／浏览器均属于必做交付范围。新增独立 `bindings/wasm`（`ziwei-wasm`）与 `packages/ziwei-wasm`（`@matharts/ziwei-wasm`），单向依赖唯一核心；采用 wasm-bindgen、无 WASI 的单线程目标，显式 initialize 返回 ready runtime，再同步调用完整建盘与查询。Wasm 命盘提供幂等 dispose、GC 兜底，保持 Node API 不变。新候选先独立编译、审计与宿主验收，不预先进入八目标分发；移动原生验收不能用浏览器 Wasm 替代。所有包继续 private，不授权提交、推送或发布。 | 2026-09-11 用户明确补齐七候选和 Wasm／浏览器，并要求并发执行；实现与实际验证进度见[交付计划](cross-platform-delivery-plan.md)，未验收部分继续保留，不标记完整交付 |
 
+## 移动宿主选择
+
+当前执行状态（2026-09-13）：用户在确认宿主方向后要求“先不支持了”，Android 两个 ABI 与 OpenHarmony 原生绑定均暂停。保留下方方向决定和已有候选核心检查，不继续设计、安装 SDK 或新增绑定；移动网页／WebView 的 Wasm 路线不受影响。此状态修订 D-267 中三个移动目标“必须推进”的执行要求，恢复需用户确认，不代表已交付。
+
+| ID | 决策 | 状态 |
+| --- | --- | --- |
+| D-268 | Android 两个 ABI 与 OpenHarmony arm64 面向系统原生应用设计宿主绑定；移动网页与 WebView 继续使用独立 Wasm 包。移动原生交付不再以常规 Node npm 平台包为默认目标，不维护非官方 Node 移植。复用唯一 Rust 核心，不改变现有 Node／Wasm Interface；Wasm 验收不能代替移动原生验收。 | 用户确认宿主方向；JNI／Kotlin、Native API／ArkTS 的具体 Interface、SDK 版本、分发格式及设备矩阵仍需设计和验证。不代表绑定已实现或允许发布；保留现有候选核心检查。 |
+
 ## 暂缓决策
 
 | ID | 决策 | 状态 |

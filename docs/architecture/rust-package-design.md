@@ -153,7 +153,7 @@ ziwei-wasm ───────────────────────
 
 D-260 按职责区分 `crates/`（Rust 引擎）、`bindings/`（各宿主的 Rust adapter）与 `packages/`（JavaScript／TypeScript 包）。新宿主的绑定在真正实施时加入 `bindings/<host>`，并加入根 Cargo workspace；新 npm 包由 `packages/*` 纳入 pnpm workspace。不为证明“多包”预先创建占位包，也不增加只有转发职责的 npm 原生包。
 
-Wasm adapter 已按 D-267 落在 `bindings/wasm`，浏览器分发位于 `packages/ziwei-wasm`，采用显式初始化而非 Node 自动加载方式。其他宿主仍须达到后文拆分门槛；共享命例或根级测试按实际复用需求迁移，不提前搬动核心测试。
+Wasm adapter 已按 D-267 落在 `bindings/wasm`，浏览器分发位于 `packages/ziwei-wasm`，采用显式初始化而非 Node 自动加载方式。D-268 保留 Android／OpenHarmony 面向系统原生应用的方向，但用户已暂停原生绑定、SDK 与分发设计；现有候选核心检查保留，移动网页与 WebView 仍走 Wasm。其他宿主仍须达到后文拆分门槛；共享命例或根级测试按实际复用需求迁移，不提前搬动核心测试。
 
 ## 包职责
 

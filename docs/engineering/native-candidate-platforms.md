@@ -1,6 +1,6 @@
 # 七个原生候选平台：宿主、构建与验收矩阵
 
-状态：2026-09-12，提交 `f5961ab` 的七目标核心检查、三项 GNU addon 交叉构建／静态审计通过。s390x 已通过双 Node／双客户端的完整 QEMU 消费；ppc64le 的 npm 通过，但同一 pnpm 二进制即使脱离 Node 子进程直接启动也会触发空地址 `SIGSEGV`。完整候选验收未通过，尚不能区分 pnpm 与 QEMU 的具体缺陷。七目标仍属于用户要求的完整交付范围。现有八目标结论沿用 [Node 分发设计](../architecture/node-distribution-proposal.md)，不在本文重做。
+当前状态：2026-09-12，提交 `c30dd7e` 的[候选 CI](https://github.com/matharts/ziwei/actions/runs/34687240792)再次通过七目标核心检查、三项 GNU addon 交叉构建／静态审计及 s390x 双 Node／双客户端 QEMU 消费；ppc64le 消费任务仍失败，完整候选门禁未通过。已有独立复现与 GDB 调用点证据见下方历史记录；具体根因未确定，不把追踪中的空地址信息等同于最终调用点。七目标仍属于完整交付范围，仿真不替代真机验收。现有八目标结论沿用 [Node 分发设计](../architecture/node-distribution-proposal.md)。
 
 候选实现包含 [静态审计](../../packages/ziwei/tools/compatibility.ts)、[候选封存与消费](../../packages/ziwei/tools/candidate.ts)、[仿真控制器](../../packages/ziwei/tools/candidate-runtime.ts) 和独立的[候选 CI](../../.github/workflows/native-candidates.yml)。不改正式目标 manifest、依赖或公开 API，不安装本机 SDK、虚拟机或设备工具，不申请云资源，不发布。下文的实施路径与工期是项目建议，不是上游支持承诺。
 
@@ -65,7 +65,7 @@ mise run diagnose:pnpm -- --output <新的结果目录>
 
 Android 官方将 JNI 定位为 Java／Kotlin 与原生代码之间的接口；OpenHarmony 官方描述的是基于 Node-API 的 ArkTS／JS 原生模块系统，而不是完整 Node.js 运行时。这些事实支持上述建议，但不自动确定本项目的 API 或包名。[Android JNI](https://developer.android.com/training/articles/perf-jni)、[OpenHarmony Node-API](https://github.com/openharmony/docs/blob/master/en/application-dev/napi/napi-introduction.md)
 
-**Wasm 在移动端通过，不能代替 Android 两个 ABI 或 OpenHarmony 原生产物的验收。** 推荐的宿主拆分仍需形成项目决策；本轮不擅自把既有三个 npm 候选改成新绑定、删除候选或降低 Node 门槛。
+**Wasm 在移动端通过，不能代替 Android 两个 ABI 或 OpenHarmony 原生产物的验收。** 用户已按 [D-268](../architecture/v1-decision-map.md#移动宿主选择)确认采用系统原生应用路线，网页与 WebView 继续使用 Wasm。上面的 JNI／Kotlin、Native API／ArkTS 是具体技术设计的起点，尚未锁定 SDK、公开 Interface 或分发格式。这三个目标保留原生交付与核心检查，不再以普通 Node npm 平台包为默认目标；不降低现有 Node 门槛，不把缺少移动 pnpm 客户端视为系统原生绑定的前置阻塞。
 
 ## 当前约束与证据
 
@@ -83,11 +83,15 @@ Rust 1.98.0 文档将前五项列为 Tier 2 with Host Tools，两个 Android 目
 
 ## 平台矩阵
 
+范围更新（2026-09-13）：用户已暂停 Android 两个 ABI 与 OpenHarmony 原生应用绑定；以下三个移动目标的技术路线仅保留供未来参考，当前不推进 SDK、绑定或设备验收。已有候选核心检查不移除，也不将其通过解释为平台支持。其余四个 Node 候选和移动网页／WebView 的 Wasm 路线继续保留。
+
+本表记录当前交付缺口；前面的版本对照与 GDB 小节保留各次实验当时的结论，不表示“下一项”仍未执行。
+
 | 目标 | CPU／ABI／libc | 预期宿主与主要缺口 | 优先路径 |
 | --- | --- | --- | --- |
 | `armv7-unknown-linux-gnueabihf` | 32 位 ARMv7-A，小端，hard-float，glibc | Node `linux/arm`；没有两个固定版本的官方二进制，缺真实 ARMv7 环境及 pnpm 客户端 | 官方源码固定版本试构建 Node；交叉编译 addon，ARMv7 真机验收 |
-| `powerpc64le-unknown-linux-gnu` | 64 位 POWER，小端，glibc | Node `linux/ppc64`；至少 POWER8，缺原生机器；pnpm 包已有，尚未启动或消费验收 | Linux x64／arm64 交叉构建；POWER 原生远程验收 |
-| `s390x-unknown-linux-gnu` | 64 位 s390x，大端，glibc | Node `linux/s390x`；缺 IBM Z/LinuxONE 环境；pnpm 包已有，尚未启动或消费验收 | 同上；额外执行大小端敏感的静态检查与完整公开合同 |
+| `powerpc64le-unknown-linux-gnu` | 64 位 POWER，小端，glibc | Node `linux/ppc64`；至少 POWER8；已交叉构建和静态审计，QEMU 下 npm 消费通过、pnpm 启动崩溃，仍缺原生机器 | 修复外部启动阻塞并重验完整消费；POWER 原生远程验收 |
+| `s390x-unknown-linux-gnu` | 64 位 s390x，大端，glibc | Node `linux/s390x`；已交叉构建、静态审计并通过双 Node／双客户端 QEMU 消费；仍缺 IBM Z/LinuxONE 真机验收 | 保留仿真回归；补原生环境和最低系统的完整公开合同 |
 | `x86_64-unknown-freebsd` | 64 位 x86，小端，FreeBSD libc | Node `freebsd/x64`；缺固定版本 Node 和 VM 验收；pnpm 包已有，尚未实测 | 固定 FreeBSD VM 内构建／运行，宿主控制交付证据 |
 | `aarch64-unknown-linux-ohos` | 64 位 ARM，小端，OHOS sysroot／musl 系 ABI | Rust 的 `target_os=linux` 不意味着普通 Linux Node；ArkTS Native API 与 Node npm 合同有差异 | 推荐 OpenHarmony 原生适配；先确认实际产品宿主，不套用 glibc／Alpine 产物 |
 | `aarch64-linux-android` | 64 位 ARM，小端，`arm64-v8a`，Bionic | 普通 APK 不具备 Node npm 宿主；Termux 是特定移植环境 | 推荐 JNI／Kotlin；WebView 另走 Wasm |

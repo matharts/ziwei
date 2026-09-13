@@ -118,6 +118,8 @@
 
 ### 宿主适配与工程
 
+- 按 D-268，Android／OpenHarmony 的系统原生应用绑定已按用户要求暂停，不推进 Interface、SDK 或分发设计；保留宿主方向与已有候选核心检查，不宣称支持。移动网页和 WebView 继续使用独立 Wasm 包，其验收不能代替原生交付。恢复移动原生工作需要用户重新确认。
+
 - D-267 将另外七个候选原生目标与 Wasm／浏览器纳入必做范围，实施进度见[跨平台交付计划](docs/architecture/cross-platform-delivery-plan.md)。独立 `bindings/wasm` 与 `packages/ziwei-wasm` 共用唯一 Rust 核心；浏览器显式初始化后提供同步 API，独立 `dispose()` 管理 Wasm 命盘，不修改 Node 的公开接口。候选编译、静态审计、真实宿主运行和发布分别验收，Wasm 不能替代 Android／OpenHarmony 的原生验收。
 
 - D-266 将 GNU x64／arm64 的 glibc 2.28 设为分发验收目标；交叉构建、同批产物符号检查与最低用户态环境运行测试分别验证。它不改变领域 API、八目标范围或 Rust 工具链；通过状态以 [Node 分发设计](docs/architecture/node-distribution-proposal.md#gnu-glibc-228-验收目标) 中对应提交的证据为准，不用配置代替运行证明。
