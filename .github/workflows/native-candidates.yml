@@ -119,6 +119,7 @@ jobs:
           install_args: node
           cache: false
       - name: Check out the exact unmodified pnpm source
+        id: pnpm-source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: pnpm/pnpm
@@ -178,6 +179,7 @@ jobs:
           name: native-candidate-input-${{ github.sha }}-${{ github.run_attempt }}-${{ matrix.target }}
           path: target/native-candidate-input
       - name: Download the same-run ppc64le client
+        id: pnpm-download
         if: matrix.target == 'powerpc64le-unknown-linux-gnu'
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:

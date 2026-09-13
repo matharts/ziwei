@@ -21,6 +21,7 @@ import {
   pnpmBuildRecipe,
   verifyPnpmRebuild,
 } from "../../packages/ziwei/tools/pnpm-rebuild.ts";
+import { readWorkflow, requireSuccess, script, step } from "./workflow.ts";
 
 const batch = { commit: "a".repeat(40), runId: "123", runAttempt: "1" };
 function fixture() {
@@ -106,12 +107,13 @@ test("rebuilt startup rejects mixed variables before reading artifacts or starti
 });
 
 test("manual diagnostics keep the official failing baseline independent of daily acceptance", () => {
-  const workflow = readFileSync(".github/workflows/pnpm-repro.yml", "utf8");
-  assert.match(workflow, /inputs.comparison == 'rebuild'/);
-  assert.match(workflow, /pnpm-rebuild-results\/build.json/);
-  assert.match(workflow, /steps.rebuild.outcome == 'success'/);
-  assert.doesNotMatch(workflow, /continue-on-error/);
-  assert.match(workflow, new RegExp(`ref: ${pnpmBuild.sourceCommit}`));
+  const workflow = readWorkflow("pnpm-repro");
+  const reproduce = workflow.jobs.reproduce!;
+  assert.match(step(reproduce, "rebuild-source").if!, /inputs.comparison == 'rebuild'/);
+  assert.match(script(step(reproduce, "rebuilt-probe")), /pnpm-rebuild-results\/build.json/);
+  assert.match(step(reproduce, "rebuilt-probe").if!, /steps.rebuild.outcome == 'success'/);
+  for (const job of Object.values(workflow.jobs)) requireSuccess(job);
+  assert.equal(step(reproduce, "rebuild-source").with?.ref, pnpmBuild.sourceCommit);
   assert.match(readFileSync("mise.toml", "utf8"), /node packages\/ziwei\/tools\/pnpm-rebuild.ts/);
 });
 
@@ -137,14 +139,18 @@ test("consumer pins the previously verified tool independently of the new Ziwei 
     }),
   );
 
-  const workflow = readFileSync(".github/workflows/pnpm-repro.yml", "utf8");
-  const consumer = workflow.split("  consume-rebuilt:\n")[1]!;
-  assert.match(consumer, /if: inputs.comparison == 'consumer'/);
-  assert.ok(consumer.includes(`run-id: ${verifiedPnpmBuild.batch.runId}`));
-  assert.match(consumer, /artifact-ids: 10323128266/);
-  assert.match(consumer, /--mode consume/);
-  assert.match(consumer, /mise run pack:node:candidate/);
-  assert.doesNotMatch(consumer, /continue-on-error|GITHUB_SHA:|GITHUB_RUN_ID:|GITHUB_RUN_ATTEMPT:/);
+  const consumer = readWorkflow("pnpm-repro").jobs["consume-rebuilt"]!;
+  assert.equal(consumer.if, "inputs.comparison == 'consumer'");
+  const download = step(consumer, "verified-pnpm");
+  assert.equal(String(download.with?.["run-id"]), String(verifiedPnpmBuild.batch.runId));
+  assert.equal(String(download.with?.["artifact-ids"]), "10323128266");
+  assert.match(script(step(consumer, "consumer")), /--mode consume/);
+  assert.match(script(consumer), /mise run pack:node:candidate/);
+  requireSuccess(consumer);
+  for (const env of [consumer.env, ...consumer.steps.map((item) => item.env)]) {
+    for (const key of ["GITHUB_SHA", "GITHUB_RUN_ID", "GITHUB_RUN_ATTEMPT"])
+      assert.equal(env?.[key], undefined);
+  }
   const controller = readFileSync("packages/ziwei/tools/candidate-runtime.ts", "utf8");
   const cli = controller.split("if (import.meta.main)")[1]!;
   assert.match(cli, /readCandidatePnpm/);
@@ -182,23 +188,38 @@ test("daily ppc64le consumers require the current build and reject historical re
 });
 
 test("daily CI builds and consumes its own pinned client without expiring experiment inputs", () => {
-  const workflow = readFileSync(".github/workflows/native-candidates.yml", "utf8");
-  const build = workflow.split("  pnpm-client:\n")[1]!.split("  gnu-runtime:\n")[0]!;
-  const runtime = workflow.split("  gnu-runtime:\n")[1]!.split("  verify:\n")[0]!;
-  assert.match(build, /repository: pnpm\/pnpm/);
-  assert.ok(build.includes(`ref: ${pnpmBuild.sourceCommit}`));
-  assert.match(build, /mise run build:pnpm:ppc64le/);
-  assert.doesNotMatch(build, /needs:|actions\/cache|download-artifact/);
-  assert.match(runtime, /needs: \[gnu-addon, pnpm-client\]/);
-  assert.match(runtime, /if: \$\{\{ !cancelled\(\) && needs.gnu-addon.result == 'success' \}\}/);
-  assert.match(runtime, /if: matrix.target == 'powerpc64le-unknown-linux-gnu'/);
-  assert.match(runtime, /--pnpm-build target\/pnpm-client\/build.json/);
+  const workflow = readWorkflow("native-candidates");
+  const build = workflow.jobs["pnpm-client"]!;
+  const runtime = workflow.jobs["gnu-runtime"]!;
+  assert.equal(step(build, "pnpm-source").with?.repository, "pnpm/pnpm");
+  assert.equal(step(build, "pnpm-source").with?.ref, pnpmBuild.sourceCommit);
+  assert.match(script(build), /mise run build:pnpm:ppc64le/);
+  assert.equal(build.needs, undefined);
+  assert.ok(build.steps.every((item) => !/actions\/cache|download-artifact/.test(item.uses ?? "")));
+  assert.deepEqual(runtime.needs, ["gnu-addon", "pnpm-client"]);
+  assert.equal(runtime.if, "${{ !cancelled() && needs.gnu-addon.result == 'success' }}");
   assert.equal(
-    workflow.split("name: candidate-pnpm-${{ github.sha }}-${{ github.run_attempt }}").length - 1,
+    step(runtime, "pnpm-download").if,
+    "matrix.target == 'powerpc64le-unknown-linux-gnu'",
+  );
+  assert.match(script(runtime), /--pnpm-build target\/pnpm-client\/build.json/);
+  assert.equal(
+    Object.values(workflow.jobs)
+      .flatMap((job) => job.steps)
+      .filter(
+        (item) => item.with?.name === "candidate-pnpm-${{ github.sha }}-${{ github.run_attempt }}",
+      ).length,
     2,
   );
-  assert.match(workflow, /test "\$PNPM_RESULT" = success/);
-  assert.doesNotMatch(workflow, /run-id:|artifact-ids:|continue-on-error|diagnose:pnpm/);
+  assert.match(script(workflow.jobs.verify!), /test "\$PNPM_RESULT" = success/);
+  for (const job of Object.values(workflow.jobs)) {
+    requireSuccess(job);
+    assert.doesNotMatch(script(job), /diagnose:pnpm/);
+    for (const item of job.steps) {
+      assert.equal(item.with?.["run-id"], undefined);
+      assert.equal(item.with?.["artifact-ids"], undefined);
+    }
+  }
 });
 
 test("daily CLI rejects absent or disallowed clients before output creation or Docker", (t) => {

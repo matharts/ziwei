@@ -61,10 +61,12 @@ jobs:
       - name: Node development runtime contracts
         run: mise run check:node:tools
       - name: Linux diagnostic contracts
+        id: linux-diagnostics
         if: runner.os == 'Linux'
         run: mise run check:node:tools:linux
       # Optional diagnostic baseline; normal builds use the shared mise static policy.
       - name: Record Windows x64 dynamic CRT baseline
+        id: windows-crt-dynamic
         if: matrix.target == 'x86_64-pc-windows-msvc' && inputs.compare_windows_crt == true
         env:
           CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS: -C target-feature=-crt-static
@@ -79,6 +81,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           mise run check:node:windows-crt -- static packages/ziwei/native/ziwei-native.win32-x64-msvc.node target/windows-crt
       - name: Windows x64 static CRT integration and type contracts
+        id: windows-crt-contracts
         if: matrix.target == 'x86_64-pc-windows-msvc'
         env:
           ZIWEI_NODE_ARTIFACTS: target/node-artifacts
@@ -267,6 +270,7 @@ jobs:
           install_args: node pnpm
           cache: false
       - name: Audit macOS binaries from the complete cohort
+        id: macos-audit
         if: endsWith(matrix.target, '-apple-darwin')
         shell: bash
         run: |
@@ -276,6 +280,7 @@ jobs:
           mkdir -p target/macos-compatibility
           mise run check:node:macos -- "${cohorts[0]}" | tee target/macos-compatibility/audit.json
       - name: Audit Windows arm64 binary from the complete cohort
+        id: windows-arm64-audit
         if: matrix.target == 'aarch64-pc-windows-msvc'
         shell: bash
         run: |
@@ -292,6 +297,7 @@ jobs:
             mise run check:node:registry -- "$artifacts"
           done
       - name: macOS minimum Node consumers of the same complete cohort
+        id: macos-minimum
         if: endsWith(matrix.target, '-apple-darwin')
         shell: bash
         env:
@@ -303,6 +309,7 @@ jobs:
             mise run --tool node@24.15.0 check:node:registry -- "$artifacts" | tee -a target/macos-compatibility/consumer.log
           done
       - name: Preserve macOS compatibility evidence
+        id: macos-evidence
         if: ${{ !cancelled() && endsWith(matrix.target, '-apple-darwin') }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -311,6 +318,7 @@ jobs:
           if-no-files-found: error
           retention-days: 7
       - name: Windows arm64 minimum Node consumers of the same complete cohort
+        id: windows-arm64-minimum
         if: matrix.target == 'aarch64-pc-windows-msvc'
         shell: bash
         run: |
@@ -320,6 +328,7 @@ jobs:
             mise run --tool node@24.15.0 check:node:registry -- "$artifacts" 2>&1 | tee -a target/windows-arm64-compatibility/consumer.log
           done
       - name: Preserve Windows arm64 compatibility evidence
+        id: windows-arm64-evidence
         if: ${{ !cancelled() && matrix.target == 'aarch64-pc-windows-msvc' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -377,6 +386,7 @@ jobs:
             '
 
       - name: Minimum Node Alpine registry consumers on the target CPU
+        id: musl-minimum
         if: matrix.docker-platform
         shell: bash
         env:
@@ -414,6 +424,7 @@ jobs:
               node /work/packages/ziwei/test/fixtures/registry-consumer.ts "$1"
             ' 2>&1 | tee target/musl-compatibility/consumer.log
       - name: Preserve musl minimum Node evidence
+        id: musl-evidence
         if: ${{ !cancelled() && matrix.docker-platform }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -440,6 +451,7 @@ jobs:
           install_args: node pnpm
           cache: false
       - name: Start existing Windows Docker service
+        id: windows-docker-start
         shell: pwsh
         timeout-minutes: 2
         run: |
@@ -448,6 +460,7 @@ jobs:
             Start-Service -InputObject $service -ErrorAction Stop
           }
       - name: Verify clean npm and runtime-equipped pnpm against the sealed cohort
+        id: windows-consumers
         shell: pwsh
         run: |
           $cohorts = @(Get-ChildItem target/node-registry -Directory)
@@ -455,6 +468,7 @@ jobs:
           mise run check:node:windows -- $cohorts[0].FullName "$PWD/target/windows-clean-consumer"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Preserve Windows consumer evidence, including failures
+        id: windows-evidence
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:

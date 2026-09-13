@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 
 import { test } from "@rstest/core";
 import type { TestContext } from "@rstest/core";
+import { stringify } from "yaml";
 
 import {
   inspectGnuBinary,
@@ -21,6 +22,8 @@ import {
   verifyMuslRuntime,
   verifyWindowsArm64Artifact,
 } from "../../packages/ziwei/tools/compatibility.ts";
+import { parseWorkflow, readWorkflow, requireSuccess, script, step } from "./workflow.ts";
+import type { Workflow } from "./workflow.ts";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
 
@@ -101,18 +104,18 @@ test("musl runtime CLI rejects missing, extra and unknown architecture arguments
 });
 
 test("musl minimum Node CI preserves current coverage and consumes a pinned same-CPU image and cohort", () => {
-  const workflow = readFileSync(join(root, ".github/workflows/ci.yml"), "utf8");
-  const registry = workflow
-    .split("  registry-consumers:")[1]!
-    .split("  windows-clean-consumer:")[0]!;
-  const minimum = registry
-    .split("- name: Minimum Node Alpine registry consumers on the target CPU")[1]!
-    .split("- name:")[0]!;
-  const evidence = registry.split("- name: Preserve musl minimum Node evidence")[1]!;
-  assert.match(registry, /node:24\.21\.0-alpine3\.23 sh -eu -c/);
-  assert.match(minimum, /if: matrix.docker-platform/);
-  assert.match(minimum, /shell: bash/);
-  assert.match(minimum, /MUSL_IMAGE: node:24\.15\.0-alpine3\.23@sha256:[a-f0-9]{64}\n/);
+  const workflow = readWorkflow("ci");
+  const registry = workflow.jobs["registry-consumers"]!;
+  const minimumStep = step(registry, "musl-minimum");
+  const minimum = script(minimumStep);
+  const evidence = step(registry, "musl-evidence");
+  assert.match(script(registry), /node:24\.21\.0-alpine3\.23 sh -eu -c/);
+  assert.equal(minimumStep.if, "matrix.docker-platform");
+  assert.equal(minimumStep.shell, "bash");
+  assert.match(
+    minimumStep.env?.MUSL_IMAGE ?? "",
+    /^node:24\.15\.0-alpine3\.23@sha256:[a-f0-9]{64}$/,
+  );
   assert.match(minimum, /linux\/amd64\) expected_arch=x64; test "\$\(uname -m\)" = x86_64/);
   assert.match(minimum, /linux\/arm64\) expected_arch=arm64; test "\$\(uname -m\)" = aarch64/);
   assert.match(minimum, /docker pull --platform "\$DOCKER_PLATFORM" "\$MUSL_IMAGE"/);
@@ -129,18 +132,16 @@ test("musl minimum Node CI preserves current coverage and consumes a pinned same
   assert.match(minimum, /registry-consumer\.ts "\$1"/);
   assert.match(minimum, /2>&1 \| tee target\/musl-compatibility\/consumer.log/);
   assert.match(minimum, /npm install --prefix \/tmp\/pnpm-tool --ignore-scripts/);
-  assert.match(evidence, /!cancelled\(\) && matrix.docker-platform/);
-  assert.match(
-    evidence,
-    /name: musl-compatibility-\$\{\{ github.run_attempt \}\}-\$\{\{ matrix.target \}\}/,
+  assert.equal(evidence.if, "${{ !cancelled() && matrix.docker-platform }}");
+  assert.equal(
+    evidence.with?.name,
+    "musl-compatibility-${{ github.run_attempt }}-${{ matrix.target }}",
   );
-  assert.match(evidence, /path: target\/musl-compatibility\//);
-  assert.match(evidence, /if-no-files-found: error/);
-  assert.doesNotMatch(
-    registry,
-    /continue-on-error|qemu|mise run (?:build:|pack:|check:node:minimum)/,
-  );
-  assert.match(workflow.split("  verify:")[1]!, /test "\$REGISTRY_RESULT" = success/);
+  assert.equal(evidence.with?.path, "target/musl-compatibility/");
+  assert.equal(evidence.with?.["if-no-files-found"], "error");
+  requireSuccess(registry);
+  assert.doesNotMatch(script(registry), /qemu|mise run (?:build:|pack:|check:node:minimum)/);
+  assert.match(script(workflow.jobs.verify!), /test "\$REGISTRY_RESULT" = success/);
   const mise = readFileSync(join(root, "mise.toml"), "utf8");
   assert.match(
     mise,
@@ -270,23 +271,50 @@ test("macOS gate fails closed on malformed headers, commands and deployment vers
   assert.throws(() => inspectMacosBinary(Buffer.alloc(16), "x86_64-apple-darwin"));
 });
 
+function verifyStaticCrtWorkflow(workflow: Workflow) {
+  const native = workflow.jobs["native-tests"]!;
+  const integration = step(native, "windows-crt-contracts");
+  assert.equal(integration.if, "matrix.target == 'x86_64-pc-windows-msvc'");
+  assert.equal(integration.env?.CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS, undefined);
+  assert.equal(workflow.on.workflow_dispatch?.inputs?.compare_windows_crt?.default, false);
+  const dynamic = step(native, "windows-crt-dynamic");
+  assert.equal(
+    dynamic.if,
+    "matrix.target == 'x86_64-pc-windows-msvc' && inputs.compare_windows_crt == true",
+  );
+  assert.equal(
+    dynamic.env?.CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS,
+    "-C target-feature=-crt-static",
+  );
+  assert.deepEqual(script(integration).split("\n"), [
+    "mise run build:node:ts",
+    "if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }",
+    "mise run test:node",
+    "if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }",
+    "mise run check:node:types",
+  ]);
+  requireSuccess(native);
+}
+
 test("Windows CRT acceptance reuses inspected bytes and dynamic comparison is opt-in", () => {
-  const workflow = readFileSync(join(root, ".github/workflows/ci.yml"), "utf8");
-  const integration = workflow
-    .split("- name: Windows x64 static CRT integration and type contracts")[1]
-    ?.split("- name: Node adapter integration and type contracts")[0];
-  assert.ok(integration);
-  assert.match(integration, /if: matrix.target == 'x86_64-pc-windows-msvc'/);
-  assert.doesNotMatch(integration, /CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS/);
-  assert.match(workflow, /workflow_dispatch:[\s\S]*compare_windows_crt:[\s\S]*default: false/);
-  const dynamic = workflow
-    .split("- name: Record Windows x64 dynamic CRT baseline")[1]!
-    .split("- name:")[0]!;
-  assert.match(dynamic, /inputs.compare_windows_crt == true/);
-  assert.match(dynamic, /target-feature=-crt-static/);
-  const tasks = [...integration.matchAll(/mise run ([\w:]+)/g)].map((match) => match[1]);
-  assert.deepEqual(tasks, ["build:node:ts", "test:node", "check:node:types"]);
-  assert.equal(integration.match(/if \(\$LASTEXITCODE -ne 0\)/g)?.length, 2);
+  verifyStaticCrtWorkflow(readWorkflow("ci"));
+});
+
+test("CI contracts ignore YAML formatting and display labels but reject commented-out checks", () => {
+  const workflow = readWorkflow("ci");
+  const renamed = structuredClone(workflow);
+  for (const job of Object.values(renamed.jobs)) {
+    for (const item of job.steps) item.name = "Renamed display label";
+  }
+  verifyStaticCrtWorkflow(
+    parseWorkflow(stringify(renamed, { indent: 4, defaultStringType: "QUOTE_DOUBLE" })),
+  );
+  for (const command of ["build:node:ts", "test:node", "check:node:types"]) {
+    const disabled = structuredClone(workflow);
+    const integration = step(disabled.jobs["native-tests"]!, "windows-crt-contracts");
+    integration.run = integration.run!.replace(`mise run ${command}`, `# mise run ${command}`);
+    assert.throws(() => verifyStaticCrtWorkflow(disabled));
+  }
 });
 
 // Synthetic PE descriptors test inspection only; CI must still load the real addon.
@@ -849,25 +877,24 @@ test("Windows arm64 audit rejects invalid batch identity and all mismatched CI i
 });
 
 test("Windows arm64 CI gates the same cohort with minimum native Node and preserves evidence", () => {
-  const workflow = readFileSync(join(root, ".github/workflows/ci.yml"), "utf8");
-  const registry = workflow
-    .split("  registry-consumers:")[1]!
-    .split("  windows-clean-consumer:")[0]!;
-  const audit = registry
-    .split("- name: Audit Windows arm64 binary from the complete cohort")[1]!
-    .split("- name:")[0]!;
-  const minimum = registry
-    .split("- name: Windows arm64 minimum Node consumers of the same complete cohort")[1]!
-    .split("- name:")[0]!;
-  const evidence = registry
-    .split("- name: Preserve Windows arm64 compatibility evidence")[1]!
-    .split("- name:")[0]!;
-  for (const step of [audit, minimum]) {
-    assert.match(step, /if: matrix.target == 'aarch64-pc-windows-msvc'/);
-    assert.match(step, /shell: bash/);
+  const workflow = readWorkflow("ci");
+  const registry = workflow.jobs["registry-consumers"]!;
+  const auditStep = step(registry, "windows-arm64-audit");
+  const minimumStep = step(registry, "windows-arm64-minimum");
+  const audit = script(auditStep);
+  const minimum = script(minimumStep);
+  const evidence = step(registry, "windows-arm64-evidence");
+  for (const item of [auditStep, minimumStep]) {
+    assert.equal(item.if, "matrix.target == 'aarch64-pc-windows-msvc'");
+    assert.equal(item.shell, "bash");
   }
-  assert.match(registry, /os: windows-11-arm\s+target: aarch64-pc-windows-msvc/);
-  assert.match(registry, /needs: node-distribution/);
+  const entries = registry.strategy?.matrix.include as { os: string; target: string }[];
+  assert.ok(
+    entries.some(
+      (entry) => entry.os === "windows-11-arm" && entry.target === "aarch64-pc-windows-msvc",
+    ),
+  );
+  assert.equal(registry.needs, "node-distribution");
   assert.match(audit, /test "\$\{#cohorts\[@\]\}" -eq 1/);
   assert.match(audit, /mise run check:node:windows-arm64 -- "\$\{cohorts\[0\]\}"/);
   assert.match(minimum, /mise install node@24\.15\.0/);
@@ -879,16 +906,18 @@ test("Windows arm64 CI gates the same cohort with minimum native Node and preser
     minimum,
     /mise run --tool node@24\.15\.0 check:node:registry -- "\$artifacts" 2>&1 \| tee -a/,
   );
-  assert.match(evidence, /!cancelled\(\) && matrix.target == 'aarch64-pc-windows-msvc'/);
-  assert.match(evidence, /name: windows-arm64-compatibility-\$\{\{ github.run_attempt \}\}/);
-  assert.match(evidence, /path: target\/windows-arm64-compatibility\//);
-  assert.match(evidence, /if-no-files-found: error/);
-  assert.doesNotMatch(
-    registry,
-    /mise run (?:build:|pack:|check:node:minimum)|continue-on-error|crt-static/,
+  assert.equal(evidence.if, "${{ !cancelled() && matrix.target == 'aarch64-pc-windows-msvc' }}");
+  assert.equal(evidence.with?.name, "windows-arm64-compatibility-${{ github.run_attempt }}");
+  assert.equal(evidence.with?.path, "target/windows-arm64-compatibility/");
+  assert.equal(evidence.with?.["if-no-files-found"], "error");
+  requireSuccess(registry);
+  assert.doesNotMatch(script(registry), /mise run (?:build:|pack:|check:node:minimum)|crt-static/);
+  assert.ok(
+    workflow.jobs.verify!.steps.some(
+      (item) => item.env?.REGISTRY_RESULT === "${{ needs.registry-consumers.result }}",
+    ),
   );
-  assert.match(workflow.split("  verify:")[1]!, /REGISTRY_RESULT.*needs.registry-consumers.result/);
-  assert.match(workflow.split("  verify:")[1]!, /test "\$REGISTRY_RESULT" = success/);
+  assert.match(script(workflow.jobs.verify!), /test "\$REGISTRY_RESULT" = success/);
   const mise = readFileSync(join(root, "mise.toml"), "utf8");
   assert.match(
     mise,
@@ -976,27 +1005,23 @@ test("macOS artifact evidence requires a valid batch identity and respects the c
 });
 
 test("macOS CI audits and tests the downloaded cohort under the minimum Node without rebuilding", () => {
-  const workflow = readFileSync(join(root, ".github/workflows/ci.yml"), "utf8");
-  const registry = workflow
-    .split("  registry-consumers:")[1]!
-    .split("  windows-clean-consumer:")[0]!;
-  const audit = registry
-    .split("- name: Audit macOS binaries from the complete cohort")[1]!
-    .split("- name:")[0]!;
-  const minimum = registry
-    .split("- name: macOS minimum Node consumers of the same complete cohort")[1]!
-    .split("- name:")[0]!;
-  assert.match(audit, /if: endsWith\(matrix.target, '-apple-darwin'\)/);
+  const registry = readWorkflow("ci").jobs["registry-consumers"]!;
+  const auditStep = step(registry, "macos-audit");
+  const minimumStep = step(registry, "macos-minimum");
+  const audit = script(auditStep);
+  const minimum = script(minimumStep);
+  assert.equal(auditStep.if, "endsWith(matrix.target, '-apple-darwin')");
   assert.match(audit, /mise run check:node:macos -- "\$\{cohorts\[0\]\}"/);
-  assert.match(minimum, /if: endsWith\(matrix.target, '-apple-darwin'\)/);
+  assert.equal(minimumStep.if, "endsWith(matrix.target, '-apple-darwin')");
   assert.match(minimum, /mise run --tool node@24\.15\.0 check:node:registry -- "\$artifacts"/);
   assert.match(minimum, /a.equal\(process.version,"v24.15.0"\)/);
   assert.match(minimum, /a.equal\(process.arch,/);
-  assert.match(
-    registry,
-    /macos-compatibility-\$\{\{ github.run_attempt \}\}-\$\{\{ matrix.target \}\}/,
+  assert.equal(
+    step(registry, "macos-evidence").with?.name,
+    "macos-compatibility-${{ github.run_attempt }}-${{ matrix.target }}",
   );
-  assert.doesNotMatch(registry, /mise run (?:build:|pack:|check:node:minimum)|continue-on-error/);
+  requireSuccess(registry);
+  assert.doesNotMatch(script(registry), /mise run (?:build:|pack:|check:node:minimum)/);
   const mise = readFileSync(join(root, "mise.toml"), "utf8");
   assert.match(mise, /\[tasks\."check:node:macos"\][\s\S]*?compatibility\.ts --macos/);
 });

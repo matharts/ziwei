@@ -196,6 +196,10 @@ run = "node packages/ziwei/tools/pnpm-rebuild.ts"
 description = "验证 Linux 专用诊断脚本；与跨平台工具合同分开，Linux CI 必跑"
 run = "pnpm exec -- node node_modules/@rstest/core/bin/rstest.js --project node-tools-linux"
 
+[tasks."check:node:diagnostics:windows"]
+description = "在真实 Windows 宿主验证诊断采集；独立运行，不作为产品 CI 前置门禁"
+run = "pnpm exec -- node node_modules/@rstest/core/bin/rstest.js --project windows-diagnostics"
+
 [tasks."check:typescript"]
 description = "严格检查 TypeScript 配置、测试和工具；需先构建 Node 包"
 run = "pnpm exec -- node node_modules/typescript/bin/tsc --project tsconfig.json"

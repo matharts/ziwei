@@ -44,5 +44,12 @@ export default defineConfig({
       include: ["tools/tests/linux/*.test.ts"],
       testTimeout: 60_000,
     }),
+    defineInlineProject({
+      name: "windows-diagnostics",
+      root: fileURLToPath(new URL(".", import.meta.url)),
+      testEnvironment: "node",
+      include: ["tools/tests/diagnostics/windows.test.ts"],
+      testTimeout: 60_000,
+    }),
   ],
 });

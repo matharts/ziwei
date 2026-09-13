@@ -19,6 +19,7 @@ import {
   qemuComparison,
   verifyQemuVersion,
 } from "../../packages/ziwei/tools/diagnostics/pnpm-repro.ts";
+import { readWorkflow, requireSuccess, script, step } from "./workflow.ts";
 
 test("GDB stops the first SIGSEGV without startup scripts or public ports", async () => {
   const args = pnpmGdbArgs("/tmp/pnpm", "/tmp/debug/gdb.sock");
@@ -43,10 +44,17 @@ test("GDB stops the first SIGSEGV without startup scripts or public ports", asyn
     runPnpmRepro("unused", "comparison", "baseline", "baseline", true),
     /固定全部基线/,
   );
-  const workflow = readFileSync(".github/workflows/pnpm-repro.yml", "utf8");
-  assert.match(workflow, /inputs.comparison == 'debug'/);
-  assert.match(workflow, /--qemu baseline --debug/);
-  assert.match(workflow, /pnpm-repro-results-debug\//);
+  const reproduce = readWorkflow("pnpm-repro").jobs.reproduce!;
+  assert.match(step(reproduce, "debugger").if!, /inputs.comparison == 'debug'/);
+  assert.equal(
+    step(reproduce, "debug-probe").if,
+    "${{ !cancelled() && steps.debugger.outcome == 'success' }}",
+  );
+  assert.match(script(step(reproduce, "debug-probe")), /--qemu baseline --debug/);
+  assert.match(
+    String(step(reproduce, "startup-evidence").with?.path),
+    /pnpm-repro-results-debug\//,
+  );
 });
 
 test("pnpm reproduction mounts only the binary and changes only tracing", () => {
@@ -90,17 +98,20 @@ test("image comparison changes only the pinned guest image and rejects mixed var
 });
 
 test("image workflow mode holds QEMU and pnpm at baseline", () => {
-  const workflow = readFileSync(
-    new URL("../../.github/workflows/pnpm-repro.yml", import.meta.url),
-    "utf8",
+  const reproduce = readWorkflow("pnpm-repro").jobs.reproduce!;
+  assert.ok(
+    step(reproduce, "image-probe").if!.includes(
+      "inputs.comparison == 'image' && steps.baseline-qemu.outcome == 'success'",
+    ),
   );
   assert.ok(
-    workflow.includes("inputs.comparison == 'image' && steps.baseline-qemu.outcome == 'success'"),
+    script(step(reproduce, "image-probe")).includes(
+      "--output pnpm-repro-results-image --qemu baseline --image comparison",
+    ),
   );
   assert.ok(
-    workflow.includes("--output pnpm-repro-results-image --qemu baseline --image comparison"),
+    String(step(reproduce, "startup-evidence").with?.path).includes("pnpm-repro-results-image/"),
   );
-  assert.ok(workflow.includes("pnpm-repro-results-image/"));
 });
 
 test("pnpm reproduction separates correct output, crashes, kills and infrastructure failures", () => {
@@ -125,34 +136,29 @@ test("pnpm reproduction separates correct output, crashes, kills and infrastruct
 });
 
 test("pnpm diagnostic workflow is manual, bounded and independent of candidate builds", () => {
-  const workflow = readFileSync(
-    new URL("../../.github/workflows/pnpm-repro.yml", import.meta.url),
-    "utf8",
-  );
-  assert.match(workflow, /on:\n  workflow_dispatch:/);
-  const reproduce = workflow.split("  reproduce:\n")[1]!.split("  consume-rebuilt:\n")[0]!;
-  assert.doesNotMatch(
-    reproduce,
-    /push:|pull_request:|continue-on-error|needs:|download-artifact|pnpm install|build:node/,
-  );
+  const workflow = readWorkflow("pnpm-repro");
+  assert.deepEqual(Object.keys(workflow.on), ["workflow_dispatch"]);
+  const reproduce = workflow.jobs.reproduce!;
+  assert.equal(reproduce.needs, undefined);
+  requireSuccess(reproduce);
+  assert.ok(reproduce.steps.every((item) => !item.uses?.includes("download-artifact")));
+  assert.doesNotMatch(script(reproduce), /pnpm install|build:node/);
+  assert.equal(reproduce["timeout-minutes"], "${{ inputs.comparison == 'rebuild' && 65 || 10 }}");
   assert.match(
-    workflow,
-    /timeout-minutes: \$\{\{ inputs.comparison == 'rebuild' && 65 \|\| 10 \}\}/,
+    script(step(reproduce, "baseline-probe")),
+    /mise run diagnose:pnpm -- --output pnpm-repro-results/,
   );
-  assert.match(workflow, /mise run diagnose:pnpm -- --output pnpm-repro-results/);
-  assert.match(workflow, /if: \$\{\{ !cancelled\(\) \}\}/);
+  assert.equal(step(reproduce, "startup-evidence").if, "${{ !cancelled() }}");
 });
 
 test("Linux-only shell checks remain mandatory in native Linux CI", () => {
-  const workflow = readFileSync(new URL("../../.github/workflows/ci.yml", import.meta.url), "utf8");
-  assert.match(
-    workflow,
-    /name: Linux diagnostic contracts\n\s+if: runner.os == 'Linux'\n\s+run: mise run check:node:tools:linux/,
-  );
+  const nativeJob = readWorkflow("ci").jobs["native-tests"]!;
+  const diagnostic = step(nativeJob, "linux-diagnostics");
+  assert.equal(diagnostic.if, "runner.os == 'Linux'");
+  assert.equal(script(diagnostic), "mise run check:node:tools:linux");
   const tasks = readFileSync(new URL("../../mise.toml", import.meta.url), "utf8");
   assert.match(tasks, /\[tasks\."check:node:tools:linux"\][\s\S]*?--project node-tools-linux/);
-  const nativeJob = workflow.split("  native-tests:\n")[1]!.split("\n  musl-distribution:")[0]!;
-  assert.doesNotMatch(nativeJob, /continue-on-error/);
+  requireSuccess(nativeJob);
 });
 
 test("QEMU comparisons reject unknown groups and mismatched runtime versions", () => {
@@ -165,30 +171,40 @@ test("QEMU comparisons reject unknown groups and mismatched runtime versions", (
 });
 
 test("QEMU comparison uses one runner, exact pins and failure-independent ordered steps", () => {
-  const workflow = readFileSync(
-    new URL("../../.github/workflows/pnpm-repro.yml", import.meta.url),
-    "utf8",
-  );
-  const reproduce = workflow.split("  reproduce:\n")[1]!.split("  consume-rebuilt:\n")[0]!;
-  assert.equal(reproduce.match(/runs-on:/g)?.length, 1);
-  assert.match(reproduce, /if: inputs.comparison != 'consumer'/);
+  const reproduce = readWorkflow("pnpm-repro").jobs.reproduce!;
+  assert.equal(typeof reproduce["runs-on"], "string");
+  assert.equal(reproduce.strategy, undefined);
+  assert.equal(reproduce.if, "inputs.comparison != 'consumer'");
   for (const [group, config] of Object.entries(qemuComparisons)) {
     assert.match(config.image, /^tonistiigi\/binfmt@sha256:[a-f0-9]{64}$/);
-    assert.ok(workflow.includes(`image: ${config.image}`));
-    assert.ok(workflow.includes(`--output pnpm-repro-results-${group} --qemu ${group}`));
-  }
-  assert.notEqual(qemuComparisons.baseline.image, qemuComparisons.comparison.image);
-  assert.ok(workflow.indexOf("--qemu baseline") < workflow.indexOf("--uninstall qemu-ppc64le"));
-  assert.ok(workflow.indexOf("--uninstall qemu-ppc64le") < workflow.indexOf("id: comparison-qemu"));
-  assert.match(workflow, /test ! -e \/proc\/sys\/fs\/binfmt_misc\/qemu-ppc64le/);
-  assert.ok(
-    workflow.includes("inputs.comparison == 'qemu' && steps.baseline-qemu.outcome == 'success'"),
-  );
-  for (const step of ["reset-qemu", "comparison-qemu"]) {
+    assert.equal(step(reproduce, `${group}-qemu`).with?.image, config.image);
     assert.ok(
-      workflow.includes(`if: \u0024{{ !cancelled() && steps.${step}.outcome == 'success' }}`),
+      script(step(reproduce, `${group}-probe`)).includes(
+        `--output pnpm-repro-results-${group} --qemu ${group}`,
+      ),
     );
   }
+  assert.notEqual(qemuComparisons.baseline.image, qemuComparisons.comparison.image);
+  const reset = step(reproduce, "reset-qemu");
+  assert.ok(
+    reproduce.steps.indexOf(step(reproduce, "baseline-probe")) < reproduce.steps.indexOf(reset),
+  );
+  assert.ok(
+    reproduce.steps.indexOf(reset) < reproduce.steps.indexOf(step(reproduce, "comparison-qemu")),
+  );
+  assert.match(script(reset), /--uninstall qemu-ppc64le/);
+  assert.match(script(reset), /test ! -e \/proc\/sys\/fs\/binfmt_misc\/qemu-ppc64le/);
+  assert.ok(
+    reset.if!.includes("inputs.comparison == 'qemu' && steps.baseline-qemu.outcome == 'success'"),
+  );
+  assert.equal(
+    step(reproduce, "comparison-qemu").if,
+    "${{ !cancelled() && steps.reset-qemu.outcome == 'success' }}",
+  );
+  assert.equal(
+    step(reproduce, "comparison-probe").if,
+    "${{ !cancelled() && steps.comparison-qemu.outcome == 'success' }}",
+  );
 });
 
 test("pnpm comparison validates the selected version and rejects mixed variables before Docker", async () => {
@@ -209,21 +225,18 @@ test("pnpm comparison validates the selected version and rejects mixed variables
 });
 
 test("pnpm workflow mode keeps QEMU fixed and still executes after a failed baseline", () => {
-  const workflow = readFileSync(
-    new URL("../../.github/workflows/pnpm-repro.yml", import.meta.url),
-    "utf8",
-  );
-  assert.match(workflow, /default: pnpm/);
-  assert.ok(
-    workflow.includes(
-      "!cancelled() && inputs.comparison == 'pnpm' && steps.baseline-qemu.outcome == 'success'",
-    ),
+  const workflow = readWorkflow("pnpm-repro");
+  const reproduce = workflow.jobs.reproduce!;
+  const probe = step(reproduce, "pnpm-probe");
+  assert.equal(workflow.on.workflow_dispatch?.inputs?.comparison?.default, "pnpm");
+  assert.equal(
+    probe.if,
+    "${{ !cancelled() && inputs.comparison == 'pnpm' && steps.baseline-qemu.outcome == 'success' }}",
   );
   assert.ok(
-    workflow.includes("--output pnpm-repro-results-pnpm --qemu baseline --pnpm comparison"),
+    script(probe).includes("--output pnpm-repro-results-pnpm --qemu baseline --pnpm comparison"),
   );
   assert.ok(
-    workflow.indexOf("--qemu baseline --pnpm comparison") <
-      workflow.indexOf("--uninstall qemu-ppc64le"),
+    reproduce.steps.indexOf(probe) < reproduce.steps.indexOf(step(reproduce, "reset-qemu")),
   );
 });

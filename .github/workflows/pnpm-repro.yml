@@ -39,6 +39,7 @@ jobs:
           platforms: ppc64le
           cache-image: false
       - name: Reproduce with baseline QEMU 10.2.3
+        id: baseline-probe
         run: mise run diagnose:pnpm -- --output pnpm-repro-results-baseline --qemu baseline
       - name: Fetch exact upstream source for the isolated rebuild
         id: rebuild-source
@@ -54,9 +55,11 @@ jobs:
         if: ${{ !cancelled() && steps.rebuild-source.outcome == 'success' }}
         run: mise run diagnose:pnpm:rebuild -- --source target/pnpm-rebuild-source --output pnpm-rebuild-results
       - name: Probe experimental binary with unchanged QEMU and userspace
+        id: rebuilt-probe
         if: ${{ !cancelled() && steps.rebuild.outcome == 'success' }}
         run: mise run diagnose:pnpm -- --output pnpm-repro-results-rebuilt --qemu baseline --rebuilt-receipt pnpm-rebuild-results/build.json
       - name: Compare pnpm 12.4.0 with unchanged QEMU 10.2.3
+        id: pnpm-probe
         if: ${{ !cancelled() && inputs.comparison == 'pnpm' && steps.baseline-qemu.outcome == 'success' }}
         run: mise run diagnose:pnpm -- --output pnpm-repro-results-pnpm --qemu baseline --pnpm comparison
       - name: Install diagnostic debugger on disposable runner
@@ -66,9 +69,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends gdb-multiarch
       - name: Capture first guest SIGSEGV with unchanged baseline
+        id: debug-probe
         if: ${{ !cancelled() && steps.debugger.outcome == 'success' }}
         run: mise run diagnose:pnpm -- --output pnpm-repro-results-debug --qemu baseline --debug
       - name: Compare Ubuntu userspace with unchanged QEMU and pnpm
+        id: image-probe
         if: ${{ !cancelled() && inputs.comparison == 'image' && steps.baseline-qemu.outcome == 'success' }}
         run: mise run diagnose:pnpm -- --output pnpm-repro-results-image --qemu baseline --image comparison
       # Same runner and guest inputs. Unregister the fixed interpreter before switching.
@@ -87,9 +92,11 @@ jobs:
           platforms: ppc64le
           cache-image: false
       - name: Reproduce with comparison QEMU 10.2.1
+        id: comparison-probe
         if: ${{ !cancelled() && steps.comparison-qemu.outcome == 'success' }}
         run: mise run diagnose:pnpm -- --output pnpm-repro-results-comparison --qemu comparison
       - name: Preserve startup evidence on failure
+        id: startup-evidence
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -128,6 +135,7 @@ jobs:
       # Only the diagnostic tool comes from this earlier inspected run. Ziwei is
       # built and sealed below with this run's own commit/run/attempt identity.
       - name: Download the exact startup-verified pnpm experiment
+        id: verified-pnpm
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           github-token: ${{ github.token }}
@@ -154,6 +162,7 @@ jobs:
           platforms: ppc64le
           cache-image: false
       - name: Consume both Node versions with npm and the pinned experimental pnpm
+        id: consumer
         run: mise run diagnose:pnpm:rebuild -- --mode consume --input target/native-candidate-bundle --receipt target/pnpm-verified-input/pnpm-rebuild-results/build.json --output target/pnpm-consumer-results
       - name: Preserve candidate bytes and complete consumer evidence
         if: ${{ !cancelled() && steps.seal.outcome == 'success' }}

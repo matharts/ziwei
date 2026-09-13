@@ -1,0 +1,64 @@
+name: Windows host diagnostics
+
+on:
+  push:
+    paths:
+      - .github/workflows/windows-diagnostics.yml
+      - packages/ziwei/tools/windows-docker.ts
+      - tools/tests/windows-container.test.ts
+      - tools/tests/diagnostics/windows.test.ts
+      - rstest.config.ts
+      - mise.toml
+      - .miserc.toml
+      - package.json
+      - pnpm-workspace.yaml
+      - pnpm-lock.yaml
+      - tsconfig.json
+  pull_request:
+    paths:
+      - .github/workflows/windows-diagnostics.yml
+      - packages/ziwei/tools/windows-docker.ts
+      - tools/tests/windows-container.test.ts
+      - tools/tests/diagnostics/windows.test.ts
+      - rstest.config.ts
+      - mise.toml
+      - .miserc.toml
+      - package.json
+      - pnpm-workspace.yaml
+      - pnpm-lock.yaml
+      - tsconfig.json
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-diagnostics-${{ github.ref }}
+  cancel-in-progress: true
+
+# Live host evidence is independent of the mandatory product-consumer checks in ci.yml.
+# A failed probe still fails this workflow; keep its timeout and redacted failure details.
+jobs:
+  diagnose:
+    name: Host evidence (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2025, windows-11-arm]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
+        with:
+          install_args: node pnpm
+          cache: false
+      - name: Install diagnostic test dependencies
+        run: mise exec -- pnpm install --frozen-lockfile
+      - name: Collect and validate live Windows host evidence
+        run: mise run check:node:diagnostics:windows

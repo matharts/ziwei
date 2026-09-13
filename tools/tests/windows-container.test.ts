@@ -20,7 +20,6 @@ import {
   dockerDiagnosticsScript,
   observeCommand,
   redactDiagnostic,
-  redactObservation,
   waitForWindowsDocker,
 } from "../../packages/ziwei/tools/windows-docker.ts";
 import {
@@ -32,6 +31,7 @@ import {
   vcRuntimeInstallArgs,
   windowsBaseline,
 } from "../../packages/ziwei/tools/windows-runtime.ts";
+import { readWorkflow, requireSuccess, script, step } from "./workflow.ts";
 
 test("Clean Windows container source closure imports without workspace dependencies", () => {
   const root = fileURLToPath(new URL("../..", import.meta.url));
@@ -439,50 +439,6 @@ test("Docker host diagnosis is read-only and queries only targeted service and e
   );
 });
 
-if (process.platform === "win32") {
-  test("Windows Docker diagnostic script returns service, process and event evidence", () => {
-    // Validate the script output independently of the production 10-second collection budget.
-    // Cold PowerShell startup and event-log queries can take longer on shared Windows runners.
-    const startedAt = Date.now();
-    const result = observeCommand(
-      "powershell.exe",
-      [
-        "-NoProfile",
-        "-NonInteractive",
-        "-EncodedCommand",
-        Buffer.from(dockerDiagnosticsScript, "utf16le").toString("base64"),
-      ],
-      30_000,
-    );
-    // Retain the partial stage stream on timeout; never expose unredacted host evidence.
-    const diagnostic = JSON.stringify({
-      startedAt,
-      result: redactObservation(result),
-    });
-    assert.equal(result.error, undefined, diagnostic);
-    assert.equal(result.status, 0, diagnostic);
-    const evidence = JSON.parse(result.stdout);
-    assert.deepEqual(
-      evidence.services.map((service: { name: string }) => service.name),
-      ["docker", "hns", "vmcompute"],
-    );
-    assert.ok(Array.isArray(evidence.processes));
-    assert.ok(Array.isArray(evidence.events));
-    const prefix = "[windows-diagnostics] ";
-    const stages = result.stderr
-      .split("\n")
-      .filter((line) => line.startsWith(prefix))
-      .map((line) => JSON.parse(line.slice(prefix.length)));
-    assert.equal(stages[0]?.stage, "script-start");
-    assert.equal(stages.at(-1)?.stage, "script-end");
-    for (const [index, stage] of stages.entries()) {
-      assert.ok(Number.isSafeInteger(stage.unixMs) && stage.unixMs > 0);
-      assert.ok(Number.isSafeInteger(stage.elapsedMs) && stage.elapsedMs >= 0);
-      if (index) assert.ok(stage.elapsedMs >= stages[index - 1].elapsedMs);
-    }
-  });
-}
-
 test("Windows experiment pins its image and keeps Node aligned with the consumer minimum", () => {
   const source = JSON.parse(
     readFileSync(
@@ -542,35 +498,31 @@ test("Docker receives isolated input, separate output and only the cohort enviro
 });
 
 test("Windows acceptance failures are retained and cannot bypass the final CI check", () => {
-  const workflow = readFileSync(
-    fileURLToPath(new URL("../../.github/workflows/ci.yml", import.meta.url)),
-    "utf8",
-  );
-  const job = workflow.split("  windows-clean-consumer:\n")[1]!.split(/\n  [\w-]+:\n/)[0]!;
-  assert.match(job, /needs: node-distribution/);
-  assert.match(job, /runs-on: windows-2025/);
-  const startup = job
-    .split("      - name: Start existing Windows Docker service\n")[1]!
-    .split("      - name:")[0]!;
-  assert.match(startup, /shell: pwsh/);
-  assert.match(startup, /timeout-minutes: 2/);
+  const workflow = readWorkflow("ci");
+  const job = workflow.jobs["windows-clean-consumer"]!;
+  assert.equal(job.needs, "node-distribution");
+  assert.equal(job["runs-on"], "windows-2025");
+  const startupStep = step(job, "windows-docker-start");
+  const startup = script(startupStep);
+  assert.equal(startupStep.shell, "pwsh");
+  assert.equal(startupStep["timeout-minutes"], 2);
   assert.match(startup, /Get-Service -Name docker -ErrorAction Stop/);
   assert.match(startup, /if \(\$service.Status -ne 'Running'\)/);
   assert.match(startup, /Start-Service -InputObject \$service -ErrorAction Stop/);
-  assert.doesNotMatch(
-    startup,
-    /Restart-Service|Set-Service|Install-|SilentlyContinue|continue-on-error/,
-  );
+  assert.doesNotMatch(startup, /Restart-Service|Set-Service|Install-|SilentlyContinue/);
+  assert.ok(job.steps.indexOf(startupStep) < job.steps.indexOf(step(job, "windows-consumers")));
+  assert.match(script(step(job, "windows-consumers")), /mise run check:node:windows -- /);
+  assert.doesNotMatch(script(job), /--compare-vc-runtime/);
   assert.ok(
-    job.indexOf("- name: Start existing Windows Docker service") <
-      job.indexOf("- name: Verify clean npm and runtime-equipped pnpm"),
+    job.steps.some(
+      (item) =>
+        item.uses?.startsWith("actions/download-artifact@") &&
+        item.with?.name === "node-distribution-${{ github.run_attempt }}",
+    ),
   );
-  assert.match(job, /mise run check:node:windows -- /);
-  assert.doesNotMatch(job, /--compare-vc-runtime/);
-  assert.match(job, /name: node-distribution-\$\{\{ github\.run_attempt \}\}/);
-  assert.match(job, /if: \$\{\{ !cancelled\(\) \}\}/);
-  assert.doesNotMatch(job, /continue-on-error/);
-  const verify = workflow.split("  verify:\n")[1]!;
-  assert.match(verify, /needs: \[[^\]\n]*\bwindows-clean-consumer\b[^\]\n]*\]/);
-  assert.match(workflow, /test "\$WINDOWS_CLEAN_RESULT" = success/);
+  assert.equal(step(job, "windows-evidence").if, "${{ !cancelled() }}");
+  requireSuccess(job);
+  const verify = workflow.jobs.verify!;
+  assert.ok(Array.isArray(verify.needs) && verify.needs.includes("windows-clean-consumer"));
+  assert.match(script(verify), /test "\$WINDOWS_CLEAN_RESULT" = success/);
 });
