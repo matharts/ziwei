@@ -64,28 +64,40 @@ export async function fullContract({
 export async function runWorker(input: ContractInput) {
   const worker = new Worker(new URL("/worker.js", location.href), { type: "module" });
   let ticks = 0;
-  let running = true;
-  const tick = () => {
-    if (running) {
-      ticks++;
-      requestAnimationFrame(tick);
-    }
-  };
-  requestAnimationFrame(tick);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let completed = 0;
   try {
     const result = await new Promise<Awaited<ReturnType<typeof fullContract>>>(
       (resolve, reject) => {
         worker.onerror = (event) => reject(new Error(event.message));
-        worker.onmessage = (event) =>
-          event.data.error
-            ? reject(new Error(JSON.stringify(event.data.error)))
-            : resolve(event.data);
-        worker.postMessage({ id: 1, ...input, count: 50_000 });
+        worker.onmessage = (event) => {
+          if (event.data.id !== 1) {
+            reject(new Error("Worker replied with the wrong request ID"));
+          } else if (event.data.kind === "busy") {
+            const tick = () => {
+              ticks++;
+              timer = setTimeout(tick, 0);
+            };
+            timer = setTimeout(tick, 0);
+          } else if (event.data.error) {
+            reject(new Error(JSON.stringify(event.data.error)));
+          } else {
+            clearTimeout(timer);
+            completed = event.data.completed;
+            resolve(event.data);
+          }
+        };
+        worker.postMessage({ id: 1, kind: "start", ...input });
       },
     );
-    return { ...result, cloneFrozen: Object.isFrozen(result.charts.birth.snapshot), ticks };
+    return {
+      ...result,
+      cloneFrozen: Object.isFrozen(result.charts.birth.snapshot),
+      ticks,
+      completed,
+    };
   } finally {
-    running = false;
+    clearTimeout(timer);
     worker.terminate();
   }
 }

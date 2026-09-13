@@ -17,6 +17,42 @@ import { serveAssets } from "./fixtures/server.ts";
 
 const birth = { gender: 0, birthYear: 1992, birthMonth: 8, birthDay: 15, birthHour: 3 } as const;
 
+test("webkit: Worker progress does not depend on animation frames", async () => {
+  const server = await serveAssets();
+  const browser = await webkit.launch();
+  try {
+    const page = await browser.newPage();
+    await page.goto(server.origin);
+    // Model a browser withholding rendering opportunities while tasks still run.
+    await page.evaluate(() => {
+      globalThis.requestAnimationFrame = () => 0;
+    });
+    const expected = native.Ziwei.fromBirth(birth);
+    const result = await page.evaluate(runWorker, {
+      birth,
+      parameters: {
+        gender: birth.gender,
+        birthStem: expected.profile.birthStem,
+        birthBranch: expected.profile.birthBranch,
+        birthMonth: birth.birthMonth,
+        ziweiBranch: expected.ziweiPalace().branch,
+        birthHour: birth.birthHour,
+      },
+      calls: [],
+    });
+    assert.ok(result.ticks > 0, "the main thread must respond while the Worker job is active");
+    assert.equal(
+      Reflect.get(result, "completed"),
+      50_000,
+      "the Worker must finish a fixed batch independently",
+    );
+    assert.deepEqual(result.charts.birth.snapshot, expected.toJSON());
+  } finally {
+    await browser.close();
+    await server.close();
+  }
+});
+
 for (const engine of [chromium, firefox, webkit]) {
   test(`${engine.name()}: default asset, all queries, lifecycle and non-isolated Worker consumer`, async () => {
     const server = await serveAssets({
@@ -62,6 +98,7 @@ for (const engine of [chromium, firefox, webkit]) {
       }
       assert.equal(workerResult.cloneFrozen, false);
       assert.ok(workerResult.ticks > 0);
+      assert.equal(workerResult.completed, 50_000);
       console.log(
         `${engine.name()} ${browser.version()}: page and Worker, two inputs, ${calls.length} queries each verified`,
       );
