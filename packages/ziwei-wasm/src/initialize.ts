@@ -61,7 +61,7 @@ async function load(url: URL): Promise<ReadyZiweiRuntime> {
   }
   if (
     !response.ok ||
-    response.headers.get("content-type")?.split(";")[0]?.trim() !== "application/wasm"
+    response.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() !== "application/wasm"
   ) {
     await response.body?.cancel();
     throw new ZiweiInitializationError(

@@ -60,6 +60,30 @@ test("invalid responses, corruption and failed requests clear state for explicit
   }
 });
 
+test("equivalent MIME type casing and parameters initialize the same real Wasm", async () => {
+  for (const mime of ["application/wasm", "Application/Wasm", "APPLICATION/WASM; charset=binary"]) {
+    const server = await serveAssets({ mime });
+    try {
+      const module = await fresh();
+      const ready = await module.initialize({ wasmUrl: server.url("/wasm") });
+      const natal = ready.Ziwei.fromBirth({
+        gender: 0,
+        birthYear: 1992,
+        birthMonth: 8,
+        birthDay: 15,
+        birthHour: 3,
+      });
+      try {
+        assert.equal(natal.mingPalace().name, "Ming");
+      } finally {
+        natal.dispose();
+      }
+    } finally {
+      await server.close();
+    }
+  }
+});
+
 test("same resource concurrent calls share work and a different resource is rejected", async () => {
   const server = await serveAssets();
   try {

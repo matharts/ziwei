@@ -5,7 +5,9 @@ import type { AddressInfo } from "node:net";
 import { resolve, sep, extname } from "node:path";
 import { fileURLToPath } from "node:url";
 
-export async function serveAssets(options: { dist?: string; csp?: string; base?: string } = {}) {
+export async function serveAssets(
+  options: { dist?: string; csp?: string; base?: string; mime?: string } = {},
+) {
   const dist = options.dist ?? fileURLToPath(new URL("../../dist/", import.meta.url));
   const bytes = await readFile(new URL("../../generated/ziwei_wasm_bg.wasm", import.meta.url));
   const hits = new Map<string, number>();
@@ -69,7 +71,10 @@ export async function serveAssets(options: { dist?: string; csp?: string; base?:
         "/interrupted",
       ].includes(path)
     ) {
-      response.setHeader("Content-Type", path === "/wrong-mime" ? "text/html" : "application/wasm");
+      response.setHeader(
+        "Content-Type",
+        path === "/wrong-mime" ? "text/html" : (options.mime ?? "application/wasm"),
+      );
       if (path === "/cors") response.setHeader("Access-Control-Allow-Origin", "*");
       if (path === "/oversized") {
         response.end(Buffer.concat([bytes, Buffer.from([0])]));

@@ -70,6 +70,8 @@ export declare function initialize(
 2. Rslib 生成浏览器 ESM 与声明；Wasm 为独立资源，不内联到 JS、不从未固定版本的公共 CDN 隐式下载。`files` 与 `exports` 只暴露必要入口；本轮不指定新增资源子路径。
 3. 默认静态 URL 保留到最终产物，使消费端能重写文件名与部署前缀；外置原始目录和生产构建两种路径都验收。生产返回 `application/wasm`，HTTP 失败、HTML 错页、损坏文件和错误 MIME 均单独测试。[流式实例化要求](https://developer.mozilla.org/en-US/docs/WebAssembly/Reference/JavaScript_interface/instantiateStreaming_static)
 4. 门面不调用 `instantiateStreaming`：先完成 HTTP、MIME、长度与摘要检查，再将已验证字节交给 glue。网络、响应体或编译失败保留明确错误，不能绕过 CSP、忽略 HTTP 状态或降级接受错误 MIME。
+
+   MIME 的 type/subtype 按 ASCII 大小写不敏感比较，接受 `Application/Wasm` 等与 `application/wasm` 等价的写法；分号后的参数不影响类型比较，资源长度及摘要校验仍须通过。
 5. 原生 ESM 静态站、Rslib/Rspack 与 Vite 的独立消费端都安装真实 tarball，验证根路径、嵌套路径和资源哈希；另以真实跨源服务验证显式资源 URL。开发服务器成功不能替代生产构建。[Vite 静态 URL](https://vite.dev/guide/assets#new-url-url-import-meta-url)、[Rspack 资源模块](https://rspack.dev/guide/features/asset-module)
 6. TypeScript `Bundler` 模式验证浏览器声明，SSR 场景另做 `NodeNext` 导入检查；生成声明不得引用未分发文件或 Node 原生内部类型。不靠 `skipLibCheck` 遮蔽错误。
 
