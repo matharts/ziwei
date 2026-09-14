@@ -1,6 +1,6 @@
 # 七个原生候选平台：宿主、构建与验收矩阵
 
-当前状态：2026-09-14，提交 `be772f9` 已将固定源码重建 pnpm 接入 ppc64le 日常候选 CI：[候选 CI](https://github.com/matharts/ziwei/actions/runs/34776793193)的 14 项任务与[常规 CI](https://github.com/matharts/ziwei/actions/runs/34776793142)的 21 项任务全部通过。ppc64le 使用本轮重建客户端，s390x 保持官方客户端，两架构双 Node／双客户端共 32 个消费场景均通过，下载后批次和摘要已核对。实现已推送临时分支，尚未合并或发布。官方二进制的启动故障保留在手动诊断中，不声称上游已修复。历史证据与实验边界见下文；当前范围以本页平台矩阵为准，仿真不替代真机验收。现有八目标结论沿用 [Node 分发设计](../architecture/node-distribution-proposal.md)。
+当前状态：2026-09-14，提交 `be772f9` 已将固定源码重建 pnpm 接入 ppc64le 日常候选 CI：[候选 CI](https://github.com/matharts/ziwei/actions/runs/34776793193)的 14 项任务与[常规 CI](https://github.com/matharts/ziwei/actions/runs/34776793142)的 21 项任务全部通过。ppc64le 使用本轮重建客户端，s390x 保持官方客户端，两架构双 Node／双客户端共 32 个消费场景均通过，下载后批次和摘要已核对。该实现已通过 PR #350 合并到 `main`（合并提交 `6ab3dc8`），尚未发布。官方二进制的启动故障保留在手动诊断中，不声称上游已修复。历史证据与实验边界见下文；当前范围以本页平台矩阵为准，仿真不替代真机验收。现有八目标结论沿用 [Node 分发设计](../architecture/node-distribution-proposal.md)。
 
 候选实现包含 [静态审计](../../packages/ziwei/tools/compatibility.ts)、[候选封存与消费](../../packages/ziwei/tools/candidate.ts)、[仿真控制器](../../packages/ziwei/tools/candidate-runtime.ts) 和独立的[候选 CI](../../.github/workflows/native-candidates.yml)。不改正式目标 manifest、依赖或公开 API，不安装本机 SDK、虚拟机或设备工具，不申请云资源，不发布。下文的实施路径与工期是项目建议，不是上游支持承诺。
 
@@ -97,7 +97,7 @@ mise run diagnose:pnpm -- --output <新的结果目录>
 
 补充静态对照：原故障点前的 40 字节指令片段在重建文件中唯一匹配。原 ELF `0x252d9e0` 的异常调用，对应重建 ELF `0x2521f20` 调用 `0xd1d940`；后者符号为 `plt_call.gettid@@GLIBC_2.30`。这与 [Rust 1.97 的 gettid 兼容路径](https://github.com/rust-lang/rust/blob/1.97.0/library/std/src/sys/thread/unix.rs#L333)及 [PowerPC 的系统调用号 207](https://github.com/torvalds/linux/blob/v6.17/arch/powerpc/kernel/syscalls/syscall.tbl#L267)一致。定位已收敛到该外部发布产物的启动调用，但尚未用最小链接实验区分 GNU linker、sysroot 和其他构建因素；不将整个构建链对照说成某条编译器补丁的因果证明。
 
-上述隔离验证完成后，用户确认正式维护 ppc64le 候选 CI 的源码重建客户端，维护与恢复策略见上节。未向上游发 Issue、发布工具产物或合并分支。此实验也不证明 POWER 真机、低于当前 glibc 的环境或其他候选平台已获支持。
+上述隔离验证完成后，用户确认正式维护 ppc64le 候选 CI 的源码重建客户端，维护与恢复策略见上节。当时未向上游发 Issue、发布工具产物或合并分支。此实验也不证明 POWER 真机、低于当前 glibc 的环境或其他候选平台已获支持。
 
 **应按真实调用方划分交付物，不把七个 Rust triple 都等同于七个 Node npm 平台。**
 
