@@ -1,5 +1,5 @@
 [tools]
-lefthook = "2.1.12"
+lefthook = "2.1.14"
 rust = "1.98.1"
 node = "24.21.0"
 # Only the macOS x64 npm backend needs pnpm's reviewed native-binary setup script.
