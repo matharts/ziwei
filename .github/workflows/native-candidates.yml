@@ -187,7 +187,7 @@ jobs:
           path: target/pnpm-client
       # Privilege is limited to binfmt registration on this disposable runner.
       # The actual consumer containers have no network, no capabilities and read-only inputs.
-      - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4
         with:
           image: tonistiigi/binfmt@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0
           platforms: ppc64le,s390x
