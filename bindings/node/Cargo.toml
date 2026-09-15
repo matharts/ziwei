@@ -17,7 +17,7 @@ doctest = false
 
 [dependencies]
 ziwei = { path = "../../crates/ziwei" }
-napi = { version = "=3.12.3", default-features = false, features = ["napi8"] }
+napi = { version = "=3.12.4", default-features = false, features = ["napi8"] }
 napi-derive = "=3.6.5"
 
 [build-dependencies]
