@@ -1,0 +1,50 @@
+{
+  "id": "natal.jia-zi-fire-six.1984-01-06",
+  "contractVersion": "v1",
+  "scenario": "construct-chart",
+  "input": {
+    "kind": "Birth",
+    "gender": "Male",
+    "birthYear": 1984,
+    "birthMonth": 1,
+    "birthDay": 6,
+    "birthHour": "Zi"
+  },
+  "expected": {
+    "yearPillar": { "stem": "Jia", "branch": "Zi" },
+    "fiveElementBureau": "FireSix",
+    "mingBranch": "Yin",
+    "shenBranch": "Yin",
+    "originBranch": "Xu",
+    "ziweiBranch": "Yin",
+    "tianfuBranch": "Yin"
+  },
+  "queries": [
+    {
+      "kind": "star-branch",
+      "star": "ZiWei",
+      "expectedBranch": "Yin"
+    }
+  ],
+  "provenance": {
+    "sources": [
+      {
+        "path": "../../crates/ziwei/tests/fixtures/README.md",
+        "section": "固定规则样例"
+      },
+      {
+        "path": "../../CONTEXT.md",
+        "section": "输入与校验; 核心不变量"
+      },
+      {
+        "path": "../../docs/architecture/v1-decision-map.md",
+        "section": "D-214～D-224"
+      }
+    ],
+    "derivation": "1984 年的数字农历年柱为甲子。正月子时使命宫与身宫同在寅；甲干来因宫固定映射至戌。命宫丙寅纳音为火，故为火六局。初六除以局数六得商一、补数零，紫微留在寅；该样例按寅申轴对称定位天府，亦在寅。规则与算步取自固定规则样例的手算说明，不读取 Rust 引擎输出。"
+  },
+  "evidence": {
+    "independentOfImplementationOutput": true,
+    "externalReview": "not-reviewed"
+  }
+}

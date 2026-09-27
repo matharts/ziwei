@@ -1,25 +1,29 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import type { ExecFileSyncOptionsWithStringEncoding } from "node:child_process";
-import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { test } from "@rstest/core";
 
-test("the packed package loads from an independent consumer without install scripts", (t) => {
-  // Exercise paths containing a tilde, as in Windows runner short user names.
-  const directory = mkdtempSync(join(tmpdir(), "ziwei-node~consumer-"));
+test("the packed TypeScript package is a clean Node consumer with no native runtime files", (t) => {
+  const directory = mkdtempSync(join(tmpdir(), "ziwei-ts~consumer-"));
   t.onTestFinished(() => rmSync(directory, { recursive: true, force: true }));
   const packageRoot = fileURLToPath(new URL("..", import.meta.url));
-  const tarball = join(directory, "ziwei.tgz");
   const options: ExecFileSyncOptionsWithStringEncoding = {
     encoding: "utf8",
     timeout: 30_000,
     stdio: ["ignore", "pipe", "pipe"],
   };
-  execFileSync("pnpm", ["pack", "--out", tarball], { ...options, cwd: packageRoot });
+  const packed = JSON.parse(
+    execFileSync("npm", ["pack", "--json", "--pack-destination", directory], {
+      ...options,
+      cwd: packageRoot,
+    }),
+  ) as [{ filename: string }];
+  const tarball = join(directory, packed[0].filename);
   writeFileSync(
     join(directory, "package.json"),
     JSON.stringify({
@@ -29,61 +33,67 @@ test("the packed package loads from an independent consumer without install scri
       dependencies: { "@matharts/ziwei": "file:./ziwei.tgz" },
     }),
   );
-  // No source build, registry dependency, or install lifecycle script is needed.
-  execFileSync("pnpm", ["install", "--offline", "--ignore-scripts"], {
-    ...options,
-    cwd: directory,
-  });
+  execFileSync(
+    "npm",
+    ["install", "--offline", "--ignore-scripts", "--no-audit", "--no-fund", tarball],
+    {
+      ...options,
+      cwd: directory,
+    },
+  );
+
   const installedPackage = join(directory, "node_modules", "@matharts", "ziwei");
   const manifest = JSON.parse(readFileSync(join(installedPackage, "package.json"), "utf8"));
   assert.equal(manifest.name, "@matharts/ziwei");
-  assert.deepEqual(Object.keys(manifest.exports), ["."]);
-  assert.equal(manifest.dependencies, undefined);
-  // Consumers receive only distribution assets, never Rust/TS sources or workspace tooling.
-  const allowedFiles = new Set([
-    "dist",
-    "native",
-    "README.md",
-    "AGENTS.md",
-    "package.json",
-    "LICENSE",
-  ]);
+  assert.equal(manifest.private, true);
   assert.equal(manifest.type, "module");
   assert.equal(manifest.engines.node, ">=24.15.0");
+  assert.equal(manifest.dependencies, undefined);
+  assert.equal(manifest.optionalDependencies, undefined);
+  assert.equal(manifest.napi, undefined);
+  assert.deepEqual(Object.keys(manifest.exports), ["."]);
   assert.deepEqual(manifest.exports["."], {
     types: "./dist/index.d.ts",
     default: "./dist/index.js",
   });
+  const allowedFiles = new Set(["dist", "README.md", "AGENTS.md", "package.json", "LICENSE"]);
   for (const entry of readdirSync(installedPackage)) assert.ok(allowedFiles.has(entry), entry);
-  // The private workspace dependency is embedded in both JS and declarations.
   assert.deepEqual(
     readdirSync(join(installedPackage, "dist"), { recursive: true, encoding: "utf8" }).sort(),
     ["index.d.ts", "index.js"],
   );
   for (const file of ["index.js", "index.d.ts"]) {
-    assert.doesNotMatch(
-      readFileSync(join(installedPackage, "dist", file), "utf8"),
-      /@matharts\/ziwei-shared|ziwei-shared\/src|ziwei\/src\/shared/,
-    );
+    const contents = readFileSync(join(installedPackage, "dist", file), "utf8");
+    assert.doesNotMatch(contents, /@matharts\/ziwei-shared|ziwei-shared\/src/);
+    assert.doesNotMatch(contents, /native\/binding|\.node\b|napi-rs/);
   }
   assert.doesNotMatch(
-    readFileSync(join(installedPackage, "dist", "index.d.ts"), "utf8"),
-    /projectProfile|projectStar|projectPalace|projectLocatedStar|projectPalaceTransformation|StarTuple|PalaceTuple/,
+    readFileSync(join(installedPackage, "dist", "index.js"), "utf8"),
+    /from ["']node:|import\(["']node:/,
   );
+
   const consumerSource = `
-    import { Ziwei, Branch, StarName, type Natal, type NatalSnapshot, type DecadeYear } from '@matharts/ziwei';
+    import { Ziwei, Branch, StarName, type Natal, type NatalSnapshot } from '@matharts/ziwei';
     const natal: Natal = Ziwei.fromBirth({ gender: 1, birthYear: 1984, birthMonth: 1, birthDay: 6, birthHour: Branch.Zi });
     const snapshot: NatalSnapshot = natal.toJSON();
-    const years: readonly DecadeYear[] = natal.decadeYears(11);
-    const star = natal.palaceStar(Branch.Yin, StarName.ZiWei);
-    if (star !== null) { const name: string = star.nameHant; void name; }
-    void snapshot; void years;
+    const star = natal.star(StarName.WuQu);
+    const name: string = star.nameHans;
+    void snapshot; void name;
   `;
   const esmSource = join(directory, "consumer.ts");
   const cjsSource = join(directory, "consumer.cts");
+  const workerSource = join(directory, "worker.mjs");
   writeFileSync(esmSource, consumerSource);
   writeFileSync(cjsSource, consumerSource);
-  // Resolve declarations from the installed tarball, not the source package's self-reference.
+  writeFileSync(
+    workerSource,
+    `
+      import { parentPort } from 'node:worker_threads';
+      import { Ziwei, Branch } from '@matharts/ziwei';
+      const natal = Ziwei.fromBirth({ gender: 1, birthYear: 1984, birthMonth: 1, birthDay: 6, birthHour: Branch.Zi });
+      parentPort.postMessage({ zodiac: natal.zodiac, bureau: natal.fiveElementBureau, palaces: natal.palaces.length });
+    `,
+  );
   execFileSync(
     "pnpm",
     [
@@ -103,61 +113,40 @@ test("the packed package loads from an independent consumer without install scri
     ],
     { ...options, cwd: packageRoot },
   );
+
   const result = execFileSync(
     process.execPath,
     [
-      "--expose-gc",
       "--input-type=module",
       "--eval",
       `
-    import assert from 'node:assert/strict';
-    import { createRequire } from 'node:module';
-    import { Ziwei, ZiweiError, Branch } from '@matharts/ziwei';
-    const cjs = createRequire(import.meta.url)('@matharts/ziwei');
-    assert.equal(cjs.ZiweiError, ZiweiError);
-    let profile;
-    let palaces;
-    let located;
-    let years;
-    let snapshot;
-    for (let i = 0; i < 5000; i++) {
-      const natal = Ziwei.fromBirth({ gender: 1, birthYear: 1984, birthMonth: 1, birthDay: 6, birthHour: 0 });
-      assert.equal(natal.zodiac, 'Rat');
-      assert.equal(natal.fiveElementBureau, 6);
-      profile = natal.profile;
-      palaces = natal.palaces;
-      located = natal.birthTransformations();
-      years = natal.decadeYears(11);
-      snapshot = natal.toJSON();
-      assert.equal(natal.star('WuQu').birthTransformation, 'C');
-      assert.equal(natal.yearlyPalaceByName(1, 9, 'Ming').branch, 0);
-      assert.equal(natal.palaces, palaces);
-      if (i % 100 === 0) global.gc();
-    }
-    global.gc();
-    assert.equal(profile.birthStem, 0);
-    assert.equal(profile.birthYear, 1984);
-    assert.equal(palaces.length, 12);
-    assert.equal(palaces[0].stars[0].name, 'ZiWei');
-    assert.ok(Object.isFrozen(palaces[0].stars[0].selfTransformations));
-    assert.equal(located[0].star.name, 'LianZhen');
-    assert.ok(Object.isFrozen(located[0].palace.stars));
-    assert.equal(years[9].year, 2108);
-    assert.equal(snapshot.originPalaceBranch, 10);
-    assert.equal(Branch.zodiac(0), 'Rat');
-    assert.equal(cjs.Branch, Branch);
-    const queried = cjs.Ziwei.fromParameters({ gender: 1, birthStem: 0, birthBranch: 0, birthMonth: 1, ziweiBranch: 2, birthHour: 0 });
-    assert.equal(queried.palaceStar(2, 'WuQu'), null);
-    assert.equal(queried.decadeYears(0)[0].year, null);
-    assert.throws(() => queried.yearly(0, 10), error => error instanceof ZiweiError && error.code === 'INVALID_YEARLY_INDEX');
-    assert.equal(cjs.Ziwei.fromParameters({ gender: 1, birthStem: 0, birthBranch: 0, birthMonth: 1, ziweiBranch: 2, birthHour: 0 }).palaces[0].name, 'Ming');
-    assert.throws(() => cjs.Ziwei.fromBirth(null), ZiweiError);
-    assert.throws(() => Branch.yinYang(99), ZiweiError);
-    assert.throws(() => Ziwei.fromBirth({ gender: 1, birthYear: 1984, birthMonth: 13, birthDay: 1, birthHour: 0 }), ZiweiError);
-    console.log('consumer-ok');
-  `,
+        import assert from 'node:assert/strict';
+        import { createRequire } from 'node:module';
+        import { Worker } from 'node:worker_threads';
+        import { Ziwei, ZiweiError, Branch, StarName } from '@matharts/ziwei';
+        const require = createRequire(import.meta.url);
+        const cjs = require('@matharts/ziwei');
+        assert.equal(cjs.ZiweiError, ZiweiError);
+        assert.equal(cjs.Branch, Branch);
+        const natal = Ziwei.fromBirth({ gender: 1, birthYear: 1984, birthMonth: 1, birthDay: 6, birthHour: Branch.Zi });
+        assert.equal(natal.zodiac, 'Rat');
+        assert.equal(natal.fiveElementBureau, 6);
+        assert.equal(natal.mingPalace().branch, Branch.Yin);
+        assert.equal(natal.star(StarName.WuQu).birthTransformation, 'C');
+        assert.equal(natal.decadeYears(0)[0].year, 1989);
+        assert.equal(cjs.Ziwei.fromParameters({ gender: 1, birthStem: 0, birthBranch: 0, birthMonth: 1, ziweiBranch: 2, birthHour: 0 }).profile.birthYear, null);
+        assert.throws(() => Ziwei.fromBirth({ gender: 1, birthYear: 1984, birthMonth: 13, birthDay: 1, birthHour: 0 }), ZiweiError);
+        const worker = new Worker(new URL('./worker.mjs', import.meta.url), { execArgv: [] });
+        const workerResult = await new Promise((resolve, reject) => {
+          worker.once('message', resolve);
+          worker.once('error', reject);
+        });
+        await worker.terminate();
+        assert.deepEqual(workerResult, { zodiac: 'Rat', bureau: 6, palaces: 12 });
+        console.log('typescript-consumer-ok');
+      `,
     ],
     { ...options, cwd: directory },
   );
-  assert.match(result, /consumer-ok/);
+  assert.match(result, /typescript-consumer-ok/);
 });

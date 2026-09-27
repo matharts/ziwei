@@ -11,7 +11,7 @@ export type Runtime = {
   node: string;
   v8: string;
   execArgv: string[];
-  nativeLibrary: string;
+  implementation: "typescript";
   [key: string]: unknown;
 };
 export type StartRow = { type: "start"; protocol: Protocol; runtime: Runtime };
@@ -74,6 +74,7 @@ export function parseRecord(raw: string, plan: Protocol) {
   assert.deepEqual(header.protocol, plan, "基准合同不一致");
   assert.equal(header.runtime.node, process.version, "Node 运行时不一致");
   assert.equal(header.runtime.v8, process.versions.v8, "V8 运行时不一致");
+  assert.equal(header.runtime.implementation, "typescript", "基准不是纯 TypeScript 实现");
   assert.ok(header.runtime.execArgv.includes("--expose-gc"));
   const complete = lines.at(-1);
   assert.ok(complete?.type === "complete");

@@ -1,6 +1,6 @@
 # 建盘与查询基准
 
-当前有两套 Rust 负载和一套独立 Node 负载：下文首先说明 construction-120，它仅测 `Ziwei::from_birth` 和 `Ziwei::from_parameters`；随后说明 Rust 混合输入与读路径套件。Node 公开 API 使用独立的 [ziwei-node-public-512](../../packages/ziwei/bench/README.md)。不能用建盘结果宣称查询延迟，也不能将不同套件互作基线。
+当前有两套 Rust 负载和一套独立 Node 负载：下文首先说明 construction-120，它仅测 `Ziwei::from_birth` 和 `Ziwei::from_parameters`；随后说明 Rust 混合输入与读路径套件。Node 公开 API 使用独立的 [ziwei-typescript-node-public-512](../../packages/ziwei/bench/README.md)，针对纯 TypeScript ESM 包。不能用建盘结果宣称查询延迟，也不能将不同套件或不同实现互作基线。
 
 当前生产设计为紧凑 Star + ArrayVec + 私有星曜位置索引，实现与取舍见 [包架构](../architecture/rust-package-design.md)。性能结论应按本文约定记录负载、源码与环境；不同实现或不同负载的历史结果不能作为当前正式基线。
 
@@ -10,7 +10,7 @@
 
 ## 命令
 
-以下命令及正式基线机制仅适用于 Rust 两套负载。Node 使用 `mise run benchmark:node:smoke`、`mise run benchmark:node`；`mise run check:node:bench` 验证 CLI、记录合同和真实冒烟，不经过 Rust xtask。Node 记录始终为 smoke／provisional，没有登记正式基线或性能门禁的入口。
+以下命令及正式基线机制仅适用于 Rust 两套负载。Node 使用 `mise run benchmark:node:smoke`、`mise run benchmark:node`；`mise run check:node:bench` 验证 CLI、记录合同和真实冒烟，不经过 Rust xtask。Node 基准构建当前 TypeScript 包，并记录 Node、pnpm、TypeScript 工具链及 ESM 产物指纹；记录始终为 smoke／provisional，没有登记正式基线或性能门禁的入口。
 
 ```sh
 mise run benchmark:smoke
@@ -21,7 +21,7 @@ mise run benchmark:calibrate -- --runs 20
 
 有效报告 JSON 在控制台写入及刷新成功后最后创建；stdout 管道关闭等写入错误按正常错误处理并留证，不通过 panic 退出。环境复核及正式基线的 Git 复核命令也进入 `commands`，以 `verify` 阶段保存退出码和原始 stdout／stderr；预检仍在记录目录创建前进行。
 
-`suite_id`、`suite_version`、`contract_fingerprint` 固定比较身份；指纹涵盖语料、计时实现、记录器和 Cargo 配置。源码另有指纹，所以允许在相同测量合同下对比不同实现。变更语料或计时方式时应递增套件版本；这不是排盘规则版本。
+`suite_id`、`suite_version`、`contract_fingerprint` 固定比较身份；Rust 指纹涵盖语料、计时实现、记录器和 Cargo 配置。Node 指纹则覆盖语料、计时与记录代码；产品源码和构建产物另有指纹。变更语料或计时方式时应递增套件版本；这不是排盘规则版本。
 
 两套记录器由独立 Rust 开发工具 `tools/xtask` 实现，通过上述 mise 任务调用。`mise run check:tools` 执行格式、Clippy 和快速测试，覆盖统计、CSV 合同、基线比较、失败留证及命令行；默认不运行真实基准负载。`mise run check:tools:e2e` 单独串行运行两套真实冒烟，并校验输出合同；Unix 平台额外以关闭 stdout 和复核命令非零退出验证失败留证。这些故障测试同样默认忽略，不用于性能结论。
 

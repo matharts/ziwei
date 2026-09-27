@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>输入农历出生资料，查询宫位、星曜与四化。</strong><br>
-  为 Rust 应用提供不可变的结构化命盘。
+  为 Rust、Node.js 与浏览器应用提供不可变的结构化命盘。
 </p>
 
 <p align="center">
@@ -29,7 +29,7 @@
 > [!NOTE]
 > **开发中** · 当前通过 Git 接入开发版本，接口与功能仍可能调整。
 
-Rust 接入从下方安装与示例开始；Node.js / TypeScript 接入见 [Node 包说明](packages/ziwei/README.md)。当前实现与待交付内容见[范围](#范围)，领域、架构与开发文档见[阅读指南](#阅读指南)。
+Rust 接入从下方安装与示例开始；Node.js / 浏览器 TypeScript 接入见 [TypeScript 包说明](packages/ziwei/README.md)。当前实现与待交付内容见[范围](#范围)，领域、架构与开发文档见[阅读指南](#阅读指南)。
 
 ## 安装
 
@@ -124,7 +124,7 @@ cargo run --quiet -p ziwei --example inspect
 | 输入归一化 | 历法换算、闰月处理、时区、真太阳时与真实日期校验由调用方在建盘前完成；月份与日期类型只校验数值范围。完整边界见 [领域规则](CONTEXT.md)。 |
 | 数组顺序 | 命盘与期间宫职数组按寅至丑排列，`Branch::ALL` 按子至亥排列，不能直接混用下标；定位时优先使用按地支、宫职或星曜查询的方法。 |
 | 本命事实与期间宫职 | 按期间宫职定位得到的 `Palace` 仍保存本命宫职、宫干与星曜。读取整盘期间宫职用 `decade()` / `yearly()`；`decade_by_branch()` / `yearly_by_branch()` 返回单宫的独立 `Decade` / `Yearly` 值及对应期间名称。 |
-| 所有权与计算 | Rust 本命盘保持不可变，宫位与星曜查询借用当前命盘；大限与流年按需计算。Node 输出为独立只读数据，属性复用与查询结果的引用约定见 [Node 所有权合同](docs/architecture/node-api-design.md#6-所有权只读与快照复用)。 |
+| 所有权与计算 | Rust 本命盘保持不可变，宫位与星曜查询借用当前命盘；大限与流年按需计算。TypeScript 输出为独立只读数据，属性复用与查询结果的引用约定见 [TypeScript 包说明](packages/ziwei/README.md)。 |
 
 ## 进阶用法
 
@@ -216,9 +216,8 @@ fn main() -> Result<(), ziwei::ZiweiError> {
 ## 范围
 
 - **已支持**：十八星安星、宫位与星曜查询、生年四化、自化、宫干四化、大限与流年。
-- **Node.js / TypeScript**：[适配包](packages/ziwei/README.md)已实现已确认的完整 API：两类建盘、本命数据与查询、四化、按需大限／流年、身份派生方法、结构化错误及 JSON 输出；首批八种运行环境通过[分发验收](docs/architecture/node-distribution-proposal.md)，尚未发布。
-- **Wasm／浏览器**：独立 [适配包](packages/ziwei-wasm/README.md)提供显式初始化与同步建盘／查询，已通过本机三引擎和独立安装包测试，尚未发布；不据此外推品牌浏览器或移动设备支持。
-- **后续交付**：另外七个原生候选目标、浏览器部署与设备矩阵、剩余最低系统验收及发布流程；进度见[跨平台交付计划](docs/architecture/cross-platform-delivery-plan.md)。
+- **Node.js / 浏览器 TypeScript**：[同一个 `@matharts/ziwei` 包](packages/ziwei/README.md)独立实现两类建盘、本命数据与查询、四化、按需大限／流年、身份派生方法、结构化错误及 JSON 输出；无需原生扩展或 Wasm，尚未发布。
+- **后续交付**：浏览器部署与设备矩阵、最低系统验收及发布流程；实现边界与验证状态见[实现状态表](docs/architecture/implementations.md)。
 - **当前不包含**：解释与断语、连续飞化、流月、流日、流时。
 
 <details>
@@ -234,10 +233,10 @@ fn main() -> Result<(), ziwei::ZiweiError> {
 
 | 你要做什么 | 从哪里开始 |
 | --- | --- |
-| 接入 Rust 或 Node | 本页[使用示例](#使用)；[Node 包说明](packages/ziwei/README.md) |
+| 接入 Rust、Node 或浏览器 | 本页[使用示例](#使用)；[TypeScript 包说明](packages/ziwei/README.md) |
 | 理解领域术语与规则 | [CONTEXT.md](CONTEXT.md)：输入、本命事实、限运与核心不变量 |
-| 阅读核心与绑定源码 | [架构阅读路径](docs/architecture/rust-package-design.md#阅读路径)：从公开入口跟到计算与查询 |
-| 核对 Node 的类型、查询与对象行为 | [Node 适配设计](docs/architecture/node-api-design.md#阅读路径) |
+| 阅读 Rust 与 TypeScript 实现 | [Rust 架构阅读路径](docs/architecture/rust-package-design.md#阅读路径)；[TypeScript 包说明](packages/ziwei/README.md) |
+| 核对 TypeScript 的类型、查询与对象行为 | [领域合同](docs/architecture/domain-contract.md)与[实现状态表](docs/architecture/implementations.md) |
 | 修改项目并验证 | [仓库指南](AGENTS.md)与[工程验证](docs/agents/engineering.md)；性能任务另见[基准规范](docs/engineering/benchmarks.md) |
 | 追溯设计原因与修订 | [V1 决策表](docs/architecture/v1-decision-map.md)：按修订关系阅读历史条目 |
 

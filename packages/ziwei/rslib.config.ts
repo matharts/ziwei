@@ -14,9 +14,8 @@ export default defineConfig({
     },
   ],
   output: {
-    target: "node",
+    // One platform-neutral ESM entry serves Node, browsers, and module Workers.
+    target: "web",
     distPath: { root: "./dist" },
-    // The generated loader and .node binary remain outside the JS build.
-    externals: { "../native/binding.cjs": "module ../native/binding.cjs" },
   },
 });

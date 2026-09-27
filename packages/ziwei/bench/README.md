@@ -1,6 +1,6 @@
 # Node 公开 API 基准
 
-独立套件 `ziwei-node-public-512`，version 1。只从 `@matharts/ziwei` 包根导入，不读取私有原生入口，也不依赖 `target/` 下的临时脚本。运行器先构建当前本机 release 原生包与 TypeScript 门面，再在独立 Node 进程中测量。
+独立套件 `ziwei-typescript-node-public-512`，version 2。只从 `@matharts/ziwei` 包根导入，在 Node 中直接测量纯 TypeScript ESM 实现，不依赖原生模块或 `target/` 下的临时脚本。运行器先构建当前包，再在独立 Node 进程中测量。
 
 ## 运行方式
 
@@ -16,7 +16,7 @@ mise run check:node:bench
 
 ### 运行时与输出目录
 
-使用上面的 mise 任务选择项目工具链，并通过 `pnpm exec` 校验开发版本。运行器复用 `mise run build:node`，显式用 `--tool node@<当前版本>` 保持构建与计时的 Node 一致；计时进程仍由 `process.execPath` 启动。
+使用上面的 mise 任务选择项目工具链，并通过 `pnpm exec` 校验 TypeScript 版本。运行器复用 `mise run build:node:ts`，显式用 `--tool node@<当前版本>` 保持构建与计时的 Node 一致；计时进程仍由 `process.execPath` 启动。
 
 报告保存实际 Node/V8 和 mise 版本，不将不同运行时的结果视为同一环境；不改全局 PATH 或 Node 配置。复杂输出路径使用仓库根 `mise exec -- pnpm exec -- node packages/ziwei/bench/run.ts --smoke --output <新目录>`，避免普通任务的 shell 转义。
 
@@ -34,7 +34,7 @@ mise run benchmark:node:smoke -- --output /tmp/ziwei-node-smoke-new
 
 | 操作 | 完整模式每批次数 | 范围 |
 | --- | ---: | --- |
-| `fromBirth` / `fromParameters` | 各 16,384 | 输入检查、跨语言调用、Rust 建盘与 JS 句柄包装；不读取宫位 |
+| `fromBirth` / `fromParameters` | 各 16,384 | 输入检查与 TypeScript 建盘；不读取宫位 |
 | `birthAndFirstPalaces` | 1,024 | 建盘并首次生成、冻结十二宫快照 |
 | `birthAndToJSON` | 1,024 | 建盘并生成完整 JSON 对象 |
 | `birthAndStringify` | 1,024 | 建盘并序列化为 JSON 字符串 |
@@ -51,7 +51,7 @@ mise run benchmark:node:smoke -- --output /tmp/ziwei-node-smoke-new
 
 预建读取语料包含 1,024 张盘，在计时前检查十二宫、十八星与宫位数组冻结，另检查甲子固定命例的武曲化科。所有预建盘均已读取 `palaces`，查询结果本身不预先缓存；这不模拟从未读取宫位的冷查询。功能正确性仍由独立包测试及核心命例测试验收，不能由这些轻量检查替代。
 
-每批使用 `process.hrtime.bigint()`，保存正整数 `elapsedNs` 与准确的 `operations`。计时循环包含 JS 回调、索引选择和每次结果的全局逃逸写入，不扣除“空循环开销”。日志、主动 GC 与批间让出事件循环不在计时窗口中；窗口内触发的 GC 成本会计入，但不保证原生 finalizer 在本批完成。因此纯建盘不能等同于 Rust 的确定性构造与析构全生命周期。
+每批使用 `process.hrtime.bigint()`，保存正整数 `elapsedNs` 与准确的 `operations`。计时循环包含 JS 回调、索引选择和每次结果的全局逃逸写入，不扣除“空循环开销”。日志、主动 GC 与批间让出事件循环不在计时窗口中；窗口内触发的 GC 成本会计入。结果反映 TypeScript/JavaScript 运行时与该公开 API 的整体成本，不能与 Rust 直接调用基准互作基线。
 
 ### 指标与资源保护
 
@@ -63,17 +63,17 @@ mise run benchmark:node:smoke -- --output /tmp/ziwei-node-smoke-new
 
 - `run.jsonl`：原始开始行、逐批样本、完整结束行；`run.stderr.log` 保存原始错误。
 
-- `build.stdout.log` / `build.stderr.log`：构建原始输出；另存 mise、pnpm、Rust 版本命令输出。
+- `build.stdout.log` / `build.stderr.log`：构建原始输出；报告另存 mise、pnpm 版本命令输出，并从工作区已安装的 TypeScript 包元数据读取版本。
 
 - `record.json`：校验全部行、顺序、计数、整数范围、语料及运行时身份后生成；含协议、原始样本、统计、Node/V8/OS/CPU、进程前后内存、负载、工具链、Git revision/dirty 和命令状态。
 
 ### 指纹与复核
 
-- `fingerprints.source` 覆盖引擎／绑定／TS 源码、构建配置（含 `rslib.config.ts` 与定义构建步骤与参数的 `mise.toml`）及锁文件；`artifact` 覆盖实际本机原生库、加载器、JS、声明和包入口；`contract` 覆盖三个基准实现文件。各自保留排序后的逐文件 SHA-256 清单与整体哈希。
+- `fingerprints.source` 覆盖 TypeScript 引擎与共享源码、包构建配置（含 `rslib.config.ts`、`mise.toml`）及锁文件；`artifact` 覆盖 `dist/` 中的 ESM 产物与包入口；`contract` 覆盖三个基准实现文件。各自保留排序后的逐文件 SHA-256 清单与整体哈希。
 
-- 构建后复核源码，测量后再次复核源码、产物和合同；验证实际加载的 `.node` 文件在产物清单中。拒绝 `NAPI_RS_NATIVE_LIBRARY_PATH` 外部替换，不复用未构建的包作为本次结果。
+- 构建后复核源码，测量后再次复核源码、产物和合同；记录运行时实现标记，并验证产物指纹包含 ESM 包入口。不复用未构建的包作为本次结果。
 
-- 相关 Node／Rust／Cargo 编译环境覆盖项只存变量名与值的哈希，不复制原文。Git 元数据不可用时为 `null`，不假装干净工作树。日志、路径及错误本身仍可能敏感，分享前需要检查。
+- 相关 Node 运行时环境覆盖项只存变量名与值的哈希，不复制原文。Git 元数据不可用时为 `null`，不假装干净工作树。日志、路径及错误本身仍可能敏感，分享前需要检查。
 
 ### 失败处理
 
@@ -97,6 +97,6 @@ mise run benchmark:node:smoke -- --output /tmp/ziwei-node-smoke-new
 
 - `bench.test.ts`：由 Rstest 的 `node-bench` 项目运行 CLI 与记录合同；包含一次真实包冒烟，以及隔离临时包中的失败测试，不混入 `ziwei` 项目的 `test/*.test.ts` 功能测试。任务迁移只改变构建调用与工具追溯，不改变测量协议。
 
-CI 只在 `native-tests` 的 Linux 作业、包功能测试之后串行运行 `check:node:bench`；该命令包含真实 smoke，不再增加重复 smoke 步骤，不在 macOS／Windows 矩阵重复计时。测试中的故障进程不是性能样本。`bench/` 不在 npm `files` 白名单中，不随包发布；已有独立打包消费端测试验证这一边界。
+CI 在 Linux 作业、包功能测试之后串行运行 `check:node:bench`；该命令包含真实 smoke，不再增加重复 smoke 步骤，不在 macOS／Windows 矩阵重复计时。测试中的故障进程不是性能样本。`bench/` 不在 npm `files` 白名单中，不随包发布；已有独立打包消费端测试验证这一边界。
 
 命令的本机通过与 CI 配置检查不代表远端 CI 已通过，也不证明其他 Node／OS／CPU／libc 组合的支持情况。

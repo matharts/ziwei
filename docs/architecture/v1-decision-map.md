@@ -336,6 +336,12 @@
 | --- | --- | --- |
 | D-271 | 仅为 ppc64le 日常候选 CI 使用固定源码重建的 pnpm 客户端，不修改 pnpm 源码、版本、开发工具或 Ziwei 发行包。独立 job 每轮按固定源码、锁文件与工具链重建；消费前核对构建凭据、配方、同 commit／run／attempt 和二进制摘要。s390x 与现有八目标路径不变，完整 npm／pnpm 双 Node 消费仍为必需门禁。旧官方产物故障留在手动诊断，不降级、跳过或伪造通过；不依赖旧实验 artifact 或跨 run 可执行缓存，不扩大平台支持。 | 2026-09-14 用户在隔离启动及完整消费对照通过后确认接入；实施和验收见[候选平台记录](../engineering/native-candidate-platforms.md#ppc64le-候选-ci-的源码重建客户端)。不授权合并或发布。 |
 
+## TypeScript 独立领域实现与 Wasm 退役
+
+| ID | 决策 | 状态 |
+| --- | --- | --- |
+| D-272 | 由 TypeScript 独立实现完整 V1 排盘与查询领域能力，直接替换现有 npm 包 `@matharts/ziwei` 并继续使用其包身份；不新增 `@matharts/ziwei-ts` 或仅转发的兼容包。TypeScript 实现须自行计算，不依赖 Rust/Wasm 运行规则。 | 2026-09-28 用户确认“取消 wasm，ts 自己实现”，选择先修订计划后要求并发执行；明确由 TypeScript 直接替换现有 `@matharts/ziwei`、不新增包。执行期间已删除 Rust Node 绑定及 Wasm 绑定／包源码；TypeScript 独立实现和完整验收仍在进行，未发布，未确认远端 CI 通过。D-267 的 Wasm／浏览器路线、D-268 的移动 WebView Wasm 路线与 D-269 的 Node／Wasm 双消费包共享方向由本决策取代；Android／OpenHarmony 原生绑定仍按 D-268 保持暂停。 |
+
 ## 暂缓决策
 
 | ID | 决策 | 状态 |

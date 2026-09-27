@@ -2,15 +2,15 @@
   "name": "@matharts/ziwei",
   "version": "1.0.0-dev.0",
   "private": true,
-  "description": "Node.js and TypeScript bindings for the ziwei Rust engine",
+  "description": "TypeScript Ziwei chart engine for Node.js and browsers",
   "license": "MIT",
   "files": [
     "dist",
-    "native",
     "AGENTS.md",
     "README.md"
   ],
   "type": "module",
+  "sideEffects": false,
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -22,22 +22,9 @@
   "devDependencies": {
     "@matharts/ziwei-shared": "workspace:*",
     "@microsoft/api-extractor": "catalog:",
-    "@napi-rs/cli": "catalog:",
     "@rslib/core": "catalog:",
+    "playwright": "catalog:",
     "typescript": "catalog:"
-  },
-  "napi": {
-    "binaryName": "ziwei-native",
-    "targets": [
-      "aarch64-apple-darwin",
-      "x86_64-apple-darwin",
-      "aarch64-pc-windows-msvc",
-      "x86_64-unknown-linux-gnu",
-      "aarch64-unknown-linux-gnu",
-      "x86_64-pc-windows-msvc",
-      "x86_64-unknown-linux-musl",
-      "aarch64-unknown-linux-musl"
-    ]
   },
   "engines": {
     "node": ">=24.15.0"

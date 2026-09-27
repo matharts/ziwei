@@ -7,12 +7,16 @@ license.workspace = true
 repository.workspace = true
 description = "A Rust library for Ziwei Doushu chart construction"
 readme = "../../README.md"
+exclude = ["tests/conformance.rs"] # Workspace conformance cases live outside this crate's tarball.
 keywords = ["ziwei", "doushu"]
 categories = ["algorithms"]
 autobenches = false
 
 [dependencies]
 arrayvec = { version = "0.7.8", default-features = false }
+
+[dev-dependencies]
+serde_json = "1"
 
 [[bench]]
 name = "construction"

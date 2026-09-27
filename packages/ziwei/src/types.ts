@@ -29,9 +29,9 @@ export type {
   PalaceTransformation,
 } from "@matharts/ziwei-shared";
 
-import * as native from "../native/binding.cjs";
+import * as engine from "./engine/index.js";
 
-const identities = native.identities();
+const identities = engine.identities();
 
 export const YinYang = Object.freeze({ Yin: 0, Yang: 1 } as const);
 export type YinYang = 0 | 1;
@@ -51,7 +51,7 @@ export const Gender = Object.freeze({
   Male: 1,
   yinYang(value: Gender): YinYang {
     arity(arguments.length, "value");
-    return unwrap(native.genderYinYang(value));
+    return unwrap(engine.genderYinYang(value));
   },
 } as const);
 
@@ -66,10 +66,10 @@ export const Stem = Object.freeze({
   Xin: 7,
   Ren: 8,
   Gui: 9,
-  ALL: Object.freeze(identities.stems),
+  ALL: Object.freeze(identities.stems) as readonly Stem[],
   yinYang(value: Stem): YinYang {
     arity(arguments.length, "value");
-    return unwrap(native.stemYinYang(value));
+    return unwrap(engine.stemYinYang(value));
   },
 } as const);
 export type Stem = SharedStem;
@@ -88,14 +88,14 @@ export const Branch = Object.freeze({
   You: 9,
   Xu: 10,
   Hai: 11,
-  ALL: Object.freeze(identities.branches),
+  ALL: Object.freeze(identities.branches) as readonly Branch[],
   yinYang(value: Branch): YinYang {
     arity(arguments.length, "value");
-    return unwrap(native.branchYinYang(value));
+    return unwrap(engine.branchYinYang(value));
   },
   zodiac(value: Branch): Zodiac {
     arity(arguments.length, "value");
-    return unwrap(native.branchZodiac(value));
+    return unwrap(engine.branchZodiac(value));
   },
 } as const);
 export type Branch = SharedBranch;

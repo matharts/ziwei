@@ -1,6 +1,6 @@
-# Rust 核心与宿主绑定的语义合同
+# 历史：Rust 核心与宿主绑定合同
 
-本文件冻结现有核心能保证的值域、顺序、缺失值、错误及所有权语义；它本身不定义 JSON 格式、TypeScript 类型或 C ABI。Node.js/TypeScript 的完整合同见 [Node 适配设计](node-api-design.md) 与 [设计声明](node-api/index.d.ts)（D-248～D-251）。D-253、D-255、D-256 已实现 [完整 Node API](../../packages/ziwei/README.md)：两类建盘、本命数据与查询、四化、按需限运、身份辅助与 `toJSON`；实际生成声明和完整设计逐项匹配。仍未发布，跨平台矩阵未完成验收。Wasm 实施应继续保持这里的核心语义，不能用宿主表示反向改写核心。
+本文件记录已退役 Rust 核心宿主绑定的历史合同，包括值域、顺序、缺失值、错误及 Rust 所有权语义；它不定义当前 JSON 格式或 TypeScript 类型。Rust Node/Wasm 绑定源码及 Wasm 包已从本次工作树删除。跨语言规范见[领域合同](domain-contract.md)，项目规则权威仍为 [`CONTEXT.md`](../../CONTEXT.md) 与已确认决策。旧 Node 适配设计与声明仅作历史参考；任何 Rust 批量输出都不能成为跨语言预期值来源。
 
 ## 输入边界
 
@@ -58,4 +58,4 @@ Node 阶段现已通过 D-251 选定五个对应变体的字符串码与 INVALID
 
 Rust 查询借用当前 `Natal`，不复制宫位、星曜或创建查询结果缓存。`Natal::star(StarName)` 和 `Natal::palace_by_star(StarName)` 分别返回唯一星曜及其所在宫位的借用；与可能查无此星的 `Palace::star` 不同，它们不返回 `Option`。绑定不能泄漏短于宿主对象生命周期的 Rust 借用：要么显式持有命盘句柄，要么转换为独立不可变快照。`Palace` 的私有内联星曜存储、`Natal` 的私有位置索引及 Rust enum 布局都不是稳定 ABI；绑定不输出位置索引。核心暂不承诺 `no_std`。
 
-宿主验收至少覆盖同一输入的核心/宿主事实等价、所有错误载荷、缺失值、简繁名称、全部序号边界、负年与零年、超过 `i32` 的年度输出和对象释放后的访问策略。Node 已有完整绑定测试；D-267 新增独立 Wasm 测试与浏览器消费验证，进度见[交付计划](cross-platform-delivery-plan.md)。Node 继续依赖 GC，Wasm 增加显式 `dispose()`；这不改变核心所有权合同。
+旧宿主验收覆盖核心／宿主事实等价、错误载荷、缺失值、名称、边界与对象释放策略；Node 原生句柄和 Wasm `dispose()` 仅是已退役实现的合同。当前 TypeScript Node 与浏览器入口的验收以实际宿主边界和共享独立预期用例为准；旧实现的验收不能替代新实现验收。覆盖进度见[实现状态表](implementations.md#验收门槛)。

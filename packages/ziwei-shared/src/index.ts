@@ -1,5 +1,5 @@
 export { capture, arity } from "./input.js";
-export { ZiweiError, argumentError, nativeError, unwrap, unwrapQuery } from "./error.js";
+export { ZiweiError, argumentError, engineError, unwrap, unwrapQuery } from "./error.js";
 export type {
   ArgumentFailureReason,
   ReceivedValue,

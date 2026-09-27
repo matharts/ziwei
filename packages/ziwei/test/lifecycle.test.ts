@@ -104,7 +104,7 @@ test("ESM and CJS share entry points and error identity; only the root is public
     // @ts-expect-error Deliberately test a forbidden operation at runtime.
     esm.Ziwei.fromBirth = () => null;
   }, TypeError);
-  for (const subpath of ["native/binding.cjs", "dist/natal.js", "src/natal.ts", "natal"]) {
+  for (const subpath of ["dist/index.js", "src/natal.ts", "engine/index.js", "natal"]) {
     const specifier = `@matharts/ziwei/${subpath}`;
     assert.throws(() => require(specifier), { code: "ERR_PACKAGE_PATH_NOT_EXPORTED" });
     await assert.rejects(import(specifier), { code: "ERR_PACKAGE_PATH_NOT_EXPORTED" });

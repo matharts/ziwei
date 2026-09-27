@@ -1,6 +1,6 @@
 # 紫微斗数上下文
 
-已按 2026-09-08 当前工作区同步。以下字段写法用于说明事实归属，不代表字段可直接访问；公开读取以源码中的方法为准。当前存储与计算过程见 [包架构](docs/architecture/rust-package-design.md)，已确认规则的权威及修订历史见 [决策记录](docs/architecture/v1-decision-map.md)。
+已按 2026-09-08 当前工作区同步。以下字段写法用于说明事实归属，不代表字段可直接访问；公开读取以相应实现的 API 为准。当前 Rust 存储与计算过程见 [包架构](docs/architecture/rust-package-design.md)，跨语言必须遵守的语义见[领域合同](docs/architecture/domain-contract.md)，已确认规则的权威及修订历史见 [决策记录](docs/architecture/v1-decision-map.md)。
 
 ## 统一语言
 
@@ -118,15 +118,15 @@
 
 ### 宿主适配与工程
 
-- 按 D-271，ppc64le 候选 CI 使用同批固定源码重建的 pnpm 测试客户端；不替换开发工具或发行包，其他目标保持原路径。维护与升级边界见[候选客户端合同](docs/engineering/native-candidate-platforms.md#ppc64le-候选-ci-的源码重建客户端)，仿真通过不代表正式平台支持。
+- D-271 的 ppc64le 候选客户端与多平台 Node 原生分发均为历史方案；相关原生构建、Wasm package 和候选工作流已在本次迁移中从源码树删除。不要将旧记录视为现行任务或平台支持声明。
 
-- Wasm `wire.rs` 使用实例级固定数组惰性复用星曜和本命宫职的静态 JS 字符串，最多 162 个引用槽；数据仍读取 Rust 核心，不缓存输入、四化或查询结果。输出容器逐次新建，`dispose()` 只释放命盘，不清空实例级静态资料。Node、核心和公开输出合同不变，详见[静态字符串缓存](docs/architecture/wasm-adapter-design.md#静态字符串缓存)。
+- Wasm `wire.rs` 的静态字符串缓存与 `dispose()` 行为属于已退役实现的历史记录，不构成现行合同；现行跨实现规则见[领域合同](docs/architecture/domain-contract.md)。
 
-- Node／Wasm 的输入捕获、结构化错误、出生档案、星曜、宫位和四化查询结果的只读投影及必要类型由私有 workspace 包 `@matharts/ziwei-shared` 管理；两个 Adapter 通过声明的包依赖使用根入口，不跨包读取 `src`。共享包先生成 ESM 与声明，再分别内联到两个自包含消费包中，不发布共享包、不新增消费端依赖；类身份按各包保持独立。加载、命盘持有、缓存、释放和限运投影仍由各 Adapter 管理，详见 [共享实现](docs/architecture/node-api-design.md#nodewasm-共享适配实现)。
+- Node／Wasm 共享投影与双 Adapter 构建仅描述旧实现；Rust Node 与 Wasm 源码已删除。`@matharts/ziwei-shared` 若仍由工作区使用，不代表旧宿主适配器仍存在。
 
-- 按 D-268，Android／OpenHarmony 的系统原生应用绑定已按用户要求暂停，不推进 Interface、SDK 或分发设计；保留宿主方向与已有候选核心检查，不宣称支持。移动网页和 WebView 继续使用独立 Wasm 包，其验收不能代替原生交付。恢复移动原生工作需要用户重新确认。
+- 按 D-268，Android／OpenHarmony 的系统原生应用绑定保持暂停。D-272 已取消移动网页和 WebView 的 Wasm 路线；纯 TypeScript 浏览器能力已在本地实现，完整验收仍在进行，不由此恢复移动原生工作。
 
-- D-267 将另外七个候选原生目标与 Wasm／浏览器纳入必做范围，实施进度见[跨平台交付计划](docs/architecture/cross-platform-delivery-plan.md)。独立 `bindings/wasm` 与 `packages/ziwei-wasm` 共用唯一 Rust 核心；浏览器显式初始化后提供同步 API，独立 `dispose()` 管理 Wasm 命盘，不修改 Node 的公开接口。候选编译、静态审计、真实宿主运行和发布分别验收，Wasm 不能替代 Android／OpenHarmony 的原生验收。
+- D-267 曾将候选原生目标与 Wasm／浏览器纳入交付范围；本次执行已删除 Node/Wasm 绑定源码及 Wasm 包。D-267 中关于初始化、`dispose()` 和多平台分发的细节均为历史实现记录，不是现行交付状态。Android／OpenHarmony 原生应用仍暂停。
 
 - D-266 将 GNU x64／arm64 的 glibc 2.28 设为分发验收目标；交叉构建、同批产物符号检查与最低用户态环境运行测试分别验证。它不改变领域 API、八目标范围或 Rust 工具链；通过状态以 [Node 分发设计](docs/architecture/node-distribution-proposal.md#gnu-glibc-228-验收目标) 中对应提交的证据为准，不用配置代替运行证明。
 
@@ -138,11 +138,11 @@
 
 - Node 包工程约束见 D-258：单份 ESM、最低 Node 24.15.0、手写代码全量 TypeScript、pnpm Catalog 集中依赖版本。它们不改变领域事实、公开查询语义或 Rust 与宿主的职责边界。
 
-- Node.js/TypeScript 的完整宿主合同见 [适配设计](docs/architecture/node-api-design.md)（D-248～D-251）。D-253、D-255、D-256 已实现两个建盘入口、全部本命与限运查询、只读属性、ALL／派生方法、结构化错误和 `toJSON`。宿主 Natal 持有核心；`profile` 与 `palaces` 分别首次成功读取后冻结并按实例保存，其余查询不缓存、不依赖全盘快照，只转换请求范围。所有结果为独立只读数据，不改变 Rust 领域事实或生命周期；本机验证不等于跨平台或发布完成。
+- D-248～D-256 的 Node API 合同和实现细节属于已退役 Rust Node 过渡实现的历史记录。当前 `@matharts/ziwei` 由纯 TypeScript 直接实现；TypeScript 对外语义以领域合同、独立 conformance 用例及当前 API 文档为准。
 
-- D-260 调整 D-257 的绑定位置与 Cargo 包名，保留 Rust／TypeScript 分离：Rust 绑定位于 `bindings/node`（Cargo 包 `ziwei-node`，Rust 标识符 `ziwei_node`），TypeScript 按 D-262 迁至 `packages/ziwei/src`（npm 包按 D-261 改为 `@matharts/ziwei`，禁止发布）。`crates/` 承载引擎，`bindings/` 按宿主组织 Rust 适配层；两者由根 Cargo workspace 管理。根 pnpm workspace 管理 `packages/*` 与共享锁文件；D-267 新增独立 Wasm adapter 与浏览器包，不创建空包或改变核心职责。
+- D-260 所述 Rust／TypeScript 分离结构现为历史记录。D-272 已确认 TypeScript 直接提供现有 `@matharts/ziwei` 的领域能力，不新增 `@matharts/ziwei-ts`；本次执行已从源码树删除 Rust Node 绑定与 Wasm 实现。TypeScript 完整验收仍在进行，未发布，未确认远端 CI 通过。具体状态见[实现状态表](docs/architecture/implementations.md)。
 
-- 保留 D-254 的对象模块职责：原生持有在 `bindings/node/src/natal.rs`，TS 包装在 `packages/ziwei/src/natal.ts`；入口分别为各自的 `lib.rs` 与 `index.ts`。D-256 已补齐查询，D-257 与 D-260 只迁移位置与包名，不改变原生生命周期、两个属性的缓存合同或核心职责。
+- D-254～D-260 的对象模块职责描述已退役的过渡实现：旧原生持有位于 `bindings/node/src/natal.rs`，旧 Node API 的 TS 包装位于 `packages/ziwei/src/natal.ts`。D-272 确认 TypeScript 直接提供现有 `@matharts/ziwei` 的领域能力；旧原生生命周期和缓存细节不约束独立实现。
 
 ### 核心职责
 
@@ -154,9 +154,11 @@
 
 - 历法换算、闰月、晚子时、时区和真太阳时不属于 V1 内核。
 
-- 按 D-239（2026-09-08），V1 不提供计算追踪 API 或过程记录，追踪需求留到 V1 之后重新设计。Rust 核心以 `ZiweiError` 变体及载荷作为机器可匹配的错误合同；跨语言稳定错误码由未来 Node/Wasm 绑定阶段确定，不从中文 `Display` 或 Rust 内存布局推导。
+- 按 D-239（2026-09-08），V1 不提供计算追踪 API 或过程记录，追踪需求留到 V1 之后重新设计。Rust 核心以 `ZiweiError` 变体及载荷作为机器可匹配的错误合同；TypeScript 公开错误映射按领域合同和独立 conformance 用例确定，不从中文 `Display` 或 Rust 内存布局推导。
 
 - `ziwei` 包含领域身份、事实、排盘规则，以及 `Palace`、`Decade`、`Yearly` 的宫职名称与 `Star` 星曜名称；不定义 `Lang`、运行时翻译器、全局语言状态或通用本地化 API。`Stem`、`Branch` 的固定简体 `Display` 仅用于组合 `ZiweiError::Display` 中文诊断。
+
+- 领域语义由 [跨语言领域合同](docs/architecture/domain-contract.md) 与本文件共同约束，不归某一种编程语言、Rust 源码或历史实现独占。TypeScript 目标实现必须独立计算，并通过有来源的[共享 conformance 用例](conformance/README.md)验收；不得把 Rust 批量输出或从某实现生成的快照当作权威预期。
 
 ## 核心不变量
 

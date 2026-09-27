@@ -1,5 +1,7 @@
 # Wasm Adapter 设计
 
+> **历史资料**：此文为已退役 Wasm adapter 的历史设计；现行实现与验证边界见[实现状态](implementations.md)。
+
 状态：2026-09-11 按用户“并发执行”要求实施（D-267）。Rust 适配位于 `bindings/wasm`，浏览器包位于 `packages/ziwei-wasm`；实际验证进度见[交付计划](cross-platform-delivery-plan.md)。本文不表示所有浏览器或原生候选已通过验收，不修改既有 Node 合同。
 
 ## 结论与职责
@@ -16,8 +18,8 @@
 | --- | --- | --- |
 | [核心 manifest](../../crates/ziwei/Cargo.toml) | 唯一直接依赖为关闭默认特性的 `arrayvec 0.7.8`；继承 Rust 1.98、edition 2024、`unsafe_code = forbid` | 不需要为 Wasm 拆分排盘规则或新增公共序列化层 |
 | [核心源码](../../crates/ziwei/src/lib.rs) | 不是 `no_std`；源码中显式 `std::` 仅用于错误实现，未发现线程、文件、网络、时钟、环境变量或随机数调用 | 与无操作系统的纯计算目标匹配，但源码审计不能替代目标编译与运行 |
-| [Node manifest](../../bindings/node/Cargo.toml) | napi `3.12.2`、napi-derive `3.6.3`、napi-build `2.4.1`；关闭 napi 默认特性，仅选 `napi8` | 当前没有异步任务或线程池能力必须迁移到浏览器 |
-| [Node Natal](../../bindings/node/src/natal.rs) | 持有核心 `Natal`，经 `Env` 记账及 finalize 回收；输入为 `Unknown`，结果为 napi DTO | 核心查询可复用，Node-API 对象、记账与异常传递不能直接用于 wasm-bindgen |
+| `Node manifest`（历史路径：`../../bindings/node/Cargo.toml`） | napi `3.12.2`、napi-derive `3.6.3`、napi-build `2.4.1`；关闭 napi 默认特性，仅选 `napi8` | 当前没有异步任务或线程池能力必须迁移到浏览器 |
+| `Node Natal`（历史路径：`../../bindings/node/src/natal.rs`） | 持有核心 `Natal`，经 `Env` 记账及 finalize 回收；输入为 `Unknown`，结果为 napi DTO | 核心查询可复用，Node-API 对象、记账与异常传递不能直接用于 wasm-bindgen |
 | [TS 类型与常量](../../packages/ziwei/src/types.ts) | 顶层调用 `native.identities()`，身份派生方法也调用 native | 不能把现有文件原样作为浏览器安全的静态类型入口 |
 | [TS Natal](../../packages/ziwei/src/natal.ts) | 包装私有 native holder，深层冻结，独立保存 `profile`、`palaces` | 可复用合同与投影思想，不直接导入 `binding.cjs` 或承诺代码零修改 |
 

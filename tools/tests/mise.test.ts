@@ -55,29 +55,6 @@ const tasks: Record<
   string,
   { cwd: string; package: string; bin: string; path: string; args: string[] }
 > = {
-  "build:node:native": {
-    cwd: "packages/ziwei",
-    package: "@napi-rs/cli",
-    bin: "napi",
-    path: "dist/cli.js",
-    args: [
-      "build",
-      "--manifest-path",
-      "../../bindings/node/Cargo.toml",
-      "--package",
-      "ziwei-node",
-      "--platform",
-      "--release",
-      "--output-dir",
-      "native",
-      "--js",
-      "binding.cjs",
-      "--dts",
-      "binding.d.cts",
-      "--",
-      "--locked",
-    ],
-  },
   "build:node:ts": {
     cwd: "packages/ziwei",
     package: "@rslib/core",
@@ -87,13 +64,6 @@ const tasks: Record<
   },
   "build:shared": {
     cwd: "packages/ziwei-shared",
-    package: "@rslib/core",
-    bin: "rslib",
-    path: "bin/rslib.js",
-    args: ["build"],
-  },
-  "build:wasm:ts": {
-    cwd: "packages/ziwei-wasm",
     package: "@rslib/core",
     bin: "rslib",
     path: "bin/rslib.js",
@@ -168,7 +138,6 @@ const tasks: Record<
 };
 
 type Probe = {
-  crtFlags?: string;
   version: string;
   executable: string;
   child: { version: string; executable: string };
@@ -217,7 +186,7 @@ function fixture(t: TestContext, { activated = true } = {}) {
       if (child.status !== 0) process.exit(child.status ?? 1);
       console.log(JSON.stringify({version: process.version, executable: process.execPath,
         child: JSON.parse(child.stdout), args: process.argv.slice(2), cwd: process.cwd(),
-        crtFlags: process.env.CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS}));
+      }));
     `,
     );
     cliPaths[task] = cli;
@@ -255,21 +224,6 @@ function assertRuntime(row: Probe) {
   assert.equal(realpathSync.native(row.child.executable), realpathSync.native(process.execPath));
 }
 
-test("Node native task alone defaults x64 CRT to static and preserves explicit diagnostics", (t) => {
-  const { run, env } = fixture(t);
-  delete env.CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS;
-  const result = run(["run", "check:node"]);
-  assert.equal(result.status, 0, result.stderr);
-  assert.deepEqual(
-    rows(result.stdout).map((row) => row.crtFlags),
-    ["-C target-feature=+crt-static", undefined, undefined, undefined, undefined],
-  );
-  env.CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS = "-C target-feature=-crt-static";
-  const diagnostic = run(["run", "build:node:native"]);
-  assert.equal(diagnostic.status, 0, diagnostic.stderr);
-  assert.equal(rows(diagnostic.stdout)[0]!.crtFlags, "-C target-feature=-crt-static");
-});
-
 for (const activated of [true, false]) {
   test(`mise tasks select Node and preserve command order (activation record: ${activated})`, (t) => {
     const { directory, run, env } = fixture(t, { activated });
@@ -282,13 +236,9 @@ for (const activated of [true, false]) {
     );
     assert.ifError(blocked.error);
     assert.equal(blocked.status, 19, blocked.stderr);
-    // check:node traverses the native build, TS build, package tests and type check.
+    // check:node traverses the shared and package builds, tests, and type checks.
     for (const [task, expected] of [
-      [
-        "check:node",
-        ["build:node:native", "build:shared", "build:node:ts", "test:node", "check:node:types"],
-      ],
-      ["build:wasm:ts", ["build:shared", "build:wasm:ts"]],
+      ["check:node", ["build:shared", "build:node:ts", "test:node", "check:node:types"]],
       ["check:typescript", ["check:typescript"]],
       ["lint:node", ["lint:node"]],
       ["lint:node:fix", ["lint:node:fix"]],
@@ -310,58 +260,6 @@ for (const activated of [true, false]) {
     }
   });
 }
-
-test("mise limits the npm pnpm backend override to macOS x64", (t) => {
-  const { run } = fixture(t);
-  const current = run(["tool", "pnpm", "--backend"]);
-  assert.equal(current.status, 0, current.stderr);
-  assert.equal(
-    current.stdout.trim(),
-    process.platform === "darwin" && process.arch === "x64" ? "npm:pnpm" : "aqua:pnpm/pnpm",
-  );
-  const intelMac = run(["--env", "macos-x64", "tool", "pnpm", "--backend"]);
-  assert.equal(intelMac.status, 0, intelMac.stderr);
-  assert.equal(intelMac.stdout.trim(), "npm:pnpm");
-});
-
-test("native cross compilation passes the flag to napi, not Cargo", (t) => {
-  const { run } = fixture(t, { activated: true });
-  const result = run(["run", "build:node:native", "--cross-compile"]);
-  assert.equal(result.status, 0, result.stderr);
-  const output = rows(result.stdout);
-  assert.equal(output.length, 1);
-  assertRuntime(output[0]);
-  assert.deepEqual(output[0].args, [
-    "build",
-    "--cross-compile",
-    ...tasks["build:node:native"].args.slice(1),
-  ]);
-});
-
-test("GNU builds pass use-napi-cross before Cargo arguments and then build TypeScript", (t) => {
-  const { run } = fixture(t);
-  const result = run(["run", "build:node:gnu"]);
-  assert.equal(result.status, 0, result.stderr);
-  const output = rows(result.stdout);
-  assert.equal(output.length, 3);
-  for (const row of output) assertRuntime(row);
-  assert.deepEqual(
-    output.map((row) => row.args),
-    [
-      ["build", "--use-napi-cross", ...tasks["build:node:native"].args.slice(1)],
-      tasks["build:shared"].args,
-      tasks["build:node:ts"].args,
-    ],
-  );
-});
-
-test("a failed GNU native build prevents TypeScript output", (t) => {
-  const { run, cliPaths } = fixture(t);
-  writeFileSync(cliPaths["build:node:native"], "process.exit(23);\n");
-  const result = run(["run", "build:node:gnu"]);
-  assert.equal(result.status, 23);
-  assert.deepEqual(rows(result.stdout), []);
-});
 
 test("mise owns task definitions and CLI paths match installed dependency manifests", () => {
   for (const path of ["package.json", "packages/ziwei/package.json"]) {
@@ -452,7 +350,6 @@ test("leaf tasks preserve CLI options while building only required dependencies"
   for (const [task, args] of [
     ["test:node", ["-t", "palace"]],
     ["build:node:ts", ["--watch"]],
-    ["build:wasm:ts", ["--watch"]],
   ] as const) {
     const result = run(["run", task, "--", ...args]);
     assert.equal(result.status, 0, result.stderr);
@@ -467,11 +364,10 @@ test("leaf tasks preserve CLI options while building only required dependencies"
 });
 
 for (const [failed, expected] of [
-  ["build:node:native", []],
-  ["build:shared", ["build:node:native"]],
-  ["build:node:ts", ["build:node:native", "build:shared"]],
-  ["test:node", ["build:node:native", "build:shared", "build:node:ts"]],
-  ["check:node:types", ["build:node:native", "build:shared", "build:node:ts", "test:node"]],
+  ["build:shared", []],
+  ["build:node:ts", ["build:shared"]],
+  ["test:node", ["build:shared", "build:node:ts"]],
+  ["check:node:types", ["build:shared", "build:node:ts", "test:node"]],
 ] as const) {
   test(`a ${failed} failure preserves diagnostics and stops subsequent checks`, (t) => {
     const { run, cliPaths } = fixture(t, { activated: false });
@@ -490,10 +386,10 @@ for (const [failed, expected] of [
   });
 }
 
-test("a failed shared build prevents the Wasm TypeScript build", (t) => {
+test("a failed shared build prevents the Node TypeScript build", (t) => {
   const { run, cliPaths } = fixture(t);
   writeFileSync(cliPaths["build:shared"], "process.exit(23);\n");
-  const result = run(["run", "build:wasm:ts"]);
+  const result = run(["run", "build:node:ts"]);
   assert.equal(result.status, 23);
   assert.deepEqual(rows(result.stdout), []);
 });

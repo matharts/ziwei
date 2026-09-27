@@ -1,0 +1,198 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:matharts:ziwei:conformance:case:v1",
+  "title": "Ziwei language-neutral conformance case",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "contractVersion",
+    "scenario",
+    "input",
+    "expected",
+    "provenance",
+    "evidence"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)*$"
+    },
+    "contractVersion": {
+      "const": "v1"
+    },
+    "scenario": { "enum": ["construct-chart", "reject-input"] },
+    "input": {
+      "oneOf": [
+        { "$ref": "#/$defs/birth" },
+        { "$ref": "#/$defs/parameters" }
+      ]
+    },
+    "expected": {
+      "oneOf": [
+        { "$ref": "#/$defs/chartExpected" },
+        { "$ref": "#/$defs/errorExpected" }
+      ]
+    },
+    "queries": {
+      "type": "array",
+      "items": { "oneOf": [
+        { "$ref": "#/$defs/starQuery" },
+        { "$ref": "#/$defs/periodBoundaryQuery" }
+      ] }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sources", "derivation"],
+      "properties": {
+        "sources": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "section"],
+            "properties": {
+              "path": { "type": "string", "minLength": 1 },
+              "section": { "type": "string", "minLength": 1 }
+            }
+          }
+        },
+        "derivation": { "type": "string", "minLength": 1 }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["independentOfImplementationOutput", "externalReview"],
+      "properties": {
+        "independentOfImplementationOutput": { "const": true },
+        "externalReview": { "enum": ["not-reviewed", "reviewed"] },
+        "reviewSource": { "type": "string", "minLength": 1 }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "externalReview": { "const": "reviewed" } } },
+          "then": { "required": ["reviewSource"] }
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "chartExpected": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": false,
+      "properties": {
+        "yearPillar": { "$ref": "#/$defs/yearPillar" },
+        "fiveElementBureau": { "enum": ["WaterTwo", "WoodThree", "MetalFour", "EarthFive", "FireSix"] },
+        "mingBranch": { "$ref": "#/$defs/branch" },
+        "shenBranch": { "$ref": "#/$defs/branch" },
+        "originBranch": { "$ref": "#/$defs/branch" },
+        "ziweiBranch": { "$ref": "#/$defs/branch" },
+        "tianfuBranch": { "$ref": "#/$defs/branch" },
+        "palaces": {
+          "type": "array",
+          "minItems": 12,
+          "maxItems": 12,
+          "items": { "$ref": "#/$defs/palaceFact" }
+        }
+      }
+    },
+    "errorExpected": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "stem", "branch"],
+      "properties": {
+        "code": { "const": "INVALID_SEXAGENARY_YEAR" },
+        "stem": { "$ref": "#/$defs/stem" },
+        "branch": { "$ref": "#/$defs/branch" }
+      }
+    },
+    "branch": {
+      "enum": ["Zi", "Chou", "Yin", "Mao", "Chen", "Si", "Wu", "Wei", "Shen", "You", "Xu", "Hai"]
+    },
+    "stem": {
+      "enum": ["Jia", "Yi", "Bing", "Ding", "Wu", "Ji", "Geng", "Xin", "Ren", "Gui"]
+    },
+    "yearPillar": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stem", "branch"],
+      "properties": {
+        "stem": { "$ref": "#/$defs/stem" },
+        "branch": { "$ref": "#/$defs/branch" }
+      }
+    },
+    "palaceFact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["branch", "name", "stem", "ageStart", "ageEnd"],
+      "properties": {
+        "branch": { "$ref": "#/$defs/branch" },
+        "name": { "enum": ["Ming", "FuMu", "FuDe", "TianZhai", "GuanLu", "JiaoYou", "QianYi", "JiE", "CaiBo", "ZiNv", "FuQi", "XiongDi"] },
+        "stem": { "$ref": "#/$defs/stem" },
+        "ageStart": { "type": "integer" },
+        "ageEnd": { "type": "integer" }
+      }
+    },
+    "starQuery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "star", "expectedBranch"],
+      "properties": {
+        "kind": { "const": "star-branch" },
+        "star": { "$ref": "#/$defs/starName" },
+        "expectedBranch": { "$ref": "#/$defs/branch" }
+      }
+    },
+    "periodBoundaryQuery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "decadeIndex", "yearlyIndex", "decadeMingBranch", "yearlyMingBranch", "firstAge", "lastAge", "firstYear", "lastYear"],
+      "properties": {
+        "kind": { "const": "period-boundary" },
+        "decadeIndex": { "const": 1 },
+        "yearlyIndex": { "const": 9 },
+        "decadeMingBranch": { "$ref": "#/$defs/branch" },
+        "yearlyMingBranch": { "$ref": "#/$defs/branch" },
+        "firstAge": { "type": "integer" },
+        "lastAge": { "type": "integer" },
+        "firstYear": { "type": "integer" },
+        "lastYear": { "type": "integer" }
+      }
+    },
+    "starName": {
+      "enum": ["ZiWei", "TianJi", "TaiYang", "WuQu", "TianTong", "LianZhen", "TianFu", "TaiYin", "TanLang", "JuMen", "TianXiang", "TianLiang", "QiSha", "PoJun", "ZuoFu", "YouBi", "WenChang", "WenQu"]
+    },
+    "birth": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "gender", "birthYear", "birthMonth", "birthDay", "birthHour"],
+      "properties": {
+        "kind": { "const": "Birth" },
+        "gender": { "enum": ["Female", "Male"] },
+        "birthYear": { "type": "integer" },
+        "birthMonth": { "type": "integer", "minimum": 1, "maximum": 12 },
+        "birthDay": { "type": "integer", "minimum": 1, "maximum": 30 },
+        "birthHour": { "$ref": "#/$defs/branch" }
+      }
+    },
+    "parameters": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "birthStem and birthBranch must form a valid six-shift cycle pillar; see the domain contract.",
+      "required": ["kind", "gender", "birthStem", "birthBranch", "birthMonth", "ziweiBranch", "birthHour"],
+      "properties": {
+        "kind": { "const": "Parameters" },
+        "gender": { "enum": ["Female", "Male"] },
+        "birthStem": { "$ref": "#/$defs/stem" },
+        "birthBranch": { "$ref": "#/$defs/branch" },
+        "birthMonth": { "type": "integer", "minimum": 1, "maximum": 12 },
+        "ziweiBranch": { "$ref": "#/$defs/branch" },
+        "birthHour": { "$ref": "#/$defs/branch" }
+      }
+    }
+  }
+}

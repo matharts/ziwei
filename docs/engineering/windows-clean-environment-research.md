@@ -1,5 +1,7 @@
 # Windows 干净消费环境研究
 
+> **历史资料**：此文为原生二进制交付的历史环境研究；现行实现与门禁见[实现状态](../architecture/implementations.md)。
+
 初始核查日期：2026-09-10。状态：二进制静态核查与方案研究；研究阶段没有运行 Windows 来宾测试、修改链接方式或 CI、创建云资源、发布包。2026-09-11 后续获准的 x64 CI 实验已在干净容器复现加载失败，运行库对照见文末；尚未通过完整干净环境验收。下文将历史材料、官方事实、后续实测和待执行验收分开记录。
 
 ## 结论与当前边界
@@ -138,7 +140,7 @@ GitHub larger runner 的自定义镜像可从干净 OS base image 生成，但�
 
 ## 后续：Windows x64 CI 实验
 
-用户随后授权先实现 x64 容器 CI 验收，不要求本机安装虚拟机。[实验工具](../../packages/ziwei/tools/windows-container.ts)和[工作流](../../.github/workflows/ci.yml)已接入固定 digest 的 Server Core、官方最低 Node ZIP、同批 tarball 消费与失败证据保存；未改 CRT 链接方式，未自动安装 VC Redistributable，未扩展 arm64 环境或发布。
+用户随后授权先实现 x64 容器 CI 验收，不要求本机安装虚拟机。`实验工具`（历史路径：`../../packages/ziwei/tools/windows-container.ts`）和[工作流](../../.github/workflows/ci.yml)已接入固定 digest 的 Server Core、官方最低 Node ZIP、同批 tarball 消费与失败证据保存；未改 CRT 链接方式，未自动安装 VC Redistributable，未扩展 arm64 环境或发布。
 
 首次运行 [34497803586](https://github.com/matharts/ziwei/actions/runs/34497803586)（提交 `9455a3c`、attempt 1）已启动固定 Server Core 镜像和 Node 24.15.0，但 `pnpm.exe --version` 以 `3221225781`（`0xC0000135`）退出。`consumer.json` 的 `consumers` 为空：当时公共 pnpm 前置检查早于 npm 验收，失败发生在任何 Ziwei 导入之前。不能把这次失败归为 Ziwei 原生模块加载失败。
 

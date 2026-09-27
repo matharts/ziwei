@@ -10,6 +10,7 @@ import {
   readFileSync,
   readdirSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -70,8 +71,8 @@ test("public package smoke records complete samples and protects existing output
   const record = JSON.parse(original);
   assert.equal(record.schemaVersion, 1);
   assert.equal(record.status, "smoke");
-  assert.equal(record.suite.id, "ziwei-node-public-512");
-  assert.equal(record.suite.version, 1);
+  assert.equal(record.suite.id, "ziwei-typescript-node-public-512");
+  assert.equal(record.suite.version, 2);
   assert.equal(
     record.corpusHash,
     "2cbeaeef0fc8b448d4f4dc89e7f10012bb9c2a88fcfd1ede763bd08afdae9f92",
@@ -95,6 +96,12 @@ test("public package smoke records complete samples and protects existing output
     record.fingerprints.source.files.some((file: { path: string }) => file.path === "mise.toml"),
   );
   for (const path of [
+    "packages/ziwei/src/engine/chart.ts",
+    "packages/ziwei/src/index.ts",
+    "packages/ziwei/src/natal.ts",
+    "packages/ziwei/package.json",
+    "packages/ziwei/tsconfig.json",
+    "packages/ziwei/rslib.config.ts",
     "packages/ziwei-shared/src/error.ts",
     "packages/ziwei-shared/src/input.ts",
     "packages/ziwei-shared/package.json",
@@ -108,19 +115,31 @@ test("public package smoke records complete samples and protects existing output
   }
   assert.equal(record.runtime.node, process.version);
   assert.equal(record.runtime.v8, process.versions.v8);
-  assert.match(record.runtime.nativeLibrary, /ziwei-native.*\.node$/);
+  assert.equal(record.runtime.implementation, "typescript");
+  assert.equal("nativeLibrary" in record.runtime, false);
+  assert.ok(
+    record.fingerprints.artifact.files.some(
+      (file: { path: string }) => file.path === "packages/ziwei/dist/index.js",
+    ),
+  );
+  assert.ok(
+    record.fingerprints.artifact.files.every(
+      (file: { path: string }) => !file.path.includes("native") && !file.path.endsWith(".node"),
+    ),
+  );
   assert.equal(record.commands.build.status, 0);
   assert.equal(record.commands.build.executable, "mise");
   assert.deepEqual(record.commands.build.args, [
     "run",
     "--tool",
     `node@${process.versions.node}`,
-    "build:node",
+    "build:node:ts",
   ]);
   assert.equal(record.commands.measure.status, 0);
   assert.match(record.toolchain.pnpm, /^\d+\.\d+\.\d+$/);
   assert.match(record.toolchain.mise, /^\d+\.\d+\.\d+/);
-  assert.match(record.toolchain.rustc, /^rustc /);
+  assert.match(record.toolchain.typescript, /^\d+\.\d+\.\d+$/);
+  assert.equal("rustc" in record.toolchain, false);
   const lines = readFileSync(join(output, "run.jsonl"), "utf8")
     .trim()
     .split("\n")
@@ -197,7 +216,12 @@ test("full record statistics use all 21 batch means per operation", () => {
     {
       type: "start",
       protocol: plan,
-      runtime: { node: process.version, v8: process.versions.v8, execArgv: ["--expose-gc"] },
+      runtime: {
+        node: process.version,
+        v8: process.versions.v8,
+        execArgv: ["--expose-gc"],
+        implementation: "typescript",
+      },
     },
     ...sampleOrder(plan).map((sample) => ({
       type: "sample",
@@ -223,16 +247,9 @@ function fixture(t: TestContext) {
   const root = join(directory, "repo");
   const actualRoot = resolve(cwd, "../..");
   for (const path of [
-    "crates/ziwei/src",
-    "bindings/node/src",
     "packages/ziwei/src",
     "packages/ziwei-shared/src",
     "packages/ziwei/bench",
-    "Cargo.toml",
-    "Cargo.lock",
-    "crates/ziwei/Cargo.toml",
-    "bindings/node/Cargo.toml",
-    "bindings/node/build.rs",
     "package.json",
     "pnpm-lock.yaml",
     "pnpm-workspace.yaml",
@@ -248,16 +265,17 @@ function fixture(t: TestContext) {
     mkdirSync(dirname(destination), { recursive: true });
     cpSync(join(actualRoot, path), destination, { recursive: true });
   }
+  symlinkSync(join(actualRoot, "node_modules"), join(root, "node_modules"), "dir");
   const pkg = join(root, "packages/ziwei");
   const configPath = join(root, "mise.toml");
   const config = readFileSync(configPath, "utf8");
-  const buildTask = /\[tasks\."build:node"\][\s\S]*?(?=\n\[)/;
+  const buildTask = /\[tasks\."build:node:ts"\][\s\S]*?(?=\n\[)/;
   assert.match(config, buildTask);
   writeFileSync(
     configPath,
     config.replace(
       buildTask,
-      '[tasks."build:node"]\ndir = "packages/ziwei"\nrun = "node build-fixture.cjs"\n',
+      '[tasks."build:node:ts"]\ndir = "packages/ziwei"\nrun = "node build-fixture.cjs"\n',
     ),
   );
   const build = join(pkg, "build-fixture.cjs");
@@ -291,24 +309,9 @@ test("build failure keeps both raw logs and never produces a success record", (t
   assert.equal(existsSync(join(output, "record.json")), false);
 });
 
-test("external native override is rejected before build", (t) => {
-  const { output, run } = fixture(t);
-  const result = run({
-    env: { ...process.env, NAPI_RS_NATIVE_LIBRARY_PATH: "/external/native.node" },
-  });
-  assert.equal(result.status, 1);
-  const failure = JSON.parse(readFileSync(join(output, "failure.json"), "utf8"));
-  assert.match(failure.error, /不能通过环境变量替换/);
-  assert.deepEqual(failure.commands, {});
-  assert.equal(existsSync(join(output, "build.stdout.log")), false);
-  assert.equal(existsSync(join(output, "record.json")), false);
-});
-
 function builtFixture(t: TestContext, childBody: string) {
   const instance = fixture(t);
-  for (const path of ["dist", "native"]) {
-    cpSync(join(cwd, path), join(instance.pkg, path), { recursive: true });
-  }
+  cpSync(join(cwd, "dist"), join(instance.pkg, "dist"), { recursive: true });
   writeFileSync(instance.build, "process.exit(0);\n");
   const child = join(instance.pkg, "bench/suite.ts");
   const original = readFileSync(child, "utf8");

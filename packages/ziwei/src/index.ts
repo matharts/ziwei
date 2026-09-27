@@ -1,6 +1,6 @@
 import { capture } from "@matharts/ziwei-shared";
 
-import * as native from "../native/binding.cjs";
+import * as engine from "./engine/index.js";
 import { natal } from "./natal.js";
 import type { Birth, Parameters, Natal } from "./types.js";
 
@@ -37,18 +37,18 @@ const parameterFields = [
   "birthHour",
 ];
 
-/** Frozen, receiver-independent entry points. No constructor or implicit async work. */
-export const Ziwei = Object.freeze({
-  fromBirth(birth: Birth): Natal {
-    const [gender, year, month, day, hour] = capture(birth, birthFields, arguments.length === 0);
-    return natal(native.fromBirth(gender, year, month, day, hour));
-  },
-  fromParameters(parameters: Parameters): Natal {
-    const [gender, stem, branch, month, ziweiBranch, hour] = capture(
-      parameters,
-      parameterFields,
-      arguments.length === 0,
-    );
-    return natal(native.fromParameters(gender, stem, branch, month, ziweiBranch, hour));
-  },
-});
+const fromBirth: (birth: Birth) => Natal = function (birth: Birth): Natal {
+  const [gender, year, month, day, hour] = capture(birth, birthFields, arguments.length === 0);
+  return natal(engine.fromBirth(gender, year, month, day, hour));
+};
+const fromParameters: (parameters: Parameters) => Natal = function (parameters: Parameters): Natal {
+  const [gender, stem, branch, month, ziweiBranch, hour] = capture(
+    parameters,
+    parameterFields,
+    arguments.length === 0,
+  );
+  return natal(engine.fromParameters(gender, stem, branch, month, ziweiBranch, hour));
+};
+
+/** Frozen, receiver-independent function properties; no constructor or implicit async work. */
+export const Ziwei = Object.freeze({ fromBirth, fromParameters });

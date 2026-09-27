@@ -1,0 +1,16 @@
+{
+  "id": "input.reject-inconsistent-sexagenary-year.jia-chou",
+  "contractVersion": "v1",
+  "scenario": "reject-input",
+  "input": { "kind": "Parameters", "gender": "Female", "birthStem": "Jia", "birthBranch": "Chou", "birthMonth": 1, "ziweiBranch": "You", "birthHour": "Mao" },
+  "expected": { "code": "INVALID_SEXAGENARY_YEAR", "stem": "Jia", "branch": "Chou" },
+  "provenance": {
+    "sources": [
+      { "path": "../../crates/ziwei/tests/public_api.rs", "section": "invalid_parameters_are_rejected_before_natal_construction" },
+      { "path": "../../CONTEXT.md", "section": "输入与校验" },
+      { "path": "../../docs/architecture/v1-decision-map.md", "section": "D-125、D-170、D-223" }
+    ],
+    "derivation": "甲为阳干、丑为阴支，阴阳不配，不构成六十甲子年柱；Parameters 构造规则据此拒绝输入，并保留具体 stem/branch 身份。"
+  },
+  "evidence": { "independentOfImplementationOutput": true, "externalReview": "not-reviewed" }
+}

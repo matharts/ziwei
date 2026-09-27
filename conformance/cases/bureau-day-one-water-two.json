@@ -1,0 +1,35 @@
+{
+  "id": "natal.ming-yin-water-two.day-one.1988",
+  "contractVersion": "v1",
+  "scenario": "construct-chart",
+  "input": {
+    "kind": "Birth",
+    "gender": "Female",
+    "birthYear": 1988,
+    "birthMonth": 1,
+    "birthDay": 1,
+    "birthHour": "Zi"
+  },
+  "expected": {
+    "yearPillar": { "stem": "Wu", "branch": "Chen" },
+    "fiveElementBureau": "WaterTwo",
+    "mingBranch": "Yin",
+    "shenBranch": "Yin",
+    "originBranch": "Wu",
+    "ziweiBranch": "Chou",
+    "tianfuBranch": "Mao"
+  },
+  "queries": [
+    { "kind": "star-branch", "star": "ZiWei", "expectedBranch": "Chou" },
+    { "kind": "star-branch", "star": "TianFu", "expectedBranch": "Mao" }
+  ],
+  "provenance": {
+    "sources": [
+      { "path": "../../crates/ziwei/tests/fixtures/README.md", "section": "五行局与出生日边界锚点" },
+      { "path": "../../CONTEXT.md", "section": "核心不变量" },
+      { "path": "../../docs/architecture/v1-decision-map.md", "section": "D-214～D-224" }
+    ],
+    "derivation": "固定锚点取 1988 年女命正月子时，命身均在寅；戊年五虎遁得壬寅命宫，为水二局。初一除以二，商一、补数一，按寅退一至丑安紫微；天府以寅申轴对称在卯。戊干来因宫映射为午。"
+  },
+  "evidence": { "independentOfImplementationOutput": true, "externalReview": "not-reviewed" }
+}

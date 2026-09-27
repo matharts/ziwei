@@ -1,5 +1,7 @@
 # 工程验证
 
+> 本次迁移已删除 Node/Wasm 绑定源码、Wasm 包及原生候选工作流。当前构建、测试和检查命令以 [mise.toml](../../mise.toml) 与 [Rstest 配置](../../rstest.config.ts) 为准；Node 包是纯 TypeScript，浏览器复用同一实现。旧原生分发设计保留在[历史文档](../architecture/node-distribution-proposal.md)中。
+
 ## 工具链与检查入口
 
 ### Rust 与检查范围
@@ -22,7 +24,7 @@ Node 任务通过 `pnpm exec` 执行，因此仍先经过开发版本校验；�
 
 ### 任务顺序
 
-`build:node` 顺序调用 `build:node:native`、`build:node:ts`；`check:node` 等待构建成功，再顺序运行 `test:node`、`check:node:types`。使用有序的 `run` 任务步骤表达顺序，不依赖 `depends` 数组的排列。
+`build:node` 通过 `build:node:ts` 构建 TypeScript 包；该任务先构建 `@matharts/ziwei-shared`。`check:node` 等待构建成功，再运行 Node 包测试与类型合同。具体任务顺序以 [mise.toml](../../mise.toml) 为准。
 
 聚合任务用于固定流程，工具选项传给对应单项任务，不再通过聚合 build 将参数隐式传给最后一步。Node 单项任务执行 `pnpm exec -- node <已安装 CLI 路径> ...`，不调用自建调度器、pnpm scripts 或工具的 `.cmd` shim；不隐式触发 pre/post 生命周期。CLI 路径由依赖 manifest 的 `bin` 核验，升级依赖时由入口测试发现路径变更。
 
@@ -48,11 +50,7 @@ xtask 的帮助和非法参数测试同时观察已知产物目录与外部命�
 
 路径使用原生 realpath 比较。CI 在各平台包测试前执行，不触发性能测量；本机通过不能替代 Windows 实机验收。工具测试只信任自己创建的临时 mise 配置，不修改全局信任列表。Rslib 隔离夹具显式提供 TypeScript 依赖，不依赖工具 bin shim 注入的 `NODE_PATH`。
 
-跨平台工具合同不调用 Linux 专用 shell。此类检查放在 `tools/tests/linux`，由 `check:node:tools:linux` 显式执行，并作为主 CI Linux 原生任务的必需步骤；误在非 Linux 宿主执行会明确失败，不静默跳过。外部 pnpm／QEMU 复现位于 `packages/ziwei/tools/diagnostics`，由独立手动工作流运行；纯参数和失败分类测试仍保留在跨平台工具组。
-
-Windows 宿主诊断的 stdout 保持原有 JSON，stderr 用 `[windows-diagnostics]` 逐阶段记录开始／结束、相对耗时和时间戳，超时仍可保留最后完成的阶段。Windows 专属测试失败时附上启动时间与脱敏后的完整命令观察，不只输出退出错误；阶段记录不改变查询范围、超时或通过条件。
-
-真实宿主采集测试位于 `tools/tests/diagnostics/windows.test.ts`，通过 `check:node:diagnostics:windows` 显式执行；误在非 Windows 宿主执行会明确失败，不静默跳过。[Windows 宿主诊断工作流](../../.github/workflows/windows-diagnostics.yml) 在相关源文件、测试或工具配置变化时覆盖 x64／arm64，也可手动触发。失败仍使该工作流失败，但它不是主 CI 的产品验收前置条件；Docker 就绪、超时与失败传播、脱敏等确定性工具合同及真实 npm／pnpm 消费验收继续由主 CI 执行。
+旧 Linux／Windows 工具诊断与 pnpm/QEMU 复现已随原生候选路径删除；对应测试和工作流不再是现行验证入口。当前 `node-tools` 是跨平台的 mise、构建和工具合同检查，命令见 [mise.toml](../../mise.toml)。
 
 ## Node 构建与类型检查
 
@@ -68,49 +66,31 @@ Oxfmt 的导入排序配置显式定义来源分组、升序、大小写和分�
 
 Oxfmt 读取根 [.editorconfig](../../.editorconfig)：TypeScript 和 JSON 使用两空格缩进，Rust 继续使用四空格。[.gitattributes](../../.gitattributes) 将文本检出为 LF，与 EditorConfig 保持一致，不依赖个人 `core.autocrlf` 设置。隔离测试复制相同的配置，并通过真实 Git checkout 验证换行规则。
 
-当前覆盖包源码、配置、测试、基准工具与根 Node 配置；文档草案不纳入这一门禁，`native/`、`dist/`、`target/` 和依赖目录明确忽略。提交钩子与 CI 只检查，不自动修复或暂存文件；Rust 继续使用 rustfmt 和 Clippy。最低 Node 检查同时验证 Oxc 入口。工具测试验证错误退出、格式检查只读、生成文件忽略，以及实际 mise 任务的参数和运行时选择。
+当前覆盖包源码、配置、测试、基准工具与根 Node 配置；文档草案不纳入这一门禁，`dist/`、`target/` 和依赖目录明确忽略。提交钩子与 CI 只检查，不自动修复或暂存文件；Rust 继续使用 rustfmt 和 Clippy。最低 Node 检查同时验证 Oxc 入口。工具测试验证错误退出、格式检查只读、生成文件忽略，以及实际 mise 任务的参数和运行时选择。
 
 ### 产物与模块模式
 
 `build:node:ts` 使用 Catalog 锁定的 Rslib，配置位于 [rslib.config.ts](../../packages/ziwei/rslib.config.ts)。采用单入口打包、ESM 与 ES2022 输出，产物为 `dist/index.js` 和 `dist/index.d.ts`；根包和 TS 包均为 `type: module`。
 
-Node 与 Wasm 的 TS 构建都先通过 `build:shared` 构建私有 `@matharts/ziwei-shared`，通过包根入口使用其 ESM 与声明，并分别内联到消费包产物。共享包只作为 workspace 开发依赖，不跨包读取 `src`，不留下私有包运行时或类型引用。单项 TS 构建仍接受自身 CLI 选项，但不会把它们传给共享构建；共享构建失败阻止消费包构建。共享代码修改后重新运行对应 TS 构建，单包 `--watch` 不承诺自动监听共享源码。
+TypeScript 构建先通过 `build:shared` 构建私有 `@matharts/ziwei-shared`，通过包根入口使用其 ESM 与声明，并内联到 `@matharts/ziwei` 产物。共享包只作为 workspace 开发依赖，不跨包读取 `src`，不留下私有包运行时或类型引用。单项 TS 构建仍接受自身 CLI 选项，但不会把它们传给共享构建；共享构建失败阻止消费包构建。共享代码修改后重新运行对应 TS 构建，单包 `--watch` 不承诺自动监听共享源码。
 
-`import` 与 `require(ESM)` 解析到同一入口，不再维护 CJS 实现或桥接文件。公开模块图不允许 top-level await。`native/binding.cjs` 与 `.node` 由 napi 生成，外置并交给 Node 加载。
+`import` 与 `require(ESM)` 解析到同一入口，不维护 CJS 实现或桥接文件。公开模块图不允许 top-level await、Node 内建模块或原生/Wasm 运行时依赖；浏览器也加载同一份 ESM 产物。
 
 ### 运行时与 TypeScript
 
 最低版本统一为 Node `>=24.15.0`：内置 TypeScript 类型擦除在 24.12.0 稳定，`require(ESM)` 在 24.15.0 稳定，见 [Node TypeScript](https://nodejs.org/docs/latest-v24.x/api/typescript.html) 与 [require(ESM)](https://nodejs.org/docs/latest-v24.x/api/modules.html#loading-ecmascript-modules-using-require)。
 
-这是项目支持门槛，不表示更早版本无法执行生成的 JS。mise 开发版本固定 24.21.0；`check:node:minimum` 在 Linux CI 运行最低版本的完整工程检查。macOS 双架构与 Windows arm64 的最低版本消费验收直接复用封存包与注册表任务，不调用会重新构建的聚合检查。
+这是项目支持门槛，不表示更早版本无法执行生成的 JS。mise 开发版本固定 24.21.0；`check:node:minimum` 在 Linux CI 运行最低版本的完整工程检查。
 
 手写源码、测试、Worker、配置和工具全部使用 `.ts`；Node 直接执行工具的可擦除 TS 语法，保留 `.ts` 导入扩展名，不依赖 tsx。根 `tsconfig.json` 严格检查这些文件，并启用 `erasableSyntaxOnly`、`verbatimModuleSyntax`；`mise run check:typescript` 需在产品构建后运行。
 
 库源码仍通过 Rslib 分发生成的 JS，不在 node_modules 内直接执行 TS。负例通过 `invoke` 或有说明的 `@ts-expect-error` 测试运行时拒绝，不放宽公开类型。
 
-### 原生分发验收
+### TypeScript 包消费验收
 
-`mise run pack:node -- --target <Rust target>` 对已构建产物生成独立私有暂存包，不隐式构建或发布；布局、平台批次和完整性边界见 [Node 分发设计](../architecture/node-distribution-proposal.md)。`packages/ziwei/tools/pack.ts` 负责实际组装，不是第二套任务调度器。
+`mise run check:node` 构建同一份 TypeScript ESM，运行公开 API 与类型合同。包测试用 `npm pack` 后在临时目录离线安装，检查生成文件、无运行时私有依赖、`import`、`require(ESM)` 和 Node Worker 的实际消费。该检查不发布包，也不代表远端注册表安装或所有平台已验收。
 
-CI 的 `capture:node` 在目标消费端通过后封存实际测试的 tarball；`assemble:node` 仅汇总当前提交、run ID 和 attempt 的完整目标集，不重新编译。真实批次失败后需要重跑全部任务，不能把只重跑失败 job 的产物混入前一 attempt。完整交付以 `batch.json` 为完成标记，校验边界、产物保留及注册表验收区别见[同批产物封存与汇总](../architecture/node-distribution-proposal.md#同批产物封存与汇总)。
-
-musl 使用 `CARGO_BUILD_TARGET` 指定目标，运行 `mise run build:node:musl`。此任务锁定 Zig／cargo-zigbuild 并复用原生与 TS 构建；`build:node:native --cross-compile` 将选项传给 napi，不传入 `--` 后的 Cargo 参数。普通 `build:node` 不需要交叉链接工具链。
-
-musl 注册表任务保留当前 Node 消费测试，并追加固定摘要的最低 Node 双架构镜像验收；容器内直接执行 `compatibility.ts --musl-runtime <x64|arm64>`，等价的工程入口是 `check:node:musl-runtime`。它核对实际运行环境，不构建产物；版本、镜像和同批消费证据分别保存，边界见 [Linux musl 最低 Node 验收](../architecture/node-distribution-proposal.md#linux-musl-最低-node-验收)。
-
-GNU CI 使用 `build:node:gnu`，在 Linux x64／arm64 上经 `--use-napi-cross` 构建，再执行 `test:node` 与 `check:node:types`。完整汇总上传前运行 `check:node:glibc -- <完整交付目录>`，需要 GNU `readelf`，拒绝超过 glibc 2.28 的版本需求；随后同批 tarball 在实际 glibc 2.28／最低 Node 容器中复用注册表合同。构建任务本身不代表最低环境验收已通过；具体边界见 [GNU 验收目标](../architecture/node-distribution-proposal.md#gnu-glibc-228-验收目标)。
-
-`check:node:macos -- <完整交付目录>` 直接检查两个 macOS tarball 的 Mach-O 元数据，无需 Apple 工具链。macOS 注册表任务先审计同批产物，再分别以开发版本和最低 Node 运行既有 npm／pnpm 消费合同；审计结果与最低 Node 日志按目标保存。系统标记上限和依赖路径约束只构成静态门禁，最低 macOS 版本仍需真实环境验收，见 [macOS 兼容性门禁](../architecture/node-distribution-proposal.md#macos-兼容性门禁)。
-
-`check:node` 同时覆盖原有自包含包和新的无二进制主包／平台包。后者用 Node 随附 npm 离线安装本地 tarball，override 仅存在于临时消费端；仓库依赖管理继续使用 pnpm。正常 runner 从已安装包检查声明，musl 在对应 CPU 的 Alpine 运行同一消费端夹具、在构建机检查声明。
-
-`check:node:registry -- <完整交付目录>` 让 npm／pnpm 从仅监听本机的只读注册表冻结安装全部目标依赖，无 overrides 或架构覆盖。CI 在八种实际运行环境消费同一批已汇总 tarball；本地回归仅验证本机真实二进制与其他平台的筛选。冷缓存、失败路径及 Alpine 测试客户端启动方式见[隔离注册表安装验收](../architecture/node-distribution-proposal.md#隔离注册表安装验收)。它不执行公共 npm 发布。
-
-`check:node:windows -- <完整交付目录> <新的结果目录>` 要求 Windows x64 Docker，使用固定 Server Core 镜像、Node ZIP 与同批 tarball。日常门禁分别运行 `npm-clean`（无额外 CRT、无 pnpm）与 `pnpm-runtime`（安装经摘要和 Microsoft 签名校验的运行库后运行 pnpm），两组必须均通过，报告独立保存。前者拒绝额外 VC Runtime 和开发工具链，并核对实际加载模块。`--compare-vc-runtime` 保留原来的完整对照，仅供按需诊断；其失败仍返回非零，不属于日常门禁。结果不能替代 arm64／Windows 11 验收，详见 [Windows x64 容器验收](../architecture/node-distribution-proposal.md#windows-x64-干净容器验收)。
-
-`build:node:native` 在任务内默认启用 x64 MSVC 静态 CRT，本地与 CI 共用；其他目标与独立 Cargo 命令不变。显式目标参数可用于动态诊断，但正式产物必须通过 `check:node:windows-crt` 的静态依赖检查。检查后的 DLL 不得重复构建；继续构建 TS、运行 Node 与类型合同，封存同一产物。手动 CI 参数 `compare_windows_crt` 才额外构建动态基线；日常只构建静态交付包。详见[静态 CRT 策略](../architecture/node-distribution-proposal.md#windows-x64-静态-crt)。
-
-`check:node:windows-arm64 -- <完整交付目录>` 审计封存 ARM64 PE 的架构、导入表和摘要，记录 CRT 依赖但不套用 x64 静态策略。现有 arm64 注册表任务追加最低 Node 消费检查并保存证据；有预装运行库的 runner 不代表干净系统，详见 [Windows arm64 兼容性门禁](../architecture/node-distribution-proposal.md#windows-arm64-兼容性门禁)。
+`mise run test:browser` 在 Chromium、Firefox、WebKit 中分别运行页面与 module Worker 消费测试；先运行 `mise run build:node`，首次测试前安装浏览器。浏览器测试不声明 iOS、Safari 实机或 WebView 兼容性。
 
 ### 依赖版本管理
 
@@ -120,7 +100,7 @@ GNU CI 使用 `build:node:gnu`，在 Linux x64／arm64 上经 `--use-napi-cross`
 
 Rslib 负责 JS 与声明输出；`tsconfig.json` 保留严格类型规则并设置 `noEmit`，独立 `tsc` 不再生成产品文件。声明生成启用 `abortOnError`，类型错误必须让构建退出非零；失败构建的任何残留文件都不可作为成功产物。`check:node:types` 继续使用 tsc 检查正负类型合同，Rslib 不代替该独立检查。
 
-`tools/tests/build.test.ts` 先确认有效源码可构建，再验证未引用源码的类型错误会阻止构建。输出布局、ESM／require 加载、声明与原生绑定由 `packages/ziwei/test/package.test.ts` 在真实 tarball 的独立消费端统一验证；Node 基准源码指纹包含 Rslib 配置。
+`tools/tests/build.test.ts` 先确认有效源码可构建，再验证未引用源码的类型错误会阻止构建。输出布局、ESM／require 加载与声明由 `packages/ziwei/test/package.test.ts` 在真实 tarball 的独立消费端统一验证；Node 基准源码指纹包含 Rslib 配置。
 
 ## Node 测试框架
 
@@ -128,10 +108,9 @@ Node 侧统一使用锁定版本的 `@rstest/core`（JavaScript 框架，不是 
 
 | 项目 | 范围 | 根目录命令 |
 | --- | --- | --- |
-| `ziwei` | 包 API、原生边界、Worker、GC 与独立打包消费端 | `mise run check:node`：先构建，再运行测试与 TypeScript 合同 |
+| `ziwei` | TypeScript 包 API、领域 conformance、Node Worker 与独立消费端 | `mise run check:node`：先构建，再运行 Node 测试与 TypeScript 合同 |
+| `ziwei-browser` | Chromium、Firefox、WebKit 页面与 module Worker | `mise run test:browser`；先构建产品包 |
 | `node-tools` | 开发命令、运行时选择、参数、退出码与 Rslib 构建合同 | `mise run check:node:tools` |
-| `node-tools-linux` | 需要 Linux 宿主和 shell 的诊断合同 | `mise run check:node:tools:linux`；Linux CI 必跑 |
-| `windows-diagnostics` | 真实 Windows 服务、进程及事件日志采集 | `mise run check:node:diagnostics:windows`；独立工作流 |
 | `node-bench` | 基准记录器与 CLI 合同；只有 smoke，不设性能门禁 | `mise run check:node:bench` |
 
 ### 选择测试
@@ -144,23 +123,11 @@ Node 侧统一使用锁定版本的 `@rstest/core`（JavaScript 框架，不是 
 
 基准工具会重新构建同一份 `dist`，常规验证应按上述分组命令串行执行，不要同时运行 `ziwei` 消费端测试与 `node-bench` 构建冒烟。
 
-测试使用独立 Node 子进程池。`ziwei` 的包入口与内部 native seam 显式交给 Node 加载，保留 ESM/CJS 单例身份与真实 `.node` 加载；关闭 Rspack 对 Worker 的打包改写，Worker 从原始夹具路径运行。配置仅用于测试，不进入 npm 分发包。安装与迁移依据 [Rstest 官方指引](https://rstest.rs/guide/start/agent-install.md)，字段以项目安装版本的类型和 CLI 为准。
+测试使用独立 Node 子进程池。`ziwei` 的包入口显式交给 Node 加载，核对 ESM 与 `require(ESM)` 的同一模块身份；关闭 Rspack 对 Worker 的打包改写，Worker 从原始夹具路径运行。配置仅用于测试，不进入 npm 分发包。安装与迁移依据 [Rstest 官方指引](https://rstest.rs/guide/start/agent-install.md)，字段以项目安装版本的类型和 CLI 为准。
 
-## Wasm 与浏览器验证
+## 浏览器验证
 
-Wasm 使用独立的 `bindings/wasm` 与 `packages/ziwei-wasm`，实现与浏览器合同见 [Wasm 包约定](../../packages/ziwei-wasm/AGENTS.md)。版本和命令以 [mise](../../mise.toml)、[Cargo manifest](../../bindings/wasm/Cargo.toml) 与 Catalog 为准；wasm-bindgen CLI 须与 Rust 依赖精确匹配，普通 Node 构建不安装它。胶水任务在执行处显式使用带精确版本的 `mise exec` 安装并激活 CLI，不依赖父任务提前收集内联子任务的 `tools`；这是按需构建工具的局部处理，不改变普通 Node 任务的运行时选择。
-
-[工具回归](../../tools/tests/wasm-tools.test.ts)在独立 mise 配置、空工具缓存和无继承工具目录的 PATH 中运行真实胶水任务，验证首次安装、缓存复用及安装／生成失败的传播。只替换 Cargo 安装器与外部程序，不替换 mise 调度器；版本从 Rust manifest 对照。这验证安装与激活的编排，真实 CLI 下载、生成 Wasm 胶水和浏览器消费仍由 `check:wasm` 与对应 CI 验收。
-
-首次运行 `setup:wasm` 安装当前 Rust 的目标标准库，`setup:wasm:browsers` 安装测试浏览器；Linux CI 为浏览器补充系统依赖。`build:wasm` 顺序生成 release Wasm、web 胶水与资源指纹，再通过 Rslib 生成 ESM、声明和独立资源。手写文件全为 Rust／TS，`generated/` 与 `dist/` 均不提交或格式化。
-
-`check:wasm` 先构建 Node 差分参考，再构建 Wasm，运行独立 Rstest 配置与源码／消费端类型检查；只构建浏览器包时使用 `build:wasm`，不依赖 Node 构建。`test:wasm` 要求两包已构建。浏览器测试使用 Playwright Library 驱动真实 Chromium／Firefox／WebKit，仍由 Rstest 管理；不引入第二测试框架，不用 DOM 模拟替代运行验收。主 CI 的 `wasm-browser` 是必需检查；它不代表品牌 Safari、iOS 或 WebView 实机通过。
-
-新增候选原生平台通过[独立 CI](../../.github/workflows/native-candidates.yml)检查七目标核心可编译性，并构建、静态审计三个 GNU addon。`check:node:gnu-candidate` 接受 Rust target 和实际 `.node` 文件，需要 GNU readelf；它不读取或生成八目标批次，不代替目标 CPU／OS 的运行测试。当前支持声明和环境缺口见[候选矩阵](../engineering/native-candidate-platforms.md)。
-
-ppc64le／s390x 使用 `pack:node:candidate -- --target <target> --input <静态审计目录> --output <新目录>` 封存原始 addon，再由 Linux x64 Docker／QEMU 上的 `check:node:candidate -- --target <target> --input <候选目录> --output <新目录>` 运行双 Node／双客户端消费。两者都要求 `GITHUB_SHA`、`GITHUB_RUN_ID`、`GITHUB_RUN_ATTEMPT`；不接受混批或覆盖旧结果。候选使用独立清单，不扩大正式目标。固定运行时、隔离与结果边界见[仿真消费说明](../engineering/native-candidate-platforms.md#ppc64les390x-仿真消费)；仅配置任务不代表仿真通过，仿真通过也不代表真机与最低系统验收。依赖已生成公共文件的封存测试归入构建后的分发测试；`node-tools` 必须能在没有产品生成目录时独立运行。包管理器版本探针和安装都在消费夹具自己的目录执行，不继承调用工程配置。
-
-ppc64le 日常候选额外要求 `--pnpm-build <同批客户端目录>/build.json`。`build:pnpm:ppc64le` 从固定且未修改的上游源码生成测试客户端与构建凭据，独立 job 每轮重建；消费端核对固定配方、完整构建与同 commit／run／attempt，不下载历史实验 artifact 或跨 run 缓存。s390x 拒绝该参数并保持官方客户端。重建只服务候选 CI，不替换开发工具、不进入发行包；升级与过期恢复见[源码重建合同](../engineering/native-candidate-platforms.md#ppc64le-候选-ci-的源码重建客户端)。
+浏览器使用 `packages/ziwei` 的纯 TypeScript 实现，不初始化或加载 Wasm。`mise run setup:browser` 安装 Chromium、Firefox 与 WebKit；`mise run test:browser` 使用 Playwright Library 驱动真实浏览器和 module Worker。具体测试项目、浏览器范围与 CI 状态以当前配置为准；本地配置不代表 Safari、iOS 或 WebView 实机验收。
 
 ## 按变更选择验证
 

@@ -50,21 +50,11 @@ function writeJSON(path: string, value: unknown) {
 }
 function sourceFingerprint() {
   return fingerprint(root, [
-    ...[
-      "crates/ziwei/src",
-      "bindings/node/src",
-      "packages/ziwei/src",
-      "packages/ziwei-shared/src",
-    ].map((path) => ({
+    ...["packages/ziwei/src", "packages/ziwei-shared/src"].map((path) => ({
       path,
       directory: true,
     })),
     ...[
-      "Cargo.toml",
-      "Cargo.lock",
-      "crates/ziwei/Cargo.toml",
-      "bindings/node/Cargo.toml",
-      "bindings/node/build.rs",
       "package.json",
       "pnpm-lock.yaml",
       "pnpm-workspace.yaml",
@@ -76,13 +66,11 @@ function sourceFingerprint() {
       "packages/ziwei-shared/rslib.config.ts",
       "mise.toml",
     ].map((path) => ({ path })),
-    { path: ".cargo", directory: true, optional: true },
   ]);
 }
 function artifactFingerprint() {
   return fingerprint(root, [
     { path: "packages/ziwei/dist", directory: true },
-    { path: "packages/ziwei/native", directory: true },
     { path: "packages/ziwei/package.json" },
   ]);
 }
@@ -97,11 +85,11 @@ function git(args: string[]) {
   return result.status === 0 ? result.stdout.trim() : null;
 }
 function environmentOverrides() {
-  // Record provenance without copying potentially sensitive environment values.
+  // Record Node runtime overrides without copying potentially sensitive values.
   return Object.fromEntries(
     Object.entries(process.env)
       .filter(([key]) =>
-        /^(NODE_OPTIONS|RUST.*|CARGO_.*|CC|CXX|CFLAGS|CXXFLAGS|NAPI_RS_.*)$/.test(key),
+        /^NODE_(OPTIONS|V8_COVERAGE|COMPILE_CACHE|DISABLE_COMPILE_CACHE)$/.test(key),
       )
       .map(([key, value]) => {
         assert.ok(value !== undefined);
@@ -173,7 +161,6 @@ async function main(config: Options) {
   const startedAt = new Date().toISOString();
   let stage = "fingerprint";
   try {
-    assert.ok(!process.env.NAPI_RS_NATIVE_LIBRARY_PATH, "不能通过环境变量替换基准原生库");
     const source = sourceFingerprint();
     const contract = contractFingerprint();
     const revision = git(["rev-parse", "HEAD"]);
@@ -183,11 +170,14 @@ async function main(config: Options) {
     command(output, "pnpm-version", "pnpm", ["--version"], commands, {
       shell: process.platform === "win32",
     });
-    command(output, "rustc-version", "rustc", ["--version", "--verbose"], commands);
+    const typescriptPackage = JSON.parse(
+      readFileSync(join(root, "node_modules/typescript/package.json"), "utf8"),
+    ) as { version?: unknown };
+    assert.ok(typeof typescriptPackage.version === "string", "无法读取 TypeScript 版本");
     const toolchain = {
       mise: readFileSync(join(output, "mise-version.stdout.log"), "utf8").trim(),
       pnpm: readFileSync(join(output, "pnpm-version.stdout.log"), "utf8").trim(),
-      rustc: readFileSync(join(output, "rustc-version.stdout.log"), "utf8").trim(),
+      typescript: typescriptPackage.version,
       environmentOverrides: environmentOverrides(),
     };
     stage = "build";
@@ -196,7 +186,7 @@ async function main(config: Options) {
       output,
       "build",
       "mise",
-      ["run", "--tool", `node@${process.versions.node}`, "build:node"],
+      ["run", "--tool", `node@${process.versions.node}`, "build:node:ts"],
       commands,
       { cwd: root },
     );
@@ -213,9 +203,10 @@ async function main(config: Options) {
     );
     stage = "validate";
     const parsed = parseRecord(readFileSync(join(output, "run.jsonl"), "utf8"), plan);
+    assert.equal(parsed.runtime.implementation, "typescript");
     assert.ok(
-      artifact.files.some((file) => file.path === `packages/ziwei/${parsed.runtime.nativeLibrary}`),
-      "加载的原生库未被产物指纹覆盖",
+      artifact.files.some((file) => file.path === "packages/ziwei/dist/index.js"),
+      "TypeScript ESM 产物未被指纹覆盖",
     );
     assert.equal(sourceFingerprint().sha256, source.sha256, "计时期间源码发生变化");
     assert.equal(artifactFingerprint().sha256, artifact.sha256, "计时期间产物发生变化");

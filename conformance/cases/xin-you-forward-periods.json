@@ -1,0 +1,60 @@
+{
+  "id": "natal.xin-you-female.1981-11-07",
+  "contractVersion": "v1",
+  "scenario": "construct-chart",
+  "input": { "kind": "Birth", "gender": "Female", "birthYear": 1981, "birthMonth": 11, "birthDay": 7, "birthHour": "Chou" },
+  "expected": {
+    "yearPillar": { "stem": "Xin", "branch": "You" },
+    "fiveElementBureau": "WoodThree",
+    "mingBranch": "Hai",
+    "shenBranch": "Chou",
+    "originBranch": "Mao",
+    "ziweiBranch": "Wu",
+    "tianfuBranch": "Xu",
+    "palaces": [
+      { "branch": "Yin", "name": "TianZhai", "stem": "Geng", "ageStart": 33, "ageEnd": 42 },
+      { "branch": "Mao", "name": "GuanLu", "stem": "Xin", "ageStart": 43, "ageEnd": 52 },
+      { "branch": "Chen", "name": "JiaoYou", "stem": "Ren", "ageStart": 53, "ageEnd": 62 },
+      { "branch": "Si", "name": "QianYi", "stem": "Gui", "ageStart": 63, "ageEnd": 72 },
+      { "branch": "Wu", "name": "JiE", "stem": "Jia", "ageStart": 73, "ageEnd": 82 },
+      { "branch": "Wei", "name": "CaiBo", "stem": "Yi", "ageStart": 83, "ageEnd": 92 },
+      { "branch": "Shen", "name": "ZiNv", "stem": "Bing", "ageStart": 93, "ageEnd": 102 },
+      { "branch": "You", "name": "FuQi", "stem": "Ding", "ageStart": 103, "ageEnd": 112 },
+      { "branch": "Xu", "name": "XiongDi", "stem": "Wu", "ageStart": 113, "ageEnd": 122 },
+      { "branch": "Hai", "name": "Ming", "stem": "Ji", "ageStart": 3, "ageEnd": 12 },
+      { "branch": "Zi", "name": "FuMu", "stem": "Geng", "ageStart": 13, "ageEnd": 22 },
+      { "branch": "Chou", "name": "FuDe", "stem": "Xin", "ageStart": 23, "ageEnd": 32 }
+    ]
+  },
+  "queries": [
+    { "kind": "star-branch", "star": "ZiWei", "expectedBranch": "Wu" },
+    { "kind": "star-branch", "star": "TianJi", "expectedBranch": "Si" },
+    { "kind": "star-branch", "star": "TaiYang", "expectedBranch": "Mao" },
+    { "kind": "star-branch", "star": "WuQu", "expectedBranch": "Yin" },
+    { "kind": "star-branch", "star": "TianTong", "expectedBranch": "Chou" },
+    { "kind": "star-branch", "star": "LianZhen", "expectedBranch": "Xu" },
+    { "kind": "star-branch", "star": "TianFu", "expectedBranch": "Xu" },
+    { "kind": "star-branch", "star": "TaiYin", "expectedBranch": "Hai" },
+    { "kind": "star-branch", "star": "TanLang", "expectedBranch": "Zi" },
+    { "kind": "star-branch", "star": "JuMen", "expectedBranch": "Chou" },
+    { "kind": "star-branch", "star": "TianXiang", "expectedBranch": "Yin" },
+    { "kind": "star-branch", "star": "TianLiang", "expectedBranch": "Mao" },
+    { "kind": "star-branch", "star": "QiSha", "expectedBranch": "Chen" },
+    { "kind": "star-branch", "star": "PoJun", "expectedBranch": "Shen" },
+    { "kind": "star-branch", "star": "ZuoFu", "expectedBranch": "Yin" },
+    { "kind": "star-branch", "star": "YouBi", "expectedBranch": "Zi" },
+    { "kind": "star-branch", "star": "WenChang", "expectedBranch": "You" },
+    { "kind": "star-branch", "star": "WenQu", "expectedBranch": "Si" },
+    { "kind": "period-boundary", "decadeIndex": 1, "yearlyIndex": 9, "decadeMingBranch": "Zi", "yearlyMingBranch": "Wu", "firstAge": 13, "lastAge": 22, "firstYear": 1993, "lastYear": 2002 }
+  ],
+  "provenance": {
+    "sources": [
+      { "path": "../../crates/ziwei/tests/fixtures/README.md", "section": "丁卯男命与辛酉女命的完整手算预期" },
+      { "path": "../../crates/ziwei/tests/fixtures.rs", "section": "hand_derived_xin_you_female_chart_covers_forward_periods_and_all_flights" },
+      { "path": "../../crates/ziwei/tests/period_queries.rs", "section": "period_palace_queries_match_hand_derived_forward_and_reverse_charts" },
+      { "path": "../../CONTEXT.md", "section": "大限与流年" }
+    ],
+    "derivation": "输入、辛酉年柱、木三局、命身来因和紫微天府定位及十八星落宫均逐项转录 fixtures.rs 的固定手算预期；该测试夹具注明推导见 fixtures README，未用运行时输出生成。第二大限命宫在子，局数三加十得虚岁 13 至 22、对应 1993 至 2002；末项年支为午，流年命宫在午。"
+  },
+  "evidence": { "independentOfImplementationOutput": true, "externalReview": "not-reviewed" }
+}

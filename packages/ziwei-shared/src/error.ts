@@ -1,7 +1,7 @@
 import type { Branch, Stem } from "./identity-types.js";
 
-/** Private transport shape: Node omits empty fields; Wasm explicitly uses null. */
-interface NativeFailure {
+/** Private transport shape for structured engine failures. */
+interface EngineFailure {
   readonly code: string;
   readonly message: string;
   readonly path?: string | null;
@@ -107,11 +107,11 @@ export function argumentError(
 }
 
 function required<T>(value: T | undefined | null): T {
-  if (value === undefined || value === null) throw new Error("原生错误载荷不完整");
+  if (value === undefined || value === null) throw new Error("排盘引擎返回的错误载荷不完整");
   return value;
 }
 
-function received(failure: NativeFailure): ReceivedValue {
+function received(failure: EngineFailure): ReceivedValue {
   switch (failure.receivedType) {
     case "number":
       return { type: "number", value: required(failure.value) };
@@ -126,11 +126,11 @@ function received(failure: NativeFailure): ReceivedValue {
     case "array":
       return { type: failure.receivedType };
     default:
-      throw new Error("原生错误含未知参数类型");
+      throw new Error("排盘引擎返回了未知参数类型");
   }
 }
 
-function reason(failure: NativeFailure): ArgumentFailureReason {
+function reason(failure: EngineFailure): ArgumentFailureReason {
   switch (failure.reason) {
     case "type":
     case "non_finite":
@@ -139,7 +139,7 @@ function reason(failure: NativeFailure): ArgumentFailureReason {
     case "not_member":
       return failure.reason;
     default:
-      throw new Error("原生错误含未知参数原因");
+      throw new Error("排盘引擎返回了未知参数原因");
   }
 }
 
@@ -151,25 +151,25 @@ function isBranch(value: number): value is Branch {
   return Number.isInteger(value) && value >= 0 && value <= 11;
 }
 
-/** Internal native union: only expected failures carry a code field. */
-export function unwrap<T>(result: T): Exclude<T, NativeFailure>;
+/** Internal engine union: only expected failures carry a code field. */
+export function unwrap<T>(result: T): Exclude<T, EngineFailure>;
 export function unwrap(result: unknown): unknown {
-  if (isNativeFailure(result)) throw nativeError(result);
+  if (isEngineFailure(result)) throw engineError(result);
   return result;
 }
 
-function isNativeFailure(value: unknown): value is NativeFailure {
+function isEngineFailure(value: unknown): value is EngineFailure {
   return value !== null && typeof value === "object" && Object.hasOwn(value, "code");
 }
 
-/** Native validates left to right; only its first omitted argument becomes missing. */
+/** Engine validates left to right; only its first omitted argument becomes missing. */
 export function unwrapQuery<T>(
   result: T,
   supplied: number,
   ...names: string[]
-): Exclude<T, NativeFailure>;
+): Exclude<T, EngineFailure>;
 export function unwrapQuery(result: unknown, supplied: number, ...names: string[]): unknown {
-  if (!isNativeFailure(result)) return result;
+  if (!isEngineFailure(result)) return result;
   const missing = names[supplied];
   if (
     missing !== undefined &&
@@ -180,10 +180,10 @@ export function unwrapQuery(result: unknown, supplied: number, ...names: string[
   ) {
     throw argumentError([missing], "missing");
   }
-  throw nativeError(result);
+  throw engineError(result);
 }
 
-export function nativeError(failure: NativeFailure): ZiweiError {
+export function engineError(failure: EngineFailure): ZiweiError {
   switch (failure.code) {
     case "INVALID_ARGUMENT":
       return createError(
@@ -198,7 +198,7 @@ export function nativeError(failure: NativeFailure): ZiweiError {
     case "INVALID_SEXAGENARY_YEAR": {
       const stem = required(failure.stem);
       const branch = required(failure.branch);
-      if (!isStem(stem) || !isBranch(branch)) throw new Error("原生错误含未知干支身份");
+      if (!isStem(stem) || !isBranch(branch)) throw new Error("排盘引擎返回了未知干支身份");
       return createError(
         {
           code: failure.code,
@@ -214,6 +214,6 @@ export function nativeError(failure: NativeFailure): ZiweiError {
     case "INVALID_YEARLY_INDEX":
       return createError({ code: failure.code, value: required(failure.value) }, failure.message);
     default:
-      throw new Error("原生错误码不受当前适配包支持");
+      throw new Error("当前适配器不支持此错误码");
   }
 }

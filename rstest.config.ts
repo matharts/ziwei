@@ -11,16 +11,28 @@ export default defineConfig({
       root: fileURLToPath(new URL("./packages/ziwei/", import.meta.url)),
       testEnvironment: "node",
       include: ["test/*.test.ts"],
-      exclude: ["test/contract.test.ts"],
-      // The built Node-API package must use Node's loader, not Rspack's module cache.
+      exclude: ["test/contract.test.ts", "test/ts-browser.test.ts"],
+      // Exercise the built package through Node's loader rather than Rspack's module cache.
       output: {
         externals: {
           "@matharts/ziwei": "import @matharts/ziwei",
-          "../native/binding.cjs": `import ${new URL("./packages/ziwei/native/binding.cjs", import.meta.url).href}`,
         },
       },
       // Worker fixtures run from source in real Node worker_threads.
       tools: { rspack: { module: { parser: { javascript: { worker: false } } } } },
+      testTimeout: 60_000,
+    }),
+    defineInlineProject({
+      name: "ziwei-browser",
+      root: fileURLToPath(new URL("./packages/ziwei/", import.meta.url)),
+      testEnvironment: "node",
+      include: ["test/ts-browser.test.ts"],
+      output: {
+        externals: {
+          playwright: "import playwright",
+          "./fixtures/ts-browser.ts": `import ${new URL("./packages/ziwei/test/fixtures/ts-browser.ts", import.meta.url).href}`,
+        },
+      },
       testTimeout: 60_000,
     }),
     defineInlineProject({
@@ -36,20 +48,6 @@ export default defineConfig({
       testEnvironment: "node",
       include: ["bench/*.test.ts"],
       testTimeout: 180_000,
-    }),
-    defineInlineProject({
-      name: "node-tools-linux",
-      root: fileURLToPath(new URL(".", import.meta.url)),
-      testEnvironment: "node",
-      include: ["tools/tests/linux/*.test.ts"],
-      testTimeout: 60_000,
-    }),
-    defineInlineProject({
-      name: "windows-diagnostics",
-      root: fileURLToPath(new URL(".", import.meta.url)),
-      testEnvironment: "node",
-      include: ["tools/tests/diagnostics/windows.test.ts"],
-      testTimeout: 60_000,
     }),
   ],
 });

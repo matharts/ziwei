@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import { platform, arch, release, cpus, totalmem, freemem, loadavg } from "node:os";
-import { relative, resolve } from "node:path";
+import { resolve } from "node:path";
 import { setImmediate } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
@@ -14,7 +14,7 @@ declare global {
 export type Protocol = ReturnType<typeof protocol>;
 export type Sample = ReturnType<typeof sampleOrder>[number];
 
-export const suite = { id: "ziwei-node-public-512", version: 1 };
+export const suite = { id: "ziwei-typescript-node-public-512", version: 2 };
 export const corpusHash = "2cbeaeef0fc8b448d4f4dc89e7f10012bb9c2a88fcfd1ede763bd08afdae9f92";
 const counts = {
   fromBirth: 16384,
@@ -146,14 +146,14 @@ async function measure(smoke: boolean) {
   const nativeLibraries = Object.keys(createRequire(import.meta.url).cache).filter((path) =>
     path.endsWith(".node"),
   );
-  assert.equal(nativeLibraries.length, 1, "必须只加载本包的一个原生库");
-  const packageRoot = fileURLToPath(new URL("..", import.meta.url));
+  assert.deepEqual(nativeLibraries, [], "纯 TypeScript API 基准不能加载原生库");
   const plan = protocol(smoke);
   emit({
     type: "start",
     protocol: plan,
     runtime: {
       node: process.version,
+      implementation: "typescript",
       v8: process.versions.v8,
       execPath: process.execPath,
       execArgv: process.execArgv,
@@ -163,7 +163,6 @@ async function measure(smoke: boolean) {
       cpu: cpus()[0]?.model ?? "unknown",
       logicalCpus: cpus().length,
       totalMemory: totalmem(),
-      nativeLibrary: relative(packageRoot, nativeLibraries[0]).replaceAll("\\", "/"),
       before: resourceState(),
     },
   });

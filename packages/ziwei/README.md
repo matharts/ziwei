@@ -8,7 +8,7 @@
 
 <p align="center">
   <strong>输入农历出生资料，查询宫位、星曜与四化。</strong><br>
-  在 Node.js／TypeScript 中使用 Rust 排盘引擎。
+  由 TypeScript 实现，同一入口供 Node.js 与浏览器使用。
 </p>
 
 <p align="center">
@@ -29,29 +29,27 @@
 
 ## 安装
 
-需要 Node.js **24.15.0 或更高版本**。当前没有 npm 发布版本，取得与运行平台匹配的本地包（`.tgz`）后，在应用项目中安装：
+Node.js 消费者需要 **24.15.0 或更高版本**。当前没有 npm 发布版本，取得本地包（`.tgz`）后，在应用项目中安装：
 
 ```sh
 pnpm add /path/to/matharts-ziwei.tgz
 ```
 
-将路径替换为实际文件位置。上述示例适用于包含原生二进制的自包含本地包，需要匹配的操作系统、CPU 架构和运行环境；不能将同一份包用于所有平台。
-
-拆分分发的主包与平台包是另一种格式：主包不含原生二进制，必须同时提供匹配的平台包。平台包尚未发布，当前不能仅安装拆分主包，也尚无可直接从 npm 安装的版本。
+将路径替换为实际文件位置。排盘实现不包含平台专用二进制，同一份包可用于支持 ESM 的 Node.js 与浏览器构建流程。
 
 ## 使用
 
 通过 `Ziwei.fromBirth` 同步创建本命盘。在已安装本包的应用项目中，将以下代码保存为 `example.ts`：
 
 ```ts
-import { Ziwei, Gender, Branch, StarName } from '@matharts/ziwei';
+import { Ziwei, Gender, Branch, StarName } from "@matharts/ziwei";
 
 const natal = Ziwei.fromBirth({
-  gender: Gender.Male,
-  birthYear: 1984,
-  birthMonth: 1,
-  birthDay: 6,
-  birthHour: Branch.Zi,
+    gender: Gender.Male,
+    birthYear: 1984,
+    birthMonth: 1,
+    birthDay: 6,
+    birthHour: Branch.Zi,
 });
 
 const palace = natal.palaceByStar(StarName.ZiWei);
@@ -62,7 +60,15 @@ console.log(natal.star(StarName.WuQu).birthTransformation); // C：化科
 
 在应用项目中运行 `node example.ts`。
 
+浏览器项目可通过支持 npm ESM 的构建工具或导入映射导入相同的包根入口；排盘 API 仍是同步调用。
+
 输入必须是已处理好的农历出生资料。`birthMonth` 为 `1..12`，`birthDay` 为 `1..30`；`birthHour` 使用十二地支，**不是 `0..23` 的钟表小时**。公历转换、闰月、时区与真太阳时等处理由调用方完成。
+
+### 从旧 Wasm 包迁移
+
+旧开发包 `@matharts/ziwei-wasm` 已退役。把导入改为 `@matharts/ziwei`，直接从包根导入 `Ziwei`、`Gender`、`Branch` 等身份；`Ziwei.fromBirth` 与 `Ziwei.fromParameters` 仍是同步建盘入口。删除 `await initialize()`、自定义 `wasmUrl`、Wasm 资源部署及命盘的 `dispose()` 调用。新包没有初始化失败或已释放命盘的生命周期错误；输入与领域错误仍通过 `ZiweiError` 的 `code`、`detail` 判断。
+
+旧包未发布到 npm；此迁移说明适用于已在工作区或本地包中接入旧入口的应用。浏览器与 Worker 均使用同一 ESM 包，实际支持范围以消费端测试和目标设备实测为准。
 
 ## 进阶用法
 
@@ -74,15 +80,15 @@ console.log(natal.star(StarName.WuQu).birthTransformation); // C：化科
 不提供数字年份和出生日时，使用 `Ziwei.fromParameters`。生年干支必须阴阳相配，`ziweiBranch` 是紫微所在的地支：
 
 ```ts
-import { Stem } from '@matharts/ziwei';
+import { Stem } from "@matharts/ziwei";
 
 const fromParameters = Ziwei.fromParameters({
-  gender: Gender.Male,
-  birthStem: Stem.Jia,
-  birthBranch: Branch.Zi,
-  birthMonth: 1,
-  ziweiBranch: Branch.Yin,
-  birthHour: Branch.Zi,
+    gender: Gender.Male,
+    birthStem: Stem.Jia,
+    birthBranch: Branch.Zi,
+    birthMonth: 1,
+    ziweiBranch: Branch.Yin,
+    birthHour: Branch.Zi,
 });
 
 console.log(fromParameters.profile.birthYear); // null
@@ -99,14 +105,14 @@ console.log(fromParameters.decadeYears(1)[0]); // { age: 16, year: null }
 
 按地支、宫职或星曜定位宫位，不必先读取完整十二宫。常用入口如下：
 
-| 查询内容 | 方法 |
-| --- | --- |
-| 地支、宫职、星曜对应的宫位 | `palace`、`palaceByName`、`palaceByStar` |
-| 命宫、身宫、来因宫、紫微所在宫 | `mingPalace`、`shenPalace`、`originPalace`、`ziweiPalace` |
-| 单星、指定宫内的星曜 | `star`、`palaceStar` |
-| 对宫、三方、四正 | `oppositePalace`、`sanfangPalaces`、`sizhengPalaces` |
-| 生年四化、自化 | `birthTransformations`、`selfTransformations` |
-| 宫干四化、目标宫的四化来源 | `palaceTransformation`、`palaceTransformations`、`palaceTransformationSources` |
+| 查询内容                       | 方法                                                                           |
+| ------------------------------ | ------------------------------------------------------------------------------ |
+| 地支、宫职、星曜对应的宫位     | `palace`、`palaceByName`、`palaceByStar`                                       |
+| 命宫、身宫、来因宫、紫微所在宫 | `mingPalace`、`shenPalace`、`originPalace`、`ziweiPalace`                      |
+| 单星、指定宫内的星曜           | `star`、`palaceStar`                                                           |
+| 对宫、三方、四正               | `oppositePalace`、`sanfangPalaces`、`sizhengPalaces`                           |
+| 生年四化、自化                 | `birthTransformations`、`selfTransformations`                                  |
+| 宫干四化、目标宫的四化来源     | `palaceTransformation`、`palaceTransformations`、`palaceTransformationSources` |
 
 例如，读取武曲的生年四化，或检查它是否在寅宫：
 
@@ -125,7 +131,7 @@ console.log(natal.palaceStar(Branch.Yin, StarName.WuQu)); // null
 大限序号为 `0..11`，`0` 表示第一大限；流年序号为该大限内的 `0..9`。年龄使用虚岁，`decadeAgeRange` 的起止两端均包含。
 
 ```ts
-import { PalaceName } from '@matharts/ziwei';
+import { PalaceName } from "@matharts/ziwei";
 
 console.log(natal.periodIndicesAtAge(16)); // { decade: 1, yearly: 0 }
 console.log(natal.decadeYears(1)[0]); // { age: 16, year: 1999 }
@@ -148,7 +154,10 @@ console.log(decadeMing.name); // FuMu：大限命宫对应的本命父母宫
 
 ```ts
 for (const palace of natal.palaces) {
-  console.log(palace.nameHans, palace.stars.map(star => star.nameHans));
+    console.log(
+        palace.nameHans,
+        palace.stars.map((star) => star.nameHans),
+    );
 }
 ```
 
@@ -156,12 +165,12 @@ for (const palace of natal.palaces) {
 
 注意区分地支值与宫位数组位置：
 
-| 数据 | 顺序或含义 |
-| --- | --- |
-| `Stem.ALL` | 甲至癸，值为 `0..9` |
-| `Branch.ALL` | 子至亥，值为 `0..11` |
-| `natal.palaces` | 寅至丑，首项为寅宫 |
-| `natal.zodiac` | 生肖身份，例如 `Zodiac.Rat` |
+| 数据                      | 顺序或含义                               |
+| ------------------------- | ---------------------------------------- |
+| `Stem.ALL`                | 甲至癸，值为 `0..9`                      |
+| `Branch.ALL`              | 子至亥，值为 `0..11`                     |
+| `natal.palaces`           | 寅至丑，首项为寅宫                       |
+| `natal.zodiac`            | 生肖身份，例如 `Zodiac.Rat`              |
 | `natal.fiveElementBureau` | 五行局身份，值为 `2`、`3`、`4`、`5`、`6` |
 
 按地支取宫位请使用 `natal.palace(branch)`，不要把地支值直接当作 `palaces` 下标。
@@ -182,7 +191,7 @@ console.log(snapshot.originPalaceBranch); // 10：戌
 const json = JSON.stringify(natal);
 ```
 
-快照包含出生档案、生肖、五行局、十二宫和四个定位地支，不包含查询方法、原生句柄、输入来源或预计算限运。JSON／结构化克隆往返不会保留冻结状态，也不会恢复命盘的查询能力。
+快照包含出生档案、生肖、五行局、十二宫和四个定位地支，不包含查询方法、输入来源或预计算限运。JSON／结构化克隆往返不会保留冻结状态，也不会恢复命盘的查询能力。
 
 </details>
 
@@ -192,13 +201,13 @@ const json = JSON.stringify(natal);
 无效输入抛出 `ZiweiError`，使用中文 `message` 说明原因，并通过只读 `code` 和判别联合 `detail` 提供结构化信息。不要解析错误文案来判断错误类型：
 
 ```ts
-import { ZiweiError } from '@matharts/ziwei';
+import { ZiweiError } from "@matharts/ziwei";
 
 try {
-  natal.decade(12);
+    natal.decade(12);
 } catch (error) {
-  if (!(error instanceof ZiweiError)) throw error;
-  console.error(error.code, error.message, error.detail);
+    if (!(error instanceof ZiweiError)) throw error;
+    console.error(error.code, error.message, error.detail);
 }
 ```
 
@@ -212,11 +221,9 @@ try {
 
 模块只从包根导出，默认使用 ESM，也可通过 Node 的 `require('@matharts/ziwei')` 读取同一组命名导出；不提供默认导出、单独 CJS 构建、公开命盘构造器或内部子路径。
 
-已验证 Node 24.15.0 与 24.21.0，覆盖 macOS、Windows 的 x64／arm64，以及 Linux 的 x64／arm64 × glibc／musl，共八种环境。Linux GNU 双架构已在 glibc 2.28 下验证；musl 双架构的最低 Node 验证环境为 Alpine 3.23.4／musl 1.2.5，不代表最低 Alpine 或 musl 版本。
+TypeScript 实现由 Node.js 与浏览器共用。Node.js 最低版本为 **24.15.0**；浏览器消费测试覆盖 Chromium、Firefox、WebKit 的页面与 module Worker。测试覆盖不代表承诺这些浏览器的所有历史版本。
 
-Windows x64 原生模块采用静态 CRT；arm64 仍依赖系统提供 VC Runtime，尚未验证无预装运行库的干净环境。Linux musl 仍受 [Node 运行时支持限制](https://github.com/nodejs/docker-node#musl-builds-for-alpine)影响。最低 macOS、Windows 与 Linux 内核版本尚未承诺。
-
-尚未发布跨平台预编译包。Node 22 不在支持范围，Node 26 与其他平台尚未验证；本包不能直接在浏览器中运行。
+当前没有 npm 发布版本，Node 22 不在支持范围，Node 26 尚未验证。本包仍为私有包，不能从公共 npm registry 安装。
 
 ## License
 

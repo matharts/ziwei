@@ -1,14 +1,9 @@
-name: Rust core
+name: Rust and TypeScript engines
 
 on:
   push:
   pull_request:
   workflow_dispatch:
-    inputs:
-      compare_windows_crt:
-        description: Also build and retain the Windows x64 dynamic CRT baseline
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -18,182 +13,63 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  native-tests:
-    name: Tests (${{ matrix.target }})
+  rust:
+    name: Rust (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: ubuntu-24.04
-            target: x86_64-unknown-linux-gnu
-          - os: ubuntu-24.04-arm
-            target: aarch64-unknown-linux-gnu
-          - os: macos-15
-            target: aarch64-apple-darwin
-          - os: macos-15-intel
-            target: x86_64-apple-darwin
-          - os: windows-2025
-            target: x86_64-pc-windows-msvc
-          - os: windows-11-arm
-            target: aarch64-pc-windows-msvc
+        os: [ubuntu-24.04, ubuntu-24.04-arm, macos-15, macos-15-intel, windows-2025, windows-11-arm]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 25
-    env:
-      ZIWEI_NODE_TARGET: ${{ matrix.target }}
-      CARGO_BUILD_TARGET: ${{ matrix.target }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
         with:
-          install_args: rust node pnpm
-          # Rust is installed through rustup; see jdx/mise-action#215.
+          install_args: rust
           cache: false
-      - name: Install expected Rust target
-        run: mise exec -- rustup target add "${{ matrix.target }}"
-      - name: Tests
+      - name: Debug tests
         run: mise exec -- cargo test --workspace --all-features --locked
       - name: Release tests
         run: mise exec -- cargo test --workspace --all-features --release --locked
-      - name: Install Node adapter development dependencies
+
+  typescript:
+    name: TypeScript (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
+        with:
+          install_args: node pnpm
+          cache: false
+      - name: Install dependencies
         run: mise exec -- pnpm install --frozen-lockfile
-      - name: Node development runtime contracts
-        run: mise run check:node:tools
-      - name: Linux diagnostic contracts
-        id: linux-diagnostics
-        if: runner.os == 'Linux'
-        run: mise run check:node:tools:linux
-      # Optional diagnostic baseline; normal builds use the shared mise static policy.
-      - name: Record Windows x64 dynamic CRT baseline
-        id: windows-crt-dynamic
-        if: matrix.target == 'x86_64-pc-windows-msvc' && inputs.compare_windows_crt == true
-        env:
-          CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS: -C target-feature=-crt-static
-        run: |
-          mise run build:node:native
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          mise run check:node:windows-crt -- dynamic packages/ziwei/native/ziwei-native.win32-x64-msvc.node target/windows-crt
-      - name: Record Windows x64 static CRT artifact
-        if: matrix.target == 'x86_64-pc-windows-msvc'
-        run: |
-          mise run build:node:native
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          mise run check:node:windows-crt -- static packages/ziwei/native/ziwei-native.win32-x64-msvc.node target/windows-crt
-      - name: Windows x64 static CRT integration and type contracts
-        id: windows-crt-contracts
-        if: matrix.target == 'x86_64-pc-windows-msvc'
-        env:
-          ZIWEI_NODE_ARTIFACTS: target/node-artifacts
-        # Reuse the inspected native bytes. check:node would build the DLL again.
-        run: |
-          mise run build:node:ts
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          mise run test:node
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          mise run check:node:types
-      - name: Node adapter integration and type contracts
-        if: runner.os != 'Linux' && matrix.target != 'x86_64-pc-windows-msvc'
-        env:
-          ZIWEI_NODE_ARTIFACTS: target/node-artifacts
+      - name: Build and test package
         run: mise run check:node
-      - name: GNU adapter integration using the compatibility toolchain
-        if: runner.os == 'Linux'
-        env:
-          ZIWEI_NODE_ARTIFACTS: target/node-artifacts
-        run: |
-          mise run build:node:gnu
-          mise run test:node
-          mise run check:node:types
-      - name: TypeScript tooling and test contracts
+      - name: TypeScript project checks
         run: mise run check:typescript
-      - name: Minimum supported Node runtime
-        if: matrix.target == 'x86_64-unknown-linux-gnu'
+      - name: Development task contracts
+        if: runner.os == 'Linux'
+        run: mise run check:node:tools
+      - name: Minimum Node runtime
+        if: runner.os == 'Linux'
         run: mise run check:node:minimum
-      - name: Node benchmark contract tests (smoke only, no performance gate)
-        if: matrix.target == 'x86_64-unknown-linux-gnu'
+      - name: TypeScript benchmark contracts
+        if: runner.os == 'Linux'
         run: mise run check:node:bench
-      - name: Upload tested distribution inputs
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: node-distribution-${{ github.run_attempt }}-${{ matrix.target }}
-          path: target/node-artifacts/node-distribution-${{ github.run_attempt }}-${{ matrix.target }}/
-          if-no-files-found: error
-          retention-days: 7
-          compression-level: 0
-      - name: Preserve Windows x64 CRT evidence
-        if: ${{ !cancelled() && matrix.target == 'x86_64-pc-windows-msvc' }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: windows-crt-${{ github.run_attempt }}
-          path: target/windows-crt/
-          if-no-files-found: error
-          retention-days: 7
-          compression-level: 0
 
-  musl-distribution:
-    name: Distribution (${{ matrix.target }})
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-24.04
-            target: x86_64-unknown-linux-musl
-            docker-platform: linux/amd64
-          - os: ubuntu-24.04-arm
-            target: aarch64-unknown-linux-musl
-            docker-platform: linux/arm64
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 25
-    env:
-      CARGO_BUILD_TARGET: ${{ matrix.target }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
-        with:
-          install_args: rust node pnpm
-          cache: false
-      - name: Install musl Rust target
-        run: mise exec -- rustup target add "$CARGO_BUILD_TARGET"
-      - name: Build and pack musl distribution without publishing
-        run: |
-          mise exec -- pnpm install --frozen-lockfile
-          mise run build:node:musl
-          mise run check:node:types
-          mise run pack:node -- --target "$CARGO_BUILD_TARGET"
-      - name: Clean Alpine consumer on the target CPU (no emulation)
-        env:
-          DOCKER_PLATFORM: ${{ matrix.docker-platform }}
-        run: |
-          docker run --rm --platform "$DOCKER_PLATFORM" \
-            --mount "type=bind,src=$PWD,dst=/work,readonly" \
-            -e ZIWEI_NPM_CLI=/usr/local/lib/node_modules/npm/bin/npm-cli.js \
-            node:24.21.0-alpine3.23 sh -eu -c '
-              for artifacts in /work/target/node-distribution/ziwei-*; do
-                node /work/packages/ziwei/test/fixtures/distribution-consumer.ts "$artifacts"
-              done
-            '
-      - name: Seal the tested Alpine tarballs
-        run: |
-          for artifacts in target/node-distribution/ziwei-*; do
-            mise run capture:node -- --input "$artifacts" --target "$CARGO_BUILD_TARGET"
-          done
-      - name: Upload tested distribution inputs
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: node-distribution-${{ github.run_attempt }}-${{ matrix.target }}
-          path: target/node-artifacts/node-distribution-${{ github.run_attempt }}-${{ matrix.target }}/
-          if-no-files-found: error
-          retention-days: 7
-          compression-level: 0
-
-  node-distribution:
-    name: Complete Node distribution
-    needs: [native-tests, musl-distribution, quality]
+  browsers:
+    name: Browser and module Worker
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -202,372 +78,64 @@ jobs:
         with:
           install_args: node pnpm
           cache: false
-      - name: Install distribution tooling
+      - name: Install dependencies
         run: mise exec -- pnpm install --frozen-lockfile
-      - name: Download this attempt only, keeping targets separate
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          pattern: node-distribution-${{ github.run_attempt }}-*
-          path: target/node-artifacts
-          merge-multiple: false
-      - name: Validate and assemble without rebuilding
-        run: mise run assemble:node -- --input target/node-artifacts
-      - name: Require GNU artifacts to stay within glibc 2.28
-        run: |
-          for artifacts in target/node-distribution-complete/ziwei-*; do
-            mise run check:node:glibc -- "$artifacts"
-          done
-      - name: Upload the complete private distribution
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: node-distribution-${{ github.run_attempt }}
-          path: |
-            target/node-distribution-complete/ziwei-*/*.tgz
-            target/node-distribution-complete/ziwei-*/artifacts.json
-            target/node-distribution-complete/ziwei-*/batch.json
-          if-no-files-found: error
-          retention-days: 7
-          compression-level: 0
-
-  registry-consumers:
-    name: Registry (${{ matrix.target }})
-    needs: node-distribution
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-24.04
-            target: x86_64-unknown-linux-gnu
-          - os: ubuntu-24.04-arm
-            target: aarch64-unknown-linux-gnu
-          - os: macos-15
-            target: aarch64-apple-darwin
-          - os: macos-15-intel
-            target: x86_64-apple-darwin
-          - os: windows-2025
-            target: x86_64-pc-windows-msvc
-          - os: windows-11-arm
-            target: aarch64-pc-windows-msvc
-          - os: ubuntu-24.04
-            target: x86_64-unknown-linux-musl
-            docker-platform: linux/amd64
-          - os: ubuntu-24.04-arm
-            target: aarch64-unknown-linux-musl
-            docker-platform: linux/arm64
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          name: node-distribution-${{ github.run_attempt }}
-          path: target/node-registry
-      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
-        if: ${{ !matrix.docker-platform }}
-        with:
-          install_args: node pnpm
-          cache: false
-      - name: Audit macOS binaries from the complete cohort
-        id: macos-audit
-        if: endsWith(matrix.target, '-apple-darwin')
-        shell: bash
-        run: |
-          cohorts=(target/node-registry/ziwei-*)
-          test "${#cohorts[@]}" -eq 1
-          test -f "${cohorts[0]}/batch.json"
-          mkdir -p target/macos-compatibility
-          mise run check:node:macos -- "${cohorts[0]}" | tee target/macos-compatibility/audit.json
-      - name: Audit Windows arm64 binary from the complete cohort
-        id: windows-arm64-audit
-        if: matrix.target == 'aarch64-pc-windows-msvc'
-        shell: bash
-        run: |
-          cohorts=(target/node-registry/ziwei-*)
-          test "${#cohorts[@]}" -eq 1
-          test -f "${cohorts[0]}/batch.json"
-          mkdir -p target/windows-arm64-compatibility
-          mise run check:node:windows-arm64 -- "${cohorts[0]}" | tee target/windows-arm64-compatibility/audit.json
-      - name: Clean npm and pnpm consumers of the same complete cohort
-        if: ${{ !matrix.docker-platform }}
-        shell: bash
-        run: |
-          for artifacts in target/node-registry/ziwei-*; do
-            mise run check:node:registry -- "$artifacts"
-          done
-      - name: macOS minimum Node consumers of the same complete cohort
-        id: macos-minimum
-        if: endsWith(matrix.target, '-apple-darwin')
-        shell: bash
-        env:
-          EXPECTED_MACOS_TARGET: ${{ matrix.target }}
-        run: |
-          mise install node@24.15.0
-          mise exec node@24.15.0 -- node -e 'const a=require("node:assert/strict"); a.equal(process.platform,"darwin"); a.equal(process.version,"v24.15.0"); a.equal(process.arch,process.env.EXPECTED_MACOS_TARGET === "aarch64-apple-darwin" ? "arm64" : "x64"); console.log({node:process.version,arch:process.arch,kernel:require("node:os").release()})' | tee target/macos-compatibility/consumer.log
-          for artifacts in target/node-registry/ziwei-*; do
-            mise run --tool node@24.15.0 check:node:registry -- "$artifacts" | tee -a target/macos-compatibility/consumer.log
-          done
-      - name: Preserve macOS compatibility evidence
-        id: macos-evidence
-        if: ${{ !cancelled() && endsWith(matrix.target, '-apple-darwin') }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: macos-compatibility-${{ github.run_attempt }}-${{ matrix.target }}
-          path: target/macos-compatibility/
-          if-no-files-found: error
-          retention-days: 7
-      - name: Windows arm64 minimum Node consumers of the same complete cohort
-        id: windows-arm64-minimum
-        if: matrix.target == 'aarch64-pc-windows-msvc'
-        shell: bash
-        run: |
-          mise install node@24.15.0
-          mise exec node@24.15.0 -- node -e 'const a=require("node:assert/strict"); a.equal(process.platform,"win32"); a.equal(process.version,"v24.15.0"); a.equal(process.arch,"arm64"); console.log({node:process.version,arch:process.arch,kernel:require("node:os").release()})' | tee target/windows-arm64-compatibility/consumer.log
-          for artifacts in target/node-registry/ziwei-*; do
-            mise run --tool node@24.15.0 check:node:registry -- "$artifacts" 2>&1 | tee -a target/windows-arm64-compatibility/consumer.log
-          done
-      - name: Preserve Windows arm64 compatibility evidence
-        id: windows-arm64-evidence
-        if: ${{ !cancelled() && matrix.target == 'aarch64-pc-windows-msvc' }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: windows-arm64-compatibility-${{ github.run_attempt }}
-          path: target/windows-arm64-compatibility/
-          if-no-files-found: error
-          retention-days: 7
-      - name: Clean glibc 2.28 consumers with the minimum Node on the target CPU
-        if: endsWith(matrix.target, '-linux-gnu')
-        shell: bash
-        run: |
-          mise install node@24.15.0
-          node_root=$(mise exec node@24.15.0 -- node -p 'require("node:path").dirname(require("node:path").dirname(process.execPath))')
-          node_arch=$(mise exec node@24.15.0 -- node -p 'process.arch')
-          case "$node_arch" in
-            x64) docker_platform=linux/amd64 ;;
-            arm64) docker_platform=linux/arm64 ;;
-            *) exit 1 ;;
-          esac
-          docker run --rm --platform "$docker_platform" \
-            --mount "type=bind,src=$PWD,dst=/work,readonly" \
-            --mount "type=bind,src=$node_root,dst=/opt/node,readonly" \
-            -e EXPECTED_NODE_ARCH="$node_arch" \
-            -e GITHUB_SHA -e GITHUB_RUN_ID -e GITHUB_RUN_ATTEMPT \
-            almalinux:8.10-20260902 bash -eu -c '
-              dnf install -y --setopt=install_weak_deps=False ca-certificates tar gzip libstdc++
-              export PATH=/opt/node/bin:$PATH
-              node -e "const a=require(\"node:assert/strict\"); a.equal(process.platform,\"linux\"); a.equal(process.arch,process.env.EXPECTED_NODE_ARCH); a.equal(process.version,\"v24.15.0\"); a.equal(process.report.getReport().header.glibcVersionRuntime,\"2.28\"); console.log({node:process.version,arch:process.arch,glibc:process.report.getReport().header.glibcVersionRuntime})"
-              pnpm_version=$(node -p "require(\"/work/package.json\").devEngines.packageManager.version")
-              node_arch=$(node -p "process.arch")
-              npm install --prefix /tmp/pnpm-tool --ignore-scripts --no-audit --no-fund \
-                "@pnpm/exe.linux-${node_arch}@${pnpm_version}"
-              export ZIWEI_PNPM_BIN="/tmp/pnpm-tool/node_modules/@pnpm/exe.linux-${node_arch}/pnpm"
-              for artifacts in /work/target/node-registry/ziwei-*; do
-                node /work/packages/ziwei/test/fixtures/registry-consumer.ts "$artifacts"
-              done
-            '
-      - name: Clean Alpine registry consumers on the target CPU
-        if: matrix.docker-platform
-        env:
-          DOCKER_PLATFORM: ${{ matrix.docker-platform }}
-        run: |
-          docker run --rm --platform "$DOCKER_PLATFORM" \
-            --mount "type=bind,src=$PWD,dst=/work,readonly" \
-            -e GITHUB_SHA -e GITHUB_RUN_ID -e GITHUB_RUN_ATTEMPT \
-            node:24.21.0-alpine3.23 sh -eu -c '
-              pnpm_version=$(node -p "require(\"/work/package.json\").devEngines.packageManager.version")
-              node_arch=$(node -p "process.arch")
-              npm install --prefix /tmp/pnpm-tool --ignore-scripts --no-audit --no-fund \
-                "@pnpm/exe.linux-${node_arch}-musl@${pnpm_version}"
-              export ZIWEI_PNPM_BIN="/tmp/pnpm-tool/node_modules/@pnpm/exe.linux-${node_arch}-musl/pnpm"
-              for artifacts in /work/target/node-registry/ziwei-*; do
-                node /work/packages/ziwei/test/fixtures/registry-consumer.ts "$artifacts"
-              done
-            '
-
-      - name: Minimum Node Alpine registry consumers on the target CPU
-        id: musl-minimum
-        if: matrix.docker-platform
-        shell: bash
-        env:
-          DOCKER_PLATFORM: ${{ matrix.docker-platform }}
-          # Docker Hub index for 24.15.0-alpine3.23; both amd64 and arm64 checked 2026-09-11.
-          MUSL_IMAGE: node:24.15.0-alpine3.23@sha256:d1b3b4da11eefd5941e7f0b9cf17783fc99d9c6fc34884a665f40a06dbdfc94f
-        run: |
-          case "$DOCKER_PLATFORM" in
-            linux/amd64) expected_arch=x64; test "$(uname -m)" = x86_64 ;;
-            linux/arm64) expected_arch=arm64; test "$(uname -m)" = aarch64 ;;
-            *) exit 1 ;;
-          esac
-          cohorts=(target/node-registry/ziwei-*)
-          test "${#cohorts[@]}" -eq 1
-          test -f "${cohorts[0]}/batch.json"
-          mkdir -p target/musl-compatibility
-          docker pull --platform "$DOCKER_PLATFORM" "$MUSL_IMAGE"
-          docker image inspect "$MUSL_IMAGE" --format '{"id":{{json .Id}},"os":{{json .Os}},"architecture":{{json .Architecture}},"repoDigests":{{json .RepoDigests}}}' > target/musl-compatibility/image.json
-          docker run --rm --platform "$DOCKER_PLATFORM" \
-            --mount "type=bind,src=$PWD,dst=/work,readonly" \
-            --mount "type=bind,src=$PWD/target/musl-compatibility,dst=/evidence" \
-            -e EXPECTED_NODE_ARCH="$expected_arch" \
-            -e GITHUB_SHA -e GITHUB_RUN_ID -e GITHUB_RUN_ATTEMPT \
-            "$MUSL_IMAGE" sh -eu -c '
-              set -- /work/target/node-registry/ziwei-*
-              test "$#" -eq 1
-              test -f "$1/batch.json"
-              cp "$1/batch.json" /evidence/batch.json
-              node /work/packages/ziwei/tools/compatibility.ts --musl-runtime "$EXPECTED_NODE_ARCH" > /evidence/runtime.json
-              cat /evidence/runtime.json
-              pnpm_version=$(node -p "require(\"/work/package.json\").devEngines.packageManager.version")
-              npm install --prefix /tmp/pnpm-tool --ignore-scripts --no-audit --no-fund \
-                "@pnpm/exe.linux-${EXPECTED_NODE_ARCH}-musl@${pnpm_version}"
-              export ZIWEI_PNPM_BIN="/tmp/pnpm-tool/node_modules/@pnpm/exe.linux-${EXPECTED_NODE_ARCH}-musl/pnpm"
-              node /work/packages/ziwei/test/fixtures/registry-consumer.ts "$1"
-            ' 2>&1 | tee target/musl-compatibility/consumer.log
-      - name: Preserve musl minimum Node evidence
-        id: musl-evidence
-        if: ${{ !cancelled() && matrix.docker-platform }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: musl-compatibility-${{ github.run_attempt }}-${{ matrix.target }}
-          path: target/musl-compatibility/
-          if-no-files-found: error
-          retention-days: 7
-
-  windows-clean-consumer:
-    name: Windows x64 clean consumers
-    needs: node-distribution
-    runs-on: windows-2025
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          name: node-distribution-${{ github.run_attempt }}
-          path: target/node-registry
-      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
-        with:
-          install_args: node pnpm
-          cache: false
-      - name: Start existing Windows Docker service
-        id: windows-docker-start
-        shell: pwsh
-        timeout-minutes: 2
-        run: |
-          $service = Get-Service -Name docker -ErrorAction Stop
-          if ($service.Status -ne 'Running') {
-            Start-Service -InputObject $service -ErrorAction Stop
-          }
-      - name: Verify clean npm and runtime-equipped pnpm against the sealed cohort
-        id: windows-consumers
-        shell: pwsh
-        run: |
-          $cohorts = @(Get-ChildItem target/node-registry -Directory)
-          if ($cohorts.Count -ne 1) { throw 'Expected exactly one complete cohort' }
-          mise run check:node:windows -- $cohorts[0].FullName "$PWD/target/windows-clean-consumer"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Preserve Windows consumer evidence, including failures
-        id: windows-evidence
-        if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: windows-clean-consumer-${{ github.run_attempt }}
-          path: target/windows-clean-consumer/
-          if-no-files-found: error
-          retention-days: 7
-
-  wasm-browser:
-    name: Wasm and browser adapters
-    runs-on: ubuntu-24.04
-    timeout-minutes: 25
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
-        with:
-          install_args: rust node pnpm
-          cache: false
-      - name: Install development dependencies without changing the lockfile
-        run: mise exec -- pnpm install --frozen-lockfile
-      - name: Install Wasm target and browser engines
-        run: |
-          mise run setup:wasm
-          mise run setup:wasm:browsers -- --with-deps
-      - name: Build and verify actual Wasm, Node parity, browsers and installed package
-        run: mise run check:wasm
-      - name: Wasm target Clippy
-        run: |
-          mise exec -- rustup component add clippy
-          mise exec -- cargo clippy -p ziwei-wasm --target wasm32-unknown-unknown --locked -- -D warnings
-      - name: Minimum Rust Wasm target
-        run: |
-          mise exec rust@1.98.0 -- rustup target add wasm32-unknown-unknown
-          mise exec rust@1.98.0 -- cargo check -p ziwei-wasm --target wasm32-unknown-unknown --locked --target-dir target/msrv-wasm
+      - name: Install Chromium, Firefox and WebKit
+        run: mise exec -- pnpm --dir packages/ziwei exec playwright install --with-deps chromium firefox webkit
+      - name: Build package
+        run: mise run build:node
+      - name: Browser and Worker contracts
+        run: mise run test:browser
 
   quality:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
-      # Official action releases; full SHA pins, no persisted write credentials.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
         with:
           install_args: rust node pnpm
-          # Rust is installed through rustup; see jdx/mise-action#215.
           cache: false
-      - name: Install quality components
-        run: mise exec -- rustup component add rustfmt clippy
-      - name: Install Node quality tools
-        run: mise exec -- pnpm install --frozen-lockfile
-      - name: TypeScript lint
-        run: mise run lint:node
-      - name: Node formatting
-        run: mise run check:node:format
-      - name: Format
-        run: mise exec -- cargo fmt --all -- --check
-      - name: Clippy
-        run: mise exec -- cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
-      - name: Rustdoc
-        run: mise exec -- cargo rustdoc -p ziwei --lib --locked -- -D warnings
-      - name: Minimum supported Rust
+      - name: Install quality components and dependencies
+        run: |
+          mise exec -- rustup component add rustfmt clippy
+          mise exec -- pnpm install --frozen-lockfile
+      - name: TypeScript lint and format
+        run: |
+          mise run lint:node
+          mise run check:node:format
+      - name: Rust format, Clippy and docs
+        run: |
+          mise exec -- cargo fmt --all -- --check
+          mise exec -- cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+          mise exec -- cargo rustdoc -p ziwei --lib --locked -- -D warnings
+      - name: Minimum Rust
         run: mise run check:msrv
-      - name: Markdown examples
+      - name: Markdown examples and development tools
         run: |
           mise exec -- cargo build -p ziwei --locked
           mise exec -- rustdoc --edition 2024 --test README.md --extern ziwei=target/debug/libziwei.rlib -L dependency=target/debug/deps
           mise exec -- rustdoc --edition 2024 --test docs/architecture/rust-package-design.md --extern ziwei=target/debug/libziwei.rlib -L dependency=target/debug/deps
-      - name: Rust development tools
-        run: mise run check:tools
-      - name: Development tools end-to-end smoke only
-        run: mise run check:tools:e2e
-      - name: Verify package without publishing
-        run: mise run check:package
+          mise run check:tools
+          mise run check:tools:e2e
+          mise run check:package
 
-  # Keep a single stable check that cannot pass when a required job fails or skips.
   verify:
-    needs: [native-tests, musl-distribution, quality, node-distribution, registry-consumers, windows-clean-consumer, wasm-browser]
+    needs: [rust, typescript, browsers, quality]
     if: ${{ !cancelled() }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 1
     steps:
       - name: Require all checks
         env:
-          NATIVE_RESULT: ${{ needs.native-tests.result }}
-          MUSL_RESULT: ${{ needs.musl-distribution.result }}
+          RUST_RESULT: ${{ needs.rust.result }}
+          TS_RESULT: ${{ needs.typescript.result }}
+          BROWSER_RESULT: ${{ needs.browsers.result }}
           QUALITY_RESULT: ${{ needs.quality.result }}
-          DISTRIBUTION_RESULT: ${{ needs.node-distribution.result }}
-          REGISTRY_RESULT: ${{ needs.registry-consumers.result }}
-          WINDOWS_CLEAN_RESULT: ${{ needs.windows-clean-consumer.result }}
-          WASM_RESULT: ${{ needs.wasm-browser.result }}
         run: |
-          test "$NATIVE_RESULT" = success
-          test "$MUSL_RESULT" = success
+          test "$RUST_RESULT" = success
+          test "$TS_RESULT" = success
+          test "$BROWSER_RESULT" = success
           test "$QUALITY_RESULT" = success
-          test "$DISTRIBUTION_RESULT" = success
-          test "$REGISTRY_RESULT" = success
-          test "$WINDOWS_CLEAN_RESULT" = success
-          test "$WASM_RESULT" = success

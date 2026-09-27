@@ -14,9 +14,9 @@
 
 - **领域与架构**：探索或变更领域概念、术语、历法规则、分析语义或架构，读取 [领域文档](docs/agents/domain.md)。
 
-- **Node 绑定**：修改 `bindings/node`、`packages/ziwei`、`tools/tests` 中的 Node 工程测试或 Node 测试配置时，读取 [Node 包约定](packages/ziwei/AGENTS.md)；涉及公开 API 时，再读取 [Node API 设计](docs/architecture/node-api-design.md)。
+- **TypeScript 包**：修改 `packages/ziwei`、`packages/ziwei-shared` 或相关测试与配置时，读取 [TypeScript 包约定](packages/ziwei/AGENTS.md)；涉及公开 API 或领域语义时，再读取 [领域合同](docs/architecture/domain-contract.md)与[实现状态表](docs/architecture/implementations.md)。
 
-- **Wasm／浏览器**：修改 `bindings/wasm` 或 `packages/ziwei-wasm` 时，读取 [Wasm 包约定](packages/ziwei-wasm/AGENTS.md)；涉及初始化、生命周期或分发时，再读取 [浏览器设计](docs/architecture/browser-adapter-design.md)。
+- **浏览器消费**：修改 `@matharts/ziwei` 的浏览器入口、Worker 验证或分发时，同时核对 [TypeScript 包约定](packages/ziwei/AGENTS.md)及真实浏览器测试。
 
 - **工程验证**：修改 Rust、TypeScript、开发工具、依赖、CI、打包配置或可执行文档示例时，读取 [工程验证](docs/agents/engineering.md)。mise 与 `devEngines` 的分工、Catalog 依赖管理、Rslib 构建和 Rstest 测试均由该文档导航到实际配置；版本与命令以配置为准。
 

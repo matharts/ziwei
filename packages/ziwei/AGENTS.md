@@ -1,33 +1,26 @@
-# Node package invariants
+# @matharts/ziwei 包约束
 
-## 源码与分发
+## 当前架构
 
-- 手写源码、配置、测试与工具使用 TypeScript。Rust adapter 位于 `../../bindings/node`；排盘规则只属于 Rust 核心。
+- 完整排盘领域逻辑由本包的 TypeScript 实现。Node.js 与浏览器使用相同包根入口和同步 API；Rust 与 Wasm 不属于本包运行时依赖。
+- 领域计算放在 `src/engine/`；`src/index.ts`、`src/natal.ts` 将内部实现适配为公开 API。内部引擎模块不作为包子路径导出。
+- 公开行为及值合同遵循[Node API 设计](../../docs/architecture/node-api-design.md)，包括输入校验顺序、中文错误消息及结构化 detail、稳定枚举身份、脱离命盘的深层冻结 DTO，以及仅缓存每个命盘实例的 `profile` 和 `palaces`。
+- 构建单份 ESM 包，只提供根导出。受支持的 Node 版本应保留 `require(ESM)` 兼容性。公开依赖图不得要求 top-level await 或仅供 Node 使用的内建模块，以便浏览器导入相同入口。
+- `dist/` 是生成目录，不手工编辑或提交。构建从 TypeScript 产出 JavaScript 和声明，不要求消费者直接执行工作区源码。
 
-- 包为单份 ESM 输出，只有根 `exports`。最低 Node 24.15.0；`require(ESM)` 返回同一命名导出，不生成第二份 CJS 实现。公开依赖图禁止 top-level await。
+## 迁移历史
 
-- `src/` 是门面；`native/` 与 `dist/` 是生成产物，不手改、不提交。napi 的 `binding.cjs` 和 `.node` 保持外置；不把 TypeScript 源码直接分发给 Node 执行。
+- 旧包曾使用 Rust Node-API 绑定、外置 `native/binding.cjs`／`.node` 加载器和按平台分发，这些路径已从当前包移除。`@matharts/ziwei-shared` 仍被 TypeScript 包用于共享输入、校验、错误与投影逻辑；后续维护不得把它误判为废弃的原生专属依赖。
+- 旧运行路径已切换。Node 与浏览器消费路径共用当前 TypeScript 包根入口；共享 conformance 覆盖与验收状态见[实现状态表](../../docs/architecture/implementations.md)，无需为兼容历史原生分发恢复旧运行路径。
 
-- 输入、错误与只读投影通过私有 workspace 包 `@matharts/ziwei-shared` 的根入口复用；构建时将 JS 与声明内联，消费产物不保留该依赖。具体共享范围与构建约束见其 [AGENTS.md](../ziwei-shared/AGENTS.md)。
+## 工具链与验证
 
-- 分发暂存、平台包、加载与 CI 变更先读取 [Node 分发设计](../../docs/architecture/node-distribution-proposal.md)；源码开发包与无二进制分发主包分别验收，平台配置不等于已验证支持。
+- 依赖版本统一由根 `pnpm-workspace.yaml` 的 Catalog 管理，本包 manifest 使用 `catalog:`，不重复声明版本。
+- 根 `package.json` 的 `devEngines` 与 mise 配置负责开发工具版本。`engines.node` 只声明消费者最低 Node 版本，不重复开发约束，也不添加包内 scripts。
+- 仓库开发任务定义在根 `mise.toml`，通过 `mise run` 执行。命令与范围遵循[工程验证](../../docs/agents/engineering.md)。
+- 包测试应覆盖独立手算领域例及真实 Node／浏览器消费。Rust 输出只能作补充差分证据，不能作为 TypeScript 引擎的唯一预期。
+- 修改历法或排盘语义时，遵循[领域规则](../../docs/agents/domain.md)适用章节。示例与公开 API 文档应和已实现行为一致。
 
-## 工具链与任务
+## 发布
 
-- 依赖版本统一由根 `pnpm-workspace.yaml` 的 Catalog 管理；本包使用 `catalog:`，不得新增第二套版本配置。
-
-- 开发环境统一由根 `package.json` 的 `devEngines` 校验，mise 负责安装与选择版本；本包只保留消费端 `engines.node`，不重复开发约束。安装依赖使用 `mise exec -- pnpm install --frozen-lockfile`，开发任务由 mise 先选择合规环境。
-
-- 开发任务统一在根 `mise.toml` 定义，通过 `mise run` 调用；package.json 只保留包元数据、依赖与约束，不定义重复 scripts。复杂参数通过 `mise exec` 直接启动 CLI；参数边界及入口测试见 [工程验证](../../docs/agents/engineering.md#工具链与检查入口)。
-
-## 验证与发布
-
-- 根目录通过 `mise run check:node` 验证构建、公开 API 和类型合同，再运行 `mise run check:typescript`。最低版本使用 `mise run check:node:minimum`。
-
-- 工具与基准测试分别为 `mise run check:node:tools`、`mise run check:node:bench`；后者会构建相同的 dist，不能与包消费端测试并行。
-
-- Lint 与格式化采用根 Oxc 配置；检查和修复入口、覆盖范围见 [工程验证](../../docs/agents/engineering.md#lint-与格式化)。
-
-- 保留输入防御、冻结、实例属性缓存、错误身份、Worker 与独立 tarball 消费端合同。类型负例不可作为运行时测试执行。
-
-- 发布前需独立验收平台产物、声明和清洁消费端，并获得发布授权。当前 `private: true`，不得发布。
+- 未获单独授权时保持 `private`。本地构建或测试通过，只能证明实际运行的环境与范围。

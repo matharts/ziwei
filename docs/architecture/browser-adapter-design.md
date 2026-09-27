@@ -1,5 +1,7 @@
 # 浏览器适配设计与验收合同
 
+> **历史资料**：此文记录已取消的 Wasm 浏览器适配路线。当前浏览器使用与 Node 共用的纯 TypeScript 包；状态与验收见[实现状态](implementations.md)。
+
 状态：2026-09-11 已进入并行实施（D-267），实现位于 `packages/ziwei-wasm`。浏览器适配属于必须交付的范围；实际检查见[交付计划](cross-platform-delivery-plan.md)，不从测试引擎推导品牌浏览器或移动设备支持，也不授权发布。
 
 本页负责浏览器加载、部署与消费验收；Rust target、绑定传输和命盘释放方案见 [Wasm 适配设计](wasm-adapter-design.md)。现有领域与查询语义继续以 [Node Interface 合同](node-api-design.md)和 [Rust 架构](rust-package-design.md)为基准。

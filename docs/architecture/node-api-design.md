@@ -1,5 +1,7 @@
 # Node.js / TypeScript 适配层设计
 
+> **历史资料**：此文记录原生 Node 适配层的历史设计。当前 `@matharts/ziwei` 已改为纯 TypeScript 实现；公开行为请核对[领域合同](domain-contract.md)、[实现状态](implementations.md)和包测试。
+
 本文说明已实现的 Node API 合同：输入、查询、只读数据、对象身份、错误与生命周期。构建和使用见 [Node 包说明](../../packages/ziwei/README.md)，当前范围与待交付内容见 [README](../../README.md#范围)。本机验收和优化记录保留在后文，不代表当前提交的远端 CI、全部平台或性能结论。
 
 ## 阅读路径
@@ -257,7 +259,7 @@ INVALID_ARGUMENT 的 reason 为 missing、type、non_finite、non_integer、out_
 
 - public exports 仅包根，不开放内部二进制与实现子路径。不在导入时联网下载，不设置自动从源码编译的安装回退；缺少匹配产物时给出可操作的加载错误。
 
-- 首个切片采用 napi-rs v3、Node-API 8，补丁版本与工具版本已锁定，详见 [绑定依赖](../../bindings/node/Cargo.toml)和[工具链配置](../../mise.toml)。必须验证生成代码与实际加载，不通过升级 Node-API 等级宣称性能收益。
+- 首个切片采用 napi-rs v3、Node-API 8，补丁版本与工具版本已锁定，详见 `绑定依赖`（历史路径：`../../bindings/node/Cargo.toml`）和[工具链配置](../../mise.toml)。必须验证生成代码与实际加载，不通过升级 Node-API 等级宣称性能收益。
 
 - 支持门槛调整为 Node >=24.15.0，开发固定 24.21.0；不再声明 Node 22 支持。首批目标按 D-263 扩至八个桌面／服务器组合，未实测平台不得称为已验证。24.15.0 是本项目依赖的 `require(ESM)` 稳定版本，也涵盖 24.12.0 已稳定的 TS 类型擦除。[Node 官方模块文档](https://nodejs.org/docs/latest-v24.x/api/modules.html#loading-ecmascript-modules-using-require)
 

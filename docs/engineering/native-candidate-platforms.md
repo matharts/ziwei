@@ -1,8 +1,10 @@
 # 七个原生候选平台：宿主、构建与验收矩阵
 
+> **历史资料**：此文为已停止的 Node 原生候选平台研究记录；现行实现与门禁见[实现状态](../architecture/implementations.md)。
+
 当前状态：2026-09-14，提交 `be772f9` 已将固定源码重建 pnpm 接入 ppc64le 日常候选 CI：[候选 CI](https://github.com/matharts/ziwei/actions/runs/34776793193)的 14 项任务与[常规 CI](https://github.com/matharts/ziwei/actions/runs/34776793142)的 21 项任务全部通过。ppc64le 使用本轮重建客户端，s390x 保持官方客户端，两架构双 Node／双客户端共 32 个消费场景均通过，下载后批次和摘要已核对。该实现已通过 PR #350 合并到 `main`（合并提交 `6ab3dc8`），尚未发布。官方二进制的启动故障保留在手动诊断中，不声称上游已修复。历史证据与实验边界见下文；当前范围以本页平台矩阵为准，仿真不替代真机验收。现有八目标结论沿用 [Node 分发设计](../architecture/node-distribution-proposal.md)。
 
-候选实现包含 [静态审计](../../packages/ziwei/tools/compatibility.ts)、[候选封存与消费](../../packages/ziwei/tools/candidate.ts)、[仿真控制器](../../packages/ziwei/tools/candidate-runtime.ts) 和独立的[候选 CI](../../.github/workflows/native-candidates.yml)。不改正式目标 manifest、依赖或公开 API，不安装本机 SDK、虚拟机或设备工具，不申请云资源，不发布。下文的实施路径与工期是项目建议，不是上游支持承诺。
+候选实现包含 `静态审计`（历史路径：`../../packages/ziwei/tools/compatibility.ts`）、`候选封存与消费`（历史路径：`../../packages/ziwei/tools/candidate.ts`）、`仿真控制器`（历史路径：`../../packages/ziwei/tools/candidate-runtime.ts`） 和独立的`候选 CI`（历史路径：`../../.github/workflows/native-candidates.yml`）。不改正式目标 manifest、依赖或公开 API，不安装本机 SDK、虚拟机或设备工具，不申请云资源，不发布。下文的实施路径与工期是项目建议，不是上游支持承诺。
 
 ## 结论与推荐
 
@@ -10,7 +12,7 @@
 
 按 D-271，日常候选 CI 仅为 ppc64le 使用源码重建的 pnpm 测试客户端；s390x 和现有八个正式目标保持原路径。这个 pnpm 不进入 Ziwei npm 包，不替换开发机的 mise／devEngines，不作为官方 pnpm 发布或正式平台支持的证明。
 
-- **构建与来源**：独立 `pnpm-client` job 与 Ziwei 构建并行，每次从固定上游 commit、原始 `Cargo.lock`、Rust 1.97.0、固定摘要镜像和指定 GNU 包版本重新构建，不修改上游源码。通用[重建模块](../../packages/ziwei/tools/pnpm-rebuild.ts)与 Dockerfile 位于正常工具目录；`diagnostics/` 仅保留手动比较及历史产物入口。构建使用 release 优化并保留符号，记录实际工具版本；不声称不同 runner 间字节可复现。
+- **构建与来源**：独立 `pnpm-client` job 与 Ziwei 构建并行，每次从固定上游 commit、原始 `Cargo.lock`、Rust 1.97.0、固定摘要镜像和指定 GNU 包版本重新构建，不修改上游源码。通用`重建模块`（历史路径：`../../packages/ziwei/tools/pnpm-rebuild.ts`）与 Dockerfile 位于正常工具目录；`diagnostics/` 仅保留手动比较及历史产物入口。构建使用 release 优化并保留符号，记录实际工具版本；不声称不同 runner 间字节可复现。
 - **同批验证**：构建凭据使用 `kind: pnpm-source-build`，保留 `runtimeVerified: false`，并记录 commit／run／attempt、源码、锁文件、Dockerfile／构建脚本和二进制摘要。构建与清理全部成功后才上传供消费的客户端。日常入口 `--pnpm-build` 只接受同批、固定配方和匹配字节；历史 `pnpm-rebuild-experiment` 凭据不能用于日常门禁。缺失或无效输入直接失败，不回退到官方故障产物或寻找旧 artifact。
 - **完整门禁**：两版 Node 均执行原 npm／pnpm 的正常、禁用 optional、缺失、损坏四类场景。报告保持 `purpose: candidate-acceptance`，显式记录 `pnpm.origin: source-rebuild` 及完整构建凭据。源码重建、七目标核心、三项静态审计、两目标仿真均为必需结果；构建成功不能替代消费成功。
 - **保留与恢复**：只在同一 run 内传递客户端，不使用跨 run 的可执行缓存；Actions artifact 过期后重跑全部任务生成新批次，不依赖实验 artifact ID。构建日志与失败凭据短期保存；编译镜像与 Cargo 中间缓存不上传。代价是每轮都承担重建时间与下载成本，当前不引入额外缓存信任边界。
@@ -27,13 +29,13 @@ ppc64le／s390x 消费 artifact 分别为 `10324405200`、`10323734082`，两份
 
 ### 独立 pnpm 启动诊断
 
-[手动诊断工作流](../../.github/workflows/pnpm-repro.yml)独立于候选矩阵，无需构建 Ziwei、下载候选产物或安装 workspace 依赖。在已注册 ppc64le QEMU 的 Linux x64 Docker 宿主运行：
+`手动诊断工作流`（历史路径：`../../.github/workflows/pnpm-repro.yml`）独立于候选矩阵，无需构建 Ziwei、下载候选产物或安装 workspace 依赖。在已注册 ppc64le QEMU 的 Linux x64 Docker 宿主运行：
 
 ```sh
 mise run diagnose:pnpm -- --output <新的结果目录>
 ```
 
-[诊断工具](../../packages/ziwei/tools/diagnostics/pnpm-repro.ts)复用候选固定镜像与 pnpm 12.4.1 归档摘要，并再次核对解出的二进制 SHA-256。容器只挂载该二进制，在 `/tmp` 直接执行 `pnpm --version`；不挂载 Ziwei、候选 tarball 或外置 Node。先执行普通探针，再仅增加 `QEMU_STRACE=1`，各有 30 秒硬超时及独立容器清理。
+`诊断工具`（历史路径：`../../packages/ziwei/tools/diagnostics/pnpm-repro.ts`）复用候选固定镜像与 pnpm 12.4.1 归档摘要，并再次核对解出的二进制 SHA-256。容器只挂载该二进制，在 `/tmp` 直接执行 `pnpm --version`；不挂载 Ziwei、候选 tarball 或外置 Node。先执行普通探针，再仅增加 `QEMU_STRACE=1`，各有 30 秒硬超时及独立容器清理。
 
 `experiment.json` 保存提交／run／attempt、输入摘要、镜像检查、实际参数、stdout／stderr、退出信号及清理结果。正确版本且正常退出才通过；QEMU SIGSEGV、超时、基础设施错误和清理失败均使任务失败，失败报告仍上传。这是启动诊断，不是候选平台验收。
 
@@ -81,7 +83,7 @@ mise run diagnose:pnpm -- --output <新的结果目录>
 
 用户已授权临时分支上的隔离重建与 Linux CI。手动诊断选择 `comparison=rebuild`：先执行原官方基线，再从 [pnpm v12.4.1 固定提交](https://github.com/pnpm/pnpm/tree/19eb39448649c926bc63b0e9fa16f0e340701460)重建 `pnpm-cli`。官方 [Rust 配置](https://github.com/pnpm/pnpm/blob/19eb39448649c926bc63b0e9fa16f0e340701460/rust-toolchain.toml)的 1.97.0 不变，使用固定摘要的 [Rust Bookworm 镜像](https://hub.docker.com/_/rust)、[GCC 12.2](https://packages.debian.org/bookworm/gcc-12-powerpc64le-linux-gnu)／[binutils 2.40](https://packages.debian.org/bookworm/binutils-powerpc64le-linux-gnu)交叉工具和原 `Cargo.lock`。这是构建链对照，不是只改变一个链接参数的因果实验。
 
-[重建工具](../../packages/ziwei/tools/pnpm-rebuild.ts)在一次性 Linux runner 的 Docker 内构建，不向本机安装工具。源码只读挂载，Cargo 使用 `--locked`，不修改上游源码或依赖；保留 release 优化，取消符号剥离以支持取证。编译容器可联网下载固定依赖，后续启动探针仍断网、只读、非特权，使用原 QEMU、消费镜像与命令。
+`重建工具`（历史路径：`../../packages/ziwei/tools/pnpm-rebuild.ts`）在一次性 Linux runner 的 Docker 内构建，不向本机安装工具。源码只读挂载，Cargo 使用 `--locked`，不修改上游源码或依赖；保留 release 优化，取消符号剥离以支持取证。编译容器可联网下载固定依赖，后续启动探针仍断网、只读、非特权，使用原 QEMU、消费镜像与命令。
 
 最初实验的 `build.json` 标记为 `pnpm-rebuild-experiment`、`runtimeVerified: false`，记录源码、锁文件、Rust／镜像、Dockerfile、命令、二进制摘要和批次。该历史凭据仅供固定摘要的旧消费对照，不进入日常门禁。现行手动重建复用上节通用构建器，生成 `pnpm-source-build`；启动工具经 `--rebuilt-receipt` 核对同批、固定配方和完整构建，仍不把启动成功当作完整消费验收。两种产物都不冒充官方归档或进入 Ziwei 发行包。
 
@@ -112,7 +114,7 @@ Android 官方将 JNI 定位为 Java／Kotlin 与原生代码之间的接口；O
 
 ## 当前约束与证据
 
-2026-09-12 配置核对：开发 Rust 1.98.1、MSRV 1.98.0、开发 Node 24.21.0、最低 Node 24.15.0、pnpm 12.4.1、napi CLI 3.9.1；Rust 绑定为 napi 3.12.3、napi-derive 3.6.4、napi-build 2.4.2，仅启用 `napi8`。依据为 [mise](../../mise.toml)、[Catalog](../../pnpm-workspace.yaml)、[绑定 manifest](../../bindings/node/Cargo.toml) 与 [Node 包约定](../../packages/ziwei/AGENTS.md)。下方历史验证记录保留执行时的版本，不作为当前依赖清单。
+2026-09-12 配置核对：开发 Rust 1.98.1、MSRV 1.98.0、开发 Node 24.21.0、最低 Node 24.15.0、pnpm 12.4.1、napi CLI 3.9.1；Rust 绑定为 napi 3.12.3、napi-derive 3.6.4、napi-build 2.4.2，仅启用 `napi8`。依据为 [mise](../../mise.toml)、[Catalog](../../pnpm-workspace.yaml)、`绑定 manifest`（历史路径：`../../bindings/node/Cargo.toml`） 与 [Node 包约定](../../packages/ziwei/AGENTS.md)。下方历史验证记录保留执行时的版本，不作为当前依赖清单。
 
 | 事实 | 对本项目的影响 | 一手证据 |
 | --- | --- | --- |
@@ -255,7 +257,7 @@ Node 候选的最低与开发 Node 测试均消费同一已封存 addon，不重
 
 ## 已通过：独立候选 CI 的编译与静态审计
 
-[native-candidates.yml](../../.github/workflows/native-candidates.yml) 在 push／PR／手动运行时检查七个候选的 Rust 核心：安装各自标准库后执行目标 `cargo check`，不链接 Node addon、不运行测试。FreeBSD、Android 与 OHOS 不借此声称有可用的宿主绑定或 SDK。
+`native-candidates.yml`（历史路径：`../../.github/workflows/native-candidates.yml`） 在 push／PR／手动运行时检查七个候选的 Rust 核心：安装各自标准库后执行目标 `cargo check`，不链接 Node addon、不运行测试。FreeBSD、Android 与 OHOS 不借此声称有可用的宿主绑定或 SDK。
 
 三个 GNU 候选在 Ubuntu x64 另行复用 `build:node:gnu`，通过固定 CLI 的 `--use-napi-cross` 真正构建；随后复制一次 `.node`，审计这份副本并保存原始 bytes 与 `audit.json`。工件名包含源码 SHA、attempt 与 target，前缀独立于现有 `node-distribution`，不生成 batch，不进入八目标汇总或发布路径。
 
@@ -271,7 +273,7 @@ Node 候选的最低与开发 Node 测试均消费同一已封存 addon，不重
 
 1. GNU 构建 job 静态审计后，用 `pack:node:candidate` 封存原始 addon 和当次公共文件，不重新编译。复用既有打包器，仅临时包副本允许当前候选；正式八目标清单不变。
 2. `candidate.json` 使用独立的 `node-candidate` 类型，包含 commit／run／attempt、目标、包版本、两个 tarball 与 addon 的大小和摘要；归档校验完成后才写清单。它不是正式 `batch.json`，不能进入八目标汇总或发布路径。
-3. `check:node:candidate` 在 Linux x64 控制机上校验同批输入，再下载固定摘要的官方 Node 24.15.0、24.21.0。s390x 下载官方 pnpm 12.4.1；ppc64le 必须经 `--pnpm-build` 提供本轮源码重建客户端，见上节。QEMU action、binfmt 镜像和基础镜像均固定完整 SHA；运行时摘要集中于[控制器](../../packages/ziwei/tools/candidate-runtime.ts)，源码构建配方集中于[构建器](../../packages/ziwei/tools/pnpm-rebuild.ts)。Node 摘要来自[最低版本清单](https://nodejs.org/dist/v24.15.0/SHASUMS256.txt)与[开发版本清单](https://nodejs.org/dist/v24.21.0/SHASUMS256.txt)。
+3. `check:node:candidate` 在 Linux x64 控制机上校验同批输入，再下载固定摘要的官方 Node 24.15.0、24.21.0。s390x 下载官方 pnpm 12.4.1；ppc64le 必须经 `--pnpm-build` 提供本轮源码重建客户端，见上节。QEMU action、binfmt 镜像和基础镜像均固定完整 SHA；运行时摘要集中于`控制器`（历史路径：`../../packages/ziwei/tools/candidate-runtime.ts`），源码构建配方集中于`构建器`（历史路径：`../../packages/ziwei/tools/pnpm-rebuild.ts`）。Node 摘要来自[最低版本清单](https://nodejs.org/dist/v24.15.0/SHASUMS256.txt)与[开发版本清单](https://nodejs.org/dist/v24.21.0/SHASUMS256.txt)。
 4. 两版 Node 使用同一份候选包和同一固定的 `24.15.0-bookworm-slim` 用户态。实际执行挂载的官方 Node 二进制，不依赖镜像预装版本；2026-09-12 查询的开发版镜像标签缺少 s390x，不能用浮动标签假装两目标齐全。消费容器无外网、无额外 capabilities，输入只读；仅本地注册表、临时缓存和结果目录可写。
 5. 消费端检查实际 OS、CPU、端序、Node 与 glibc，随后通过安装后的公开包验证双入口、查询、错误身份、缓存、冻结、Worker 和 ESM／require 身份。npm／pnpm 各执行正常、禁用 optional、缺失包、损坏包四种场景，使用独立临时目录、锁文件与冷缓存。一个客户端或 Node 版本失败，不阻止另一个留下独立结果。
 6. 每版 `consumer.json`、stdout／stderr 与总 `experiment.json` 单独保存，始终标记 `verification: "emulated"`，仅完整通过后置 `passed: true`。失败返回非零并保存已产生的结果；汇总 gate 同时要求编译、静态审计与两目标仿真成功，不使用 `continue-on-error`。

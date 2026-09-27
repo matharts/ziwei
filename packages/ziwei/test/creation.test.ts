@@ -75,7 +75,7 @@ test("shared profile projection normalizes transport absence and rejects mismatc
       if ((birthYear == null) !== (birthDay == null)) {
         assert.throws(() => projectProfile(raw), {
           name: "Error",
-          message: "原生出生档案的年份与日期状态不一致",
+          message: "排盘引擎返回的出生档案年份与日期状态不一致",
         });
       } else {
         const profile = projectProfile(raw);

@@ -92,7 +92,7 @@ type PalaceTuple = readonly [
   decadeAgeRange: DecadeAgeRange,
 ];
 
-/** Normalize Node's omitted fields and Wasm's nulls without owning a handle or cache. */
+/** Normalize omitted fields and explicit nulls without owning a handle or cache. */
 export function projectProfile(
   raw: ProfileBase & {
     readonly birthYear?: number | null | undefined;
@@ -116,7 +116,7 @@ export function projectProfile(
       birthDay: raw.birthDay,
     });
   } else {
-    throw new Error("原生出生档案的年份与日期状态不一致");
+    throw new Error("排盘引擎返回的出生档案年份与日期状态不一致");
   }
 }
 

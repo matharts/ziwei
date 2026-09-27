@@ -1,5 +1,7 @@
 # Node 原生二进制分发提案
 
+> **历史资料**：此文为已退役 Node 原生二进制分发的历史提案；现行 TypeScript 包交付见[实现状态](implementations.md)。
+
 状态：2026-09-11 首批八目标的独立分发（D-263）、同批完整汇总（D-264）与隔离注册表安装验收（D-265）均已通过，Node 24.15.0 与 24.21.0 的消费路径已覆盖全部八目标。GNU 双架构 glibc 2.28（D-266）、macOS 双架构、Windows 双架构与 musl 双架构的兼容性门禁均通过下述同批 CI。另七个目标仍为候选，主包与平台包均未发布；最低 Node 验收不等于最低操作系统、干净 Windows arm64 或公共注册表分发已验证。
 
 ## 当前事实
@@ -7,7 +9,7 @@
 - 提交 `6c228cc0fb4342464c9af6727473c50f1fd8e227` 的 [CI 34606151790](https://github.com/matharts/ziwei/actions/runs/34606151790)（attempt 1）共 20 个任务全部通过，包括八目标构建／分发、完整汇总、八个注册表任务、Windows x64 干净容器与最终 `verify`。以下总览只对应这一提交和批次，不自动外推至后续产物。
 - 完整交付物为 `node-distribution-1`（artifact ID `10266116947`）。下载后已重新计算九个 tarball 与八个 `.node` 的大小／SHA-256，均与 `batch.json` 一致；macOS、Windows arm64、Windows x64 CRT 报告与受检二进制对应同一批次，musl 报告中的批次和镜像摘要也已核对。
 - [主包配置](../../packages/ziwei/package.json)声明八个首批目标，仍为 `private: true`。源码 manifest 不引用尚未发布的平台依赖；`optionalDependencies` 仅在暂存区生成，保持 workspace 冻结安装可用。当前仅有[检查工作流](../../.github/workflows/ci.yml)，没有发布工作流。
-- 保留[自包含本地包测试](../../packages/ziwei/test/package.test.ts)和[分发测试](../../packages/ziwei/test/distribution.test.ts)：真正打包和离线安装无二进制主包与本机平台包，检查加载、公开 API、声明和失败路径。平台包元数据由锁定的 napi-rs `NapiCli.createNpmDirs` 生成；元数据夹具不作为各平台的运行证据。
+- 保留[自包含本地包测试](../../packages/ziwei/test/package.test.ts)和`分发测试`（历史路径：`../../packages/ziwei/test/distribution.test.ts`）：真正打包和离线安装无二进制主包与本机平台包，检查加载、公开 API、声明和失败路径。平台包元数据由锁定的 napi-rs `NapiCli.createNpmDirs` 生成；元数据夹具不作为各平台的运行证据。
 
 ### 首批兼容性验收总览
 
@@ -98,7 +100,7 @@
 
 ## 本地打包与验收
 
-[打包工具](../../packages/ziwei/tools/pack.ts)只承担分发组装，不调度构建、测试或发布。先运行 `mise run build:node`，再运行：
+`打包工具`（历史路径：`../../packages/ziwei/tools/pack.ts`）只承担分发组装，不调度构建、测试或发布。先运行 `mise run build:node`，再运行：
 
 ```sh
 mise run pack:node -- --target aarch64-apple-darwin
@@ -113,7 +115,7 @@ mise run pack:node -- --target aarch64-apple-darwin
 
 一次本机打包只引用本次选中的平台包，不伪装成八平台交付；完整交付使用下文的同批产物汇总，不通过手工补齐二进制目录冒充已验收批次。
 
-[分发消费端夹具](../../packages/ziwei/test/fixtures/distribution-consumer.ts)用 Node 自带 npm 离线安装本地 tarball，禁用安装脚本，以临时 consumer 的 overrides 将精确依赖指向平台 tarball。它验证主包无二进制、平台包内容、实际 CPU／libc、ESM／require 身份、建盘与查询，以及缺包、损坏二进制的失败；错误版本使用生成加载器的显式 `NAPI_RS_ENFORCE_VERSION_CHECK=1`。该版本检查默认不是强制保证。
+`分发消费端夹具`（历史路径：`../../packages/ziwei/test/fixtures/distribution-consumer.ts`）用 Node 自带 npm 离线安装本地 tarball，禁用安装脚本，以临时 consumer 的 overrides 将精确依赖指向平台 tarball。它验证主包无二进制、平台包内容、实际 CPU／libc、ESM／require 身份、建盘与查询，以及缺包、损坏二进制的失败；错误版本使用生成加载器的显式 `NAPI_RS_ENFORCE_VERSION_CHECK=1`。该版本检查默认不是强制保证。
 
 正常 CI runner 还从已安装 tarball 验证 ESM／CJS 消费端声明；原有自包含包合同继续使用 pnpm。这里的 npm 是消费端兼容性测试，不替换仓库的 pnpm／mise。离线 overrides 验证不证明公共注册表安装或全矩阵可选依赖的自动筛选。
 
@@ -121,7 +123,7 @@ mise run pack:node -- --target aarch64-apple-darwin
 
 公共 JS／声明按单入口打包合同固定为 `dist/index.js`、`dist/index.d.ts`，私有 workspace 模块已内联到这两个文件，不从源码目录或实际输出反推必需集合。归档路径统一使用 `/`。暂存逐项校验非空普通文件，拒绝额外文件或目录；归档只允许白名单文件及其必要父目录，并拒绝重复路径。正式与候选封存共用该清单；独立安装同时验证 JS 与声明不残留私有包依赖。
 
-[产物工具](../../packages/ziwei/tools/artifacts.ts)把单目标消费端验收与完整分发分开。目标清单仍来自主包的 `napi.targets`；公共文件集合与本地打包共用契约，不另维护平台列表。
+`产物工具`（历史路径：`../../packages/ziwei/tools/artifacts.ts`）把单目标消费端验收与完整分发分开。目标清单仍来自主包的 `napi.targets`；公共文件集合与本地打包共用契约，不另维护平台列表。
 
 1. 单目标消费端通过后，`capture:node` 封存刚才测试的主包／平台包 tarball，不重新打包或编译。封存目录 `node-distribution-<attempt>-<target>/` 含两个 tarball 和最后写入的 `manifest.json`，记录提交、run ID、attempt、包名、版本、目标及文件大小／SHA-256。同一封存目录不可覆盖。
 2. CI 只上传已通过该任务全部检查的封存目录。汇总任务等待八个目标及质量门禁成功，仅下载当前运行、当前 attempt 的输入，并保留各目标独立目录。
@@ -143,7 +145,7 @@ mise run assemble:node -- --input target/node-artifacts
 
 ## 隔离注册表安装验收
 
-[注册表消费端夹具](../../packages/ziwei/test/fixtures/registry-consumer.ts)先核对完整批次、目标集和九个 tarball 的摘要，再启动仅监听 `127.0.0.1` 的只读 HTTP 服务。它按 npm 的[包元数据协议](https://github.com/npm/registry/blob/main/docs/responses/package-metadata.md)提供固定的 metadata 与原始 tarball，不开放发布接口或转发外部注册表；不修改任何包的 `private` 或归档字节。仅损坏测试的 HTTP 响应故意偏离原始 integrity。
+`注册表消费端夹具`（历史路径：`../../packages/ziwei/test/fixtures/registry-consumer.ts`）先核对完整批次、目标集和九个 tarball 的摘要，再启动仅监听 `127.0.0.1` 的只读 HTTP 服务。它按 npm 的[包元数据协议](https://github.com/npm/registry/blob/main/docs/responses/package-metadata.md)提供固定的 metadata 与原始 tarball，不开放发布接口或转发外部注册表；不修改任何包的 `private` 或归档字节。仅损坏测试的 HTTP 响应故意偏离原始 integrity。
 
 ```sh
 mise run check:node:registry -- <包含 batch.json 的完整交付目录>
@@ -225,9 +227,9 @@ mise run --tool node@24.15.0 check:node:registry -- <同一完整交付目录>
 
 工具职责分为三个 Module：`windows-container.ts` 编排材料暂存、容器与消费场景；`windows-runtime.ts` 管理固定运行环境、Node／VC Runtime 材料校验、容器内安装和运行库盘点；`windows-docker.ts` 管理命令观察、脱敏、Docker 就绪及只读宿主取证。容器源码清单显式包含三个文件，隔离导入测试验证无需 workspace 依赖；拆分不改变报告结构、默认场景或验收条件。
 
-- **输入与环境**：[实验工具](../../packages/ziwei/tools/windows-container.ts)在 Windows x64 Docker 宿主运行，固定 Microsoft Server Core LTSC 2025 的 manifest digest，使用 process isolation。仅复制两个 manifest、必要的 TypeScript 测试文件及完整批次到临时只读挂载，结果目录单独可写；不挂载宿主 Node、运行库、Rust、MSVC 或 workspace 依赖。
+- **输入与环境**：`实验工具`（历史路径：`../../packages/ziwei/tools/windows-container.ts`）在 Windows x64 Docker 宿主运行，固定 Microsoft Server Core LTSC 2025 的 manifest digest，使用 process isolation。仅复制两个 manifest、必要的 TypeScript 测试文件及完整批次到临时只读挂载，结果目录单独可写；不挂载宿主 Node、运行库、Rust、MSVC 或 workspace 依赖。
 - **Docker 预检**：就绪探测窗口最多 120 秒，单次 `docker info` 最多 10 秒，两次之间最多等待 2 秒；末次探测与等待按剩余预算裁剪。缺少可执行文件、输出超限、无效 JSON 或错误 OS／CPU 立即失败。`experiment.json.dockerAttempts` 逐次保存耗时、超时预算、退出状态和输出。探测前后另以 5～10 秒的独立命令限时记录客户端版本、当前 context／endpoint、三个服务（`docker`、`hns`、`vmcompute`）、`dockerd` 进程和近 15 分钟的相关 Windows 事件；每个事件来源最多取 30 条。诊断采集时间不计入 120 秒就绪窗口。
-- **诊断边界**：只读宿主状态，不启动或重启服务、不切换 context、不降级 Docker。命令输出限制为 256 KiB，上传前过滤已知敏感环境值、认证字段与 URL 凭据／查询参数；不读取完整环境、进程命令行或 Docker 凭据文件。解析和就绪判定使用原始命令数据，报告只持有独立的脱敏副本；报告中的 stdout／stderr 是诊断文本，不保证保留其原始结构。诊断命令自身的失败也保留在报告中，不代替真实就绪判定。[独立 Windows 宿主诊断工作流](../../.github/workflows/windows-diagnostics.yml) 在相关文件变化或手动触发时，于 x64／arm64 runner 实际执行同一 PowerShell 脚本；保留原超时、断言及失败结果，不作为主 CI 的产品验收前置条件。本地模拟测试只证明等待、退出和证据保留机制，继续保留在主 CI；真实 npm／pnpm 消费验收不变。
+- **诊断边界**：只读宿主状态，不启动或重启服务、不切换 context、不降级 Docker。命令输出限制为 256 KiB，上传前过滤已知敏感环境值、认证字段与 URL 凭据／查询参数；不读取完整环境、进程命令行或 Docker 凭据文件。解析和就绪判定使用原始命令数据，报告只持有独立的脱敏副本；报告中的 stdout／stderr 是诊断文本，不保证保留其原始结构。诊断命令自身的失败也保留在报告中，不代替真实就绪判定。`独立 Windows 宿主诊断工作流`（历史路径：`../../.github/workflows/windows-diagnostics.yml`） 在相关文件变化或手动触发时，于 x64／arm64 runner 实际执行同一 PowerShell 脚本；保留原超时、断言及失败结果，不作为主 CI 的产品验收前置条件。本地模拟测试只证明等待、退出和证据保留机制，继续保留在主 CI；真实 npm／pnpm 消费验收不变。
 - **Node 与运行库**：下载官方 Node 24.15.0 x64 ZIP，同时核对固定 SHA-256 与官方 `SHASUMS256.txt`，容器解压后拒绝 ZIP 内出现 DLL。默认依次启动两个全新容器：`npm-clean` 不安装额外运行库，也不安装或启动 pnpm；`pnpm-runtime` 先安装经校验的官方运行库，再用 Node 自带 npm 安装和根 `devEngines` 一致的 pnpm 可执行包，禁用安装脚本。两组均记录系统运行库路径、版本与摘要。`npm-clean` 拒绝开发工具链与额外 VC Runtime DLL，并核对实际加载模块；保留系统自带的 CLR 专用变体、UCRT，以及固定镜像内的 `msvcp110_win.dll`／`msvcp60.dll`。后两项必须同时匹配已记录的 System32 路径和 SHA-256，摘要缺失或路径不符均失败，不按名称放行其他运行库，也不删除 DLL 制造负例。
 - **运行库对照**：显式传入 `--compare-vc-runtime` 时，先完成原基线，再从同一 digest 启动另一个全新容器；复用同一 Node ZIP、源码和只读 tarball 批次，唯一安装条件差异为 Microsoft 官方 x64 VC Redistributable。安装器固定下载地址、版本 `14.51.36247.0` 和 SHA-256；宿主只下载，容器内再次校验摘要，并要求 Authenticode 状态为 `Valid`、签名者为 Microsoft Corporation、文件版本匹配，之后才使用 `/install /quiet /norestart /log` 执行。保留安装器签名、版本、摘要、安装退出码、日志和安装前后 DLL 清单。退出码 3010 只记录需要重启，不执行重启、不代替真实消费测试。[官方下载入口](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist?view=msvc-170)、[官方安装参数](https://learn.microsoft.com/en-us/cpp/windows/redistributing-visual-cpp-files?view=msvc-170#command-line-options-for-the-redistributable-packages)
 - **消费与证据**：传入当前 commit／run／attempt，由原有注册表夹具核对完整 tarball 集合与摘要。npm／pnpm 分别使用独立注册表实例和冷缓存，各自执行正常、禁用 optional、缺失、损坏四个场景。pnpm 版本检查只属于 pnpm 分支；一个分支失败后仍执行另一个分支。`consumer.json.checks` 分别保留包管理器、阶段、通过状态、加载观察和错误消息／退出信息；`consumers` 保留平铺的加载观察。正常加载探针额外记录 Node 版本、CPU 和实际加载模块路径；即使原生导入失败也尽量保存该观察。仅提取报告必要字段，不上传完整 Node diagnostic report 中的环境变量。

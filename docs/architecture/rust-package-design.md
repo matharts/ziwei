@@ -2,7 +2,7 @@
 
 ## 状态与目的
 
-本文说明 Rust 核心、Node 与 Wasm 适配层的模块职责、数据归属和调用路径。核心与 Node API 已实现，独立 Wasm／浏览器实现按 D-267 推进；功能范围与待交付内容集中见 [README](../../README.md#范围)。
+本文是 Rust 核心与 Node/Wasm 适配架构的历史说明。Rust 核心仍是当前 Rust crate；Node/Wasm 绑定源码及 Wasm 包已从本次工作树删除。D-272 确认由独立 TypeScript 实现直接取代 `@matharts/ziwei` 并支持浏览器，完整验收仍在进行。下文未明确标为迁移后状态的“当前”、依赖图和操作指引均指旧架构，不能作为当前工作树结构或任务入口。跨语言行为见[领域合同](domain-contract.md)，实现状态见[实现状态表](implementations.md)。
 
 领域术语与不变量见 [`CONTEXT.md`](../../CONTEXT.md)，设计依据与修订关系见 [决策记录](v1-decision-map.md)。本文中的历史候选单独标注；源码若与已确认规则冲突，仍须核对决策，不能仅以源码覆盖规格。[架构图](ziwei-architecture.html) 是本文的简化视图。
 
@@ -20,7 +20,7 @@
 | 2. 输入与校验 | [domain/profile.rs](../../crates/ziwei/src/domain/profile.rs)、[error.rs](../../crates/ziwei/src/error.rs) | 值域、干支配对、出生档案与错误；调用方负责的历法归一化 |
 | 3. 建盘规则 | [rules.rs](../../crates/ziwei/src/rules.rs) 中的 `compute_natal` | 命身宫、五行局、安星、四化与十二宫组装；公式及表随调用继续读 |
 | 4. 命盘与查询 | [domain/natal.rs](../../crates/ziwei/src/domain/natal.rs)，再按返回类型阅读 [domain 模块](../../crates/ziwei/src/domain.rs) | 本命事实的所有权、借用查询与按需限运 |
-| 5. Node 适配 | [Node 设计阅读路径](node-api-design.md#阅读路径)、[Rust 绑定入口](../../bindings/node/src/lib.rs)、[TS 入口](../../packages/ziwei/src/index.ts) | 宿主校验、数据转换、错误与生命周期；领域计算仍调用核心 |
+| 5. 当前 TypeScript 入口 | [公开入口](../../packages/ziwei/src/index.ts) | 独立领域计算与 Node/浏览器 API；旧 Rust adapter 仅作历史参考 |
 | 6. 验证依据 | [固定命例说明](../../crates/ziwei/tests/fixtures/README.md)、[测试与验证布局](#测试与验证布局) | 独立预期、公开合同测试及各类检查的覆盖范围 |
 
 运行开发检查见[工程验证](../agents/engineering.md)；追溯替代方案时再读[决策表](v1-decision-map.md)及本文标记为历史的章节。
@@ -29,13 +29,13 @@
 
 以下为当前架构约束的摘要。Node 的类型与行为合同见 [适配设计](node-api-design.md)；目录与包名的修订依据为 D-260～D-262。
 
-1. 根 workspace 包含 `crates/ziwei`、`bindings/node` 与 `bindings/wasm`，Cargo 包分别为 `ziwei`、`ziwei-node` 与 `ziwei-wasm`；`default-members` 仍只选择核心 `ziwei`，开发工具保留独立 workspace。
+1. 历史 workspace 曾包含 `crates/ziwei`、`bindings/node` 与 `bindings/wasm`；当前 Rust workspace 仅保留 `crates/ziwei`。
 
 2. 本命构建、按需大限/流年、只读查询同属 `ziwei`；它们不是独立 Cargo 包。
 
 3. `PalaceName` 是本命、大限与流年共用的唯一十二宫职领域类型；`Palace`、`Decade`、`Yearly` 各自管理自己的宫职及对应简、繁名称，不保留 `PalaceRole` 或 `PalaceScope`。
 
-4. Node 由 `bindings/node` 与 `packages/ziwei` 实现；Wasm／浏览器由 `bindings/wasm` 与 `packages/ziwei-wasm` 独立实现。两个 Rust adapter 均单向依赖 `ziwei`；绑定与 npm 包均禁止发布。
+4. 旧 Node 与 Wasm adapter 曾单向依赖 `ziwei`，现已退役。当前 `packages/ziwei` 由独立 TypeScript 领域实现直接提供 Node 与浏览器能力，验收状态见实现状态表。
 
 5. 历法换算和解释/断语不属于 V1，不创建对应包。
 
@@ -59,7 +59,7 @@
 
 Node-API 与 `wasm-bindgen` 的编译目标、错误模型、对象生命周期和序列化方式不同，因此实现为独立 adapter。两者不互相引入运行时依赖；Node 仅作为 Wasm 差分测试的开发依赖。
 
-两侧相同的 JavaScript 输入捕获、结构化错误，以及出生档案、星曜、宫位和四化查询结果的只读投影归属私有 `@matharts/ziwei-shared` Module，通过包根 Interface 使用，不导入对方源码。共享包独立构建后内联到两侧 JS 与声明，不成为消费端依赖；加载、句柄、缓存、释放和限运投影仍由各 Adapter 管理，见 [D-269 共享实现](node-api-design.md#nodewasm-共享适配实现)。
+过渡期 Node/Wasm 适配层将两侧相同的 JavaScript 输入捕获、结构化错误，以及出生档案、星曜、宫位和四化查询结果的只读投影归属私有 `@matharts/ziwei-shared` Module，通过包根 Interface 使用，不导入对方源码。共享包独立构建后内联到两侧 JS 与声明，不成为消费端依赖；加载、句柄、缓存、释放和限运投影仍由各 Adapter 管理，见 [D-269 共享实现](node-api-design.md#nodewasm-共享适配实现)。D-272 已取代 Node/Wasm 双包作为目标架构的决定；旧共享层只服务迁移中的实现，不构成纯 TypeScript 引擎的目标依赖。
 
 相反，当前的本命计算、查询和期间计算共享同一个不可变 `Natal`，没有第二个实现，也没有独立运行时；把它们拆为 `core`、`query`、门面三层只会扩大 interface，降低 locality。
 
@@ -140,7 +140,7 @@ ziwei-wasm ───────────────────────
 
 根 `Cargo.toml` 是 workspace 配置，不是业务包。它统一 edition 2024、MSRV 1.98、许可证与仓库地址，默认成员仍只有核心。核心继承 `forbid(unsafe_code)`；Node 绑定单独使用 `deny(unsafe_code)`，兼容 napi-rs 注册宏内部的局部允许声明，手写绑定不使用 unsafe。
 
-所有排盘领域实现和简繁名称均位于 `crates/ziwei`。`bindings/` 承载各宿主的 Rust adapter，与引擎共享根 Cargo workspace 和锁文件；adapter 单向依赖 `ziwei`，彼此不依赖。根 pnpm workspace 单独管理 JavaScript 包与共享锁文件；`packages/ziwei` 通过 `../../bindings/node/Cargo.toml` 构建自己的内部原生产物，没有根级 `tests/` 或 `fixtures/` 目录。
+历史上 Rust Node/Wasm adapters 依赖 Rust 核心并由 Node 包构建原生产物。当前 `bindings/` 已从源码树删除，`packages/ziwei` 使用独立 TypeScript 领域实现并直接承担现有 npm 包身份与浏览器交付；完整验收仍在进行。
 
 按 D-263，[平台分发包](node-distribution-proposal.md)仅在独立暂存区生成，不新增含源码的 workspace 包或 Rust crate。主包与平台包共同构成 Node 分发，仍只有 `@matharts/ziwei` 一个用户入口。
 
@@ -154,13 +154,13 @@ ziwei-wasm ───────────────────────
 
 D-260 按职责区分 `crates/`（Rust 引擎）、`bindings/`（各宿主的 Rust adapter）与 `packages/`（JavaScript／TypeScript 包）。新宿主的绑定在真正实施时加入 `bindings/<host>`，并加入根 Cargo workspace；新 npm 包由 `packages/*` 纳入 pnpm workspace。不为证明“多包”预先创建占位包，也不增加只有转发职责的 npm 原生包。
 
-Wasm adapter 已按 D-267 落在 `bindings/wasm`，浏览器分发位于 `packages/ziwei-wasm`，采用显式初始化而非 Node 自动加载方式。D-268 保留 Android／OpenHarmony 面向系统原生应用的方向，但用户已暂停原生绑定、SDK 与分发设计；现有候选核心检查保留，移动网页与 WebView 仍走 Wasm。其他宿主仍须达到后文拆分门槛；共享命例或根级测试按实际复用需求迁移，不提前搬动核心测试。
+Wasm adapter 曾依 D-267 实现于 `bindings/wasm`，浏览器分发位于 `packages/ziwei-wasm`；两者现已从源码树删除。D-272 取消 Wasm 路线并指定纯 TypeScript 浏览器实现。D-268 所列 Android／OpenHarmony 原生绑定、SDK 与分发设计继续暂停。
 
 ## 包职责
 
 ### `ziwei`
 
-这是唯一的领域实现包，也是唯一可以执行排盘规则的包。
+这是现阶段唯一已经完整实现的领域引擎，也是当前 Node 与 Wasm adapters 所依赖的规则实现。此现状受 D-272 的迁移目标约束；验收后的目标是独立 TypeScript 领域实现。
 
 它负责：
 
@@ -190,13 +190,9 @@ Wasm adapter 已按 D-267 落在 `bindings/wasm`，浏览器分发位于 `packag
 
 Cargo 包名与 Rust import 名均为 `ziwei`。不能通过新增纯重导出门面包来回避这一决策。
 
-### `ziwei-node` 与 `@matharts/ziwei`（完整 Node API 已实现）
+### 历史：`ziwei-node` 与 Rust-backed `@matharts/ziwei`
 
-实际进展见 [Node 包说明](../../packages/ziwei/README.md)。以下完整职责中的两类建盘、读取、查询、限运、身份辅助、错误、JSON 与加载均已实现；首批八目标的分发验收已按 [D-263 分发设计](node-distribution-proposal.md)完成，发布流程仍未实施。
-
-保留 D-254 的模块职责与 D-257 的 Rust／TS 分离，按 D-260 更新 Rust 绑定位置：`bindings/node/src/lib.rs` 与 `packages/ziwei/src/index.ts` 保留各自的构造入口，命盘对象实现分别集中在各自私有的 `natal.rs` 和 `natal.ts`。
-
-原生持有、记账与回收不拆散，TS 冻结与实例缓存不拆散；内部包装函数不增加包根导出或包子路径。生成产物位于 `packages/ziwei/native` 与 `packages/ziwei/dist`，npm 消费端不依赖 Rust 源码或本仓库路径。
+旧 Node API、原生对象持有、缓存与平台分发实现均已退役，不构成当前包合同。现行 `@matharts/ziwei` 由独立 TypeScript 领域实现提供；以 [当前包说明](../../packages/ziwei/README.md)、[领域合同](domain-contract.md)和共享 conformance 用例为准。D-272 要求沿用原 npm 包身份，不创建 `@matharts/ziwei-ts`。
 
 该 adapter 面向 Node.js/TypeScript。它依赖 `ziwei`，并且只做以下转换：
 
@@ -210,15 +206,9 @@ Cargo 包名与 Rust import 名均为 `ziwei`。不能通过新增纯重导出�
 
 它不能内置规则表、重算宫位、修正核心结果，或创建第二套 `Natal` 结构。
 
-### `ziwei-wasm` 与 `@matharts/ziwei-wasm`
+### 历史：Wasm adapter 与包
 
-`bindings/wasm` 使用 `wasm-bindgen` 与 `wasm32-unknown-unknown`，只转换输入、结构化错误与独立结果；默认单线程，不依赖 Node/WASI。`packages/ziwei-wasm` 以显式 `initialize({ wasmUrl? })` 校验资源并返回 ready runtime，随后同步建盘和查询。生命周期、重试和浏览器合同见[浏览器设计](browser-adapter-design.md)。
-
-Wasm 命盘提供幂等 `dispose()`；释放后查询与已缓存属性均拒绝访问，先前返回的快照保持有效。生成胶水、资源指纹与 Wasm 同批构建，Rslib 输出单份 ESM 和公开声明，生成物不提交。构建和验收入口见[工程验证](../agents/engineering.md#wasm-与浏览器验证)。
-
-按 D-270，`wire.rs` 在每个 Wasm 实例内惰性保存有限的星曜／本命宫职静态 JS 字符串，容量不随命盘数量增长；输出容器仍逐次创建，逐盘释放不清空实例级资料。它属于宿主投影优化，不是核心查询缓存或 TS 领域资料表，详见[缓存边界](wasm-adapter-design.md#静态字符串缓存)。
-
-它同样不能包含领域规则。Wasm 不是 `ziwei` 的 feature：两者是不同 adapter，拥有不同的编译与测试约束。
+`bindings/wasm` 与 `packages/ziwei-wasm` 已从本次源码树删除。此前关于初始化、资源加载、`dispose()`、静态字符串缓存和 Wasm 构建的说明，仅供追溯 D-267/D-270；现行浏览器能力由 `packages/ziwei` 的纯 TypeScript 实现提供。
 
 ## `ziwei` 内部模块图
 
@@ -567,7 +557,7 @@ crates/ziwei/
 
 ### 共享命例
 
-当前静态命例放在 `crates/ziwei/tests/fixtures/`，随 crate 一起分发，通过 `include_str!` 编译进测试，不由运行时读取。手算甲子火六局样例的输入、推导和证据边界见该目录的 README；不宣称外部专家审定。原有壬申完整样例保留在 `public_api.rs`。新增 fixture 必须说明规则来源和适用项目口径。
+当前 Rust 静态命例放在 `crates/ziwei/tests/fixtures/`，随 crate 一起分发，通过 `include_str!` 编译进测试，不由运行时读取。手算甲子火六局样例已部分转录至语言无关的 [`conformance/cases/`](../../conformance/README.md)；原始推导和证据边界见该目录的 README。未迁移样例继续留在 Rust 测试。手算样例不宣称外部专家审定；任何实现的批量输出均不可作为共享 fixture 预期。新增用例必须说明规则来源和适用项目口径。
 
 甲子 CSV 的文本预期显式映射到 `StarName` 与 `Branch` 枚举，不通过被测 `ALL` 数组推导身份。另有五种五行局各取初一、三十的十组手算定位锚点，经两条公开入口分别断言命宫干支、五行局、紫微与天府；覆盖零补数、奇数补数和偶数补数。锚点及推导见 [样例说明](../../crates/ziwei/tests/fixtures/README.md)，不是由引擎导出的快照，也不冒充十张完整命例或外部专家审定。
 
@@ -579,7 +569,7 @@ crates/ziwei/
 
 ### Adapter
 
-每个 adapter 在自己的包中维护端到端测试：同一命例经 JavaScript/Wasm 输入后，应得到与核心相同的领域事实和稳定错误代码。adapter 测试不能把绑定层的序列化细节反向变成核心库的约束。
+旧 adapter 曾在自己的包中做端到端测试。当前 TypeScript 实现须通过共享 conformance 预期用例和 Node／浏览器宿主合同；Rust 对照只作为一致性证据，不能替代独立预期。
 
 ## 性能与依赖策略
 

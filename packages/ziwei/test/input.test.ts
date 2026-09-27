@@ -4,7 +4,7 @@ import { test } from "@rstest/core";
 
 import { Ziwei, ZiweiError } from "@matharts/ziwei";
 
-import * as native from "../native/binding.cjs";
+import * as engine from "../src/engine/index.js";
 import { invoke } from "./runtime.ts";
 
 const birth = { gender: 1, birthYear: 1984, birthMonth: 1, birthDay: 6, birthHour: 0 } as const;
@@ -255,14 +255,14 @@ test("unknown fields keep lexical precedence over symbols regardless of own-key 
   }
 });
 
-test("the native seam rejects bad values even when the public facade is bypassed", () => {
+test("the TypeScript engine seam rejects bad values even when the public facade is bypassed", () => {
   for (const value of [NaN, Infinity, 1.5, -1, 257, 2 ** 32 + 1, "1", null, [], {}]) {
-    const result = native.fromBirth(1, 1984, value, 6, 0);
+    const result = engine.fromBirth(1, 1984, value, 6, 0);
     assert.equal(result.natal, undefined);
     assert.ok(result.error);
     assert.equal(result.error.code, "INVALID_ARGUMENT");
     assert.equal(result.error.path, "birthMonth");
   }
-  assert.equal(native.fromBirth(1, 1984, 13, 6, 0).error?.code, "INVALID_LUNISOLAR_MONTH");
-  assert.equal(native.fromParameters(1, 0, 1, 1, 2, 0).error?.code, "INVALID_SEXAGENARY_YEAR");
+  assert.equal(engine.fromBirth(1, 1984, 13, 6, 0).error?.code, "INVALID_LUNISOLAR_MONTH");
+  assert.equal(engine.fromParameters(1, 0, 1, 1, 2, 0).error?.code, "INVALID_SEXAGENARY_YEAR");
 });
