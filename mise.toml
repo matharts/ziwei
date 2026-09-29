@@ -14,13 +14,7 @@ run = [{ task = "build:node:ts" }]
 
 [tasks."build:node:ts"]
 description = "通过 Rslib 构建 ESM 与类型声明"
-depends = ["build:shared"]
 dir = "packages/ziwei"
-run = "pnpm exec -- node node_modules/@rslib/core/bin/rslib.js build"
-
-[tasks."build:shared"]
-description = "构建宿主无关的共享类型与投影模块；私有且不发布"
-dir = "packages/ziwei-shared"
 run = "pnpm exec -- node node_modules/@rslib/core/bin/rslib.js build"
 
 [tasks."test:node"]
@@ -109,6 +103,22 @@ run = "pnpm exec -- node packages/ziwei/bench/run.ts"
 [tasks."benchmark:node:smoke"]
 description = "TypeScript 公开 API 冒烟；保存记录，不设置性能阈值"
 run = "pnpm exec -- node packages/ziwei/bench/run.ts --smoke"
+
+[tasks."benchmark:node:unique"]
+description = "TypeScript 首次组合完整读盘临时测量；不登记正式性能基线"
+depends = ["build:node:ts"]
+run = "pnpm exec -- node --expose-gc packages/ziwei/bench/unique.mjs"
+
+[tasks."benchmark:node:unique:palace"]
+description = "TypeScript 首次组合单宫查询临时测量；不登记正式性能基线"
+depends = ["build:node:ts"]
+run = "pnpm exec -- node --expose-gc packages/ziwei/bench/unique.mjs --single-palace"
+
+[tasks."benchmark:browser"]
+description = "在 Chromium、Firefox、WebKit 中测量 TypeScript 公开 API；临时基准"
+depends = ["build:node:ts"]
+dir = "packages/ziwei"
+run = "pnpm exec -- node bench/browser.mjs"
 
 [tasks."check:node:bench"]
 description = "串行验证 TypeScript 公开 API 基准 CLI、记录合同与真实冒烟"

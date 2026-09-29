@@ -122,7 +122,7 @@
 
 - Wasm `wire.rs` 的静态字符串缓存与 `dispose()` 行为属于已退役实现的历史记录，不构成现行合同；现行跨实现规则见[领域合同](docs/architecture/domain-contract.md)。
 
-- Node／Wasm 共享投影与双 Adapter 构建仅描述旧实现；Rust Node 与 Wasm 源码已删除。`@matharts/ziwei-shared` 若仍由工作区使用，不代表旧宿主适配器仍存在。
+- Node／Wasm 共享投影与双 Adapter 构建仅描述旧实现；Rust Node、Wasm 和共享投影包源码已删除。当前 TypeScript 包独立实现 API 与规则。
 
 - 按 D-268，Android／OpenHarmony 的系统原生应用绑定保持暂停。D-272 已取消移动网页和 WebView 的 Wasm 路线；纯 TypeScript 浏览器能力已在本地实现，完整验收仍在进行，不由此恢复移动原生工作。
 
@@ -138,9 +138,11 @@
 
 - Node 包工程约束见 D-258：单份 ESM、最低 Node 24.15.0、手写代码全量 TypeScript、pnpm Catalog 集中依赖版本。它们不改变领域事实、公开查询语义或 Rust 与宿主的职责边界。
 
-- D-248～D-256 的 Node API 合同和实现细节属于已退役 Rust Node 过渡实现的历史记录。当前 `@matharts/ziwei` 由纯 TypeScript 直接实现；TypeScript 对外语义以领域合同、独立 conformance 用例及当前 API 文档为准。
+- D-248～D-256 的 Node API 合同和实现细节属于已退役 Rust Node 过渡实现的历史记录。D-273 确认重写 TypeScript 公开 API 与引擎；TypeScript 对外语义以领域合同、独立 conformance 用例及[当前 API](docs/architecture/typescript-api.md) 为准。
 
 - D-260 所述 Rust／TypeScript 分离结构现为历史记录。D-272 已确认 TypeScript 直接提供现有 `@matharts/ziwei` 的领域能力，不新增 `@matharts/ziwei-ts`；本次执行已从源码树删除 Rust Node 绑定与 Wasm 实现。TypeScript 完整验收仍在进行，未发布，未确认远端 CI 通过。具体状态见[实现状态表](docs/architecture/implementations.md)。
+
+- D-273 确认 TypeScript 公开 API 与排盘引擎从零重写，以 Rust crate 的公开领域能力为清单；不继承旧 Node 门面的 `palaceStar`、`toJSON` 和私有共享投影包。当前接口见 [TypeScript API](docs/architecture/typescript-api.md)。
 
 - D-254～D-260 的对象模块职责描述已退役的过渡实现：旧原生持有位于 `bindings/node/src/natal.rs`，旧 Node API 的 TS 包装位于 `packages/ziwei/src/natal.ts`。D-272 确认 TypeScript 直接提供现有 `@matharts/ziwei` 的领域能力；旧原生生命周期和缓存细节不约束独立实现。
 

@@ -7,7 +7,7 @@
 | Rust `ziwei` | 完整 V1 领域引擎 | 已实现的独立 Rust crate | Rust core 独立提供 Rust API；TypeScript 另行独立实现领域规则。项目规则权威仍是已确认规则与领域合同，不以源码生成跨语言预期。 |
 | Rust Node 绑定 `ziwei-node` 与旧 `@matharts/ziwei` 实现 | 原生 Node 领域调用与宿主 API | 本次工作树中源码已退役 | 由独立 TypeScript 实现直接替换同一 npm 包身份；不新增 `@matharts/ziwei-ts` 或转发包。 |
 | Rust Wasm 绑定与 `@matharts/ziwei-wasm` | Rust 领域引擎的浏览器 Wasm adapter | 本次工作树中源码与包已退役 | Wasm 路线已取消；浏览器目标由纯 TypeScript 实现承担。 |
-| 独立 TypeScript 领域实现 | Node 与浏览器共同使用的完整 V1 实现 | 本地代码与消费路径已接通，尚未完成完整验收 | Node 包 42 项测试、最低 Node、三浏览器页面/Worker 与干净包消费已在本地通过；共享 conformance 目前有八个独立预期用例，覆盖仍不完整。实现接管 `@matharts/ziwei` 与浏览器交付，不依赖 Rust/Wasm 执行排盘。 |
+| 独立 TypeScript 领域实现 | Node 与浏览器共同使用的完整 V1 实现 | D-273 重写工作树中 API 与引擎已接通，尚未完成完整验收 | 本地 Node 包 23 项、工程工具 17 项、基准合同 12 项、最低 Node 24.15.0、三浏览器页面/Worker、干净包消费和类型合同通过；共享 conformance 目前有八个独立预期用例，覆盖仍不完整。新代码不依赖 Rust/Wasm 或旧共享投影包执行排盘；完整独立领域覆盖与远端 CI 仍须按本次提交验证。 |
 | Shared conformance | 语言无关的输入、预期、来源与覆盖 | Schema 与八个手算/错误用例已建立；覆盖不完整 | 已覆盖五种五行局、两张完整手算命例的宫星与期间边界、一个干支错误；四化/自化全集和更多边界仍需扩充，不得把既有 Rust 批量输出转成权威预期。 |
 
 ## 验收门槛

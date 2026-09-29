@@ -2,6 +2,8 @@
 
 当前有两套 Rust 负载和一套独立 Node 负载：下文首先说明 construction-120，它仅测 `Ziwei::from_birth` 和 `Ziwei::from_parameters`；随后说明 Rust 混合输入与读路径套件。Node 公开 API 使用独立的 [ziwei-typescript-node-public-512](../../packages/ziwei/bench/README.md)，针对纯 TypeScript ESM 包。不能用建盘结果宣称查询延迟，也不能将不同套件或不同实现互作基线。
 
+另有 `mise run benchmark:node:unique` 测量首次出现的有效落宫组合并读取十二宫，`mise run benchmark:node:unique:palace` 对同一组合只读取一宫；`mise run benchmark:browser` 在 Chromium、Firefox、WebKit 中运行独立的 TypeScript 临时基准。这些测量都不登记正式基线；语料和计时边界见 [TypeScript 基准说明](../../packages/ziwei/bench/README.md)。
+
 当前生产设计为紧凑 Star + ArrayVec + 私有星曜位置索引，实现与取舍见 [包架构](../architecture/rust-package-design.md)。性能结论应按本文约定记录负载、源码与环境；不同实现或不同负载的历史结果不能作为当前正式基线。
 
 `crates/ziwei/benches/suite.rs` 固定 120 项输入、顺序与测量参数；`construction.rs` 负责计时。输入值类型在计时前构造，计时内包含建盘、`black_box` 和命盘释放，不含历法换算、输入校验、序列化或读取查询。每项入口有 5 次语料预热遍历，每轮 31 批，每批遍历语料 64 次，共 7,680 张盘。整个校准默认重复 20 轮。

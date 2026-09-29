@@ -24,7 +24,7 @@ Node 任务通过 `pnpm exec` 执行，因此仍先经过开发版本校验；�
 
 ### 任务顺序
 
-`build:node` 通过 `build:node:ts` 构建 TypeScript 包；该任务先构建 `@matharts/ziwei-shared`。`check:node` 等待构建成功，再运行 Node 包测试与类型合同。具体任务顺序以 [mise.toml](../../mise.toml) 为准。
+`build:node` 通过 `build:node:ts` 构建独立 TypeScript 包。`check:node` 等待构建成功，再运行 Node 包测试与类型合同。具体任务顺序以 [mise.toml](../../mise.toml) 为准。
 
 聚合任务用于固定流程，工具选项传给对应单项任务，不再通过聚合 build 将参数隐式传给最后一步。Node 单项任务执行 `pnpm exec -- node <已安装 CLI 路径> ...`，不调用自建调度器、pnpm scripts 或工具的 `.cmd` shim；不隐式触发 pre/post 生命周期。CLI 路径由依赖 manifest 的 `bin` 核验，升级依赖时由入口测试发现路径变更。
 
@@ -72,7 +72,7 @@ Oxfmt 读取根 [.editorconfig](../../.editorconfig)：TypeScript 和 JSON 使�
 
 `build:node:ts` 使用 Catalog 锁定的 Rslib，配置位于 [rslib.config.ts](../../packages/ziwei/rslib.config.ts)。采用单入口打包、ESM 与 ES2022 输出，产物为 `dist/index.js` 和 `dist/index.d.ts`；根包和 TS 包均为 `type: module`。
 
-TypeScript 构建先通过 `build:shared` 构建私有 `@matharts/ziwei-shared`，通过包根入口使用其 ESM 与声明，并内联到 `@matharts/ziwei` 产物。共享包只作为 workspace 开发依赖，不跨包读取 `src`，不留下私有包运行时或类型引用。单项 TS 构建仍接受自身 CLI 选项，但不会把它们传给共享构建；共享构建失败阻止消费包构建。共享代码修改后重新运行对应 TS 构建，单包 `--watch` 不承诺自动监听共享源码。
+TypeScript 包使用 Rslib 从同一源码树构建 ESM 与声明；不依赖私有共享适配包。单项 TS 构建接受自身 CLI 选项，消费端只通过包根入口导入。
 
 `import` 与 `require(ESM)` 解析到同一入口，不维护 CJS 实现或桥接文件。公开模块图不允许 top-level await、Node 内建模块或原生/Wasm 运行时依赖；浏览器也加载同一份 ESM 产物。
 
@@ -91,6 +91,8 @@ TypeScript 构建先通过 `build:shared` 构建私有 `@matharts/ziwei-shared`�
 `mise run check:node` 构建同一份 TypeScript ESM，运行公开 API 与类型合同。包测试用 `npm pack` 后在临时目录离线安装，检查生成文件、无运行时私有依赖、`import`、`require(ESM)` 和 Node Worker 的实际消费。该检查不发布包，也不代表远端注册表安装或所有平台已验收。
 
 `mise run test:browser` 在 Chromium、Firefox、WebKit 中分别运行页面与 module Worker 消费测试；先运行 `mise run build:node`，首次测试前安装浏览器。浏览器测试不声明 iOS、Safari 实机或 WebView 兼容性。
+
+`mise run benchmark:browser` 使用同一浏览器安装测量 TypeScript ESM 包的临时性能套件；负载与限制见 [浏览器临时基准](../../packages/ziwei/bench/README.md#浏览器临时基准)。它不替代浏览器功能测试，也不与 Node 基准直接比较。
 
 ### 依赖版本管理
 

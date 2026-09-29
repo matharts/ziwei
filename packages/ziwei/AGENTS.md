@@ -2,16 +2,18 @@
 
 ## 当前架构
 
-- 完整排盘领域逻辑由本包的 TypeScript 实现。Node.js 与浏览器使用相同包根入口和同步 API；Rust 与 Wasm 不属于本包运行时依赖。
-- 领域计算放在 `src/engine/`；`src/index.ts`、`src/natal.ts` 将内部实现适配为公开 API。内部引擎模块不作为包子路径导出。
-- 公开行为及值合同遵循[Node API 设计](../../docs/architecture/node-api-design.md)，包括输入校验顺序、中文错误消息及结构化 detail、稳定枚举身份、脱离命盘的深层冻结 DTO，以及仅缓存每个命盘实例的 `profile` 和 `palaces`。
+- 完整排盘领域逻辑由本包从零实现为 TypeScript。Node.js 与浏览器使用相同包根入口和同步 API；Rust 与 Wasm 不属于本包运行时依赖。
+- `src/domain/` 定义领域身份、公开类型、错误、输入校验及宫干与五行局规则；`src/chart/` 定义本命事实和公开命盘句柄；`src/stars/` 拥有星曜目录、落宫布局、共享星曜值与四化；`src/palaces/` 拥有宫职目录、宫位物化和期间布局。`src/index.ts` 是唯一公开入口，不提供内部子路径或内部汇总入口。
+- 模块依赖方向为 `chart → palaces → stars → domain`；同层模块可以直接依赖 `domain`，`chart` 负责组合规则及延迟查询，领域规则和数据不反向依赖命盘句柄。目录和落宫规则不依赖值缓存。两种建盘入口各自构造类型完整的公开档案；`chart/facts.ts` 在建盘时一次确定星曜布局序号，后续模块只使用该布局事实。
+- `domain/identities.ts` 只定义身份常量和索引；身份转换及其参数校验在 `domain/identity-queries.ts`。`domain/errors.ts` 定义公开异常，`domain/constraints.ts` 提供内部基础约束，避免领域数据依赖错误处理。
+- `domain/inputs.ts` 只提供两种建盘输入的安全捕获与校验；`domain/validation.ts` 校验查询参数。捕获字段、输入顺序和错误细节属于公开行为，不因模块整理而改变。
+- 公开 API 以[TypeScript API](../../docs/architecture/typescript-api.md)为准，逐项覆盖 Rust crate 的公开领域能力。旧 [Node API 设计](../../docs/architecture/node-api-design.md) 仅为历史资料，不是当前 TS 对象形状的合同。
 - 构建单份 ESM 包，只提供根导出。受支持的 Node 版本应保留 `require(ESM)` 兼容性。公开依赖图不得要求 top-level await 或仅供 Node 使用的内建模块，以便浏览器导入相同入口。
 - `dist/` 是生成目录，不手工编辑或提交。构建从 TypeScript 产出 JavaScript 和声明，不要求消费者直接执行工作区源码。
 
 ## 迁移历史
 
-- 旧包曾使用 Rust Node-API 绑定、外置 `native/binding.cjs`／`.node` 加载器和按平台分发，这些路径已从当前包移除。`@matharts/ziwei-shared` 仍被 TypeScript 包用于共享输入、校验、错误与投影逻辑；后续维护不得把它误判为废弃的原生专属依赖。
-- 旧运行路径已切换。Node 与浏览器消费路径共用当前 TypeScript 包根入口；共享 conformance 覆盖与验收状态见[实现状态表](../../docs/architecture/implementations.md)，无需为兼容历史原生分发恢复旧运行路径。
+- 旧包的 Rust Node-API 绑定、Wasm 包、共享投影包和旧 Node 门面均已退役；不要恢复它们的运行路径。Node 与浏览器消费同一 TypeScript 包根入口；共享 conformance 覆盖与验收状态见[实现状态表](../../docs/architecture/implementations.md)。
 
 ## 工具链与验证
 

@@ -5,14 +5,12 @@ import { Ziwei } from "@matharts/ziwei";
 
 let profile;
 let palaces;
-let snapshot;
 let query;
 let period;
 for (let i = 0; i < 500; i++) {
   const natal = Ziwei.fromBirth(workerData);
   profile = natal.profile;
   palaces = natal.palaces;
-  snapshot = natal.toJSON();
   query = natal.birthTransformations();
   period = natal.yearly(11, 9);
 }
@@ -20,7 +18,6 @@ assert.ok(parentPort && query);
 parentPort.postMessage({
   profile,
   palaces,
-  snapshot,
   query,
   period,
   frozen: Object.isFrozen(profile),

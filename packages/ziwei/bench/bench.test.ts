@@ -72,13 +72,27 @@ test("public package smoke records complete samples and protects existing output
   assert.equal(record.schemaVersion, 1);
   assert.equal(record.status, "smoke");
   assert.equal(record.suite.id, "ziwei-typescript-node-public-512");
-  assert.equal(record.suite.version, 2);
+  assert.equal(record.suite.version, 12);
   assert.equal(
     record.corpusHash,
     "2cbeaeef0fc8b448d4f4dc89e7f10012bb9c2a88fcfd1ede763bd08afdae9f92",
   );
-  assert.equal(record.samples.length, 12);
-  assert.equal(Object.keys(record.metrics).length, 12);
+  assert.equal(record.samples.length, 26);
+  assert.equal(Object.keys(record.metrics).length, 26);
+  assert.ok(record.metrics.lifecycleBirth);
+  assert.ok(record.metrics.lifecycleParameters);
+  assert.ok(record.metrics.decadeYears);
+  assert.ok(record.metrics.palaceTransformationSources);
+  assert.ok(record.metrics.palaceTransformation);
+  assert.ok(record.metrics.birthAndFirstPalaceTransformation);
+  assert.ok(record.metrics.birthAndFirstPalaceTransformations);
+  assert.ok(record.metrics.birthAndFirstPalace);
+  assert.ok(record.metrics.birthAndFirstPalaceByStar);
+  assert.ok(record.metrics.birthAndFirstStar);
+  assert.ok(record.metrics.birthAndFirstBirthTransformations);
+  assert.ok(record.metrics.birthAndFirstSelfTransformations);
+  assert.ok(record.metrics.birthAndFirstSanfang);
+  assert.ok(record.metrics.birthAndSanfangThenPalaces);
   for (const sample of record.samples) {
     assert.equal(sample.operations, 512);
     assert.ok(Number.isSafeInteger(sample.elapsedNs) && sample.elapsedNs > 0);
@@ -96,17 +110,27 @@ test("public package smoke records complete samples and protects existing output
     record.fingerprints.source.files.some((file: { path: string }) => file.path === "mise.toml"),
   );
   for (const path of [
-    "packages/ziwei/src/engine/chart.ts",
+    "packages/ziwei/src/domain/validation.ts",
+    "packages/ziwei/src/domain/inputs.ts",
+    "packages/ziwei/src/domain/errors.ts",
+    "packages/ziwei/src/domain/constraints.ts",
+    "packages/ziwei/src/domain/identities.ts",
+    "packages/ziwei/src/domain/identity-queries.ts",
+    "packages/ziwei/src/domain/types.ts",
+    "packages/ziwei/src/domain/sexagenary.ts",
+    "packages/ziwei/src/chart/facts.ts",
+    "packages/ziwei/src/chart/natal.ts",
+    "packages/ziwei/src/stars/catalog.ts",
+    "packages/ziwei/src/stars/layout.ts",
+    "packages/ziwei/src/stars/values.ts",
+    "packages/ziwei/src/stars/transformations.ts",
+    "packages/ziwei/src/palaces/catalog.ts",
+    "packages/ziwei/src/palaces/values.ts",
+    "packages/ziwei/src/palaces/periods.ts",
     "packages/ziwei/src/index.ts",
-    "packages/ziwei/src/natal.ts",
     "packages/ziwei/package.json",
     "packages/ziwei/tsconfig.json",
     "packages/ziwei/rslib.config.ts",
-    "packages/ziwei-shared/src/error.ts",
-    "packages/ziwei-shared/src/input.ts",
-    "packages/ziwei-shared/package.json",
-    "packages/ziwei-shared/tsconfig.json",
-    "packages/ziwei-shared/rslib.config.ts",
   ]) {
     assert.ok(
       record.fingerprints.source.files.some((file: { path: string }) => file.path === path),
@@ -144,7 +168,7 @@ test("public package smoke records complete samples and protects existing output
     .trim()
     .split("\n")
     .map((line) => JSON.parse(line));
-  assert.equal(lines.length, 14);
+  assert.equal(lines.length, 28);
   assert.equal(lines[0].type, "start");
   assert.equal(lines.at(-1).type, "complete");
   assert.deepEqual(
@@ -228,10 +252,10 @@ test("full record statistics use all 21 batch means per operation", () => {
       ...sample,
       elapsedNs: 1000 * (sample.round + 1) * (sample.batch + 1) * sample.operations,
     })),
-    { type: "complete", samples: 252, corpusHash: plan.corpusHash },
+    { type: "complete", samples: 546, corpusHash: plan.corpusHash },
   ];
   const record = parseRecord(rows.map((row) => JSON.stringify(row)).join("\n"), plan);
-  assert.equal(record.samples.length, 252);
+  assert.equal(record.samples.length, 546);
   for (const metric of Object.values(record.metrics)) {
     assert.deepEqual(metric, {
       medianNsPerOp: 6000,
@@ -248,7 +272,6 @@ function fixture(t: TestContext) {
   const actualRoot = resolve(cwd, "../..");
   for (const path of [
     "packages/ziwei/src",
-    "packages/ziwei-shared/src",
     "packages/ziwei/bench",
     "package.json",
     "pnpm-lock.yaml",
@@ -256,9 +279,6 @@ function fixture(t: TestContext) {
     "packages/ziwei/package.json",
     "packages/ziwei/tsconfig.json",
     "packages/ziwei/rslib.config.ts",
-    "packages/ziwei-shared/package.json",
-    "packages/ziwei-shared/tsconfig.json",
-    "packages/ziwei-shared/rslib.config.ts",
     "mise.toml",
   ]) {
     const destination = join(root, path);

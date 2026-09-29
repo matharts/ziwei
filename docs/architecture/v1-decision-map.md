@@ -341,6 +341,7 @@
 | ID | 决策 | 状态 |
 | --- | --- | --- |
 | D-272 | 由 TypeScript 独立实现完整 V1 排盘与查询领域能力，直接替换现有 npm 包 `@matharts/ziwei` 并继续使用其包身份；不新增 `@matharts/ziwei-ts` 或仅转发的兼容包。TypeScript 实现须自行计算，不依赖 Rust/Wasm 运行规则。 | 2026-09-28 用户确认“取消 wasm，ts 自己实现”，选择先修订计划后要求并发执行；明确由 TypeScript 直接替换现有 `@matharts/ziwei`、不新增包。执行期间已删除 Rust Node 绑定及 Wasm 绑定／包源码；TypeScript 独立实现和完整验收仍在进行，未发布，未确认远端 CI 通过。D-267 的 Wasm／浏览器路线、D-268 的移动 WebView Wasm 路线与 D-269 的 Node／Wasm 双消费包共享方向由本决策取代；Android／OpenHarmony 原生绑定仍按 D-268 保持暂停。 |
+| D-273 | `@matharts/ziwei` 的 TypeScript 公开 API 与排盘引擎从零重写，以 Rust crate 的公开领域能力为功能清单，采用 TypeScript 的只读属性、camelCase 查询方法和异常表示；不继承旧 Node API 的对象形状。Rust `Palace::star` 对应 `palace.star`，旧门面附加的 `natal.palaceStar` 与 `toJSON` 不属于新合同。旧共享投影包不再是运行或构建依赖。 | 2026-09-28 用户明确指出现有 TS 库未按 Rust crate 公开 API 实现，并确认“公开 API 和引擎都重写”。新实现及验证在独立工作树进行，完整覆盖和发布状态以[实现状态表](implementations.md)及本次检查为准。 |
 
 ## 暂缓决策
 

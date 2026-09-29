@@ -62,13 +62,6 @@ const tasks: Record<
     path: "bin/rslib.js",
     args: ["build"],
   },
-  "build:shared": {
-    cwd: "packages/ziwei-shared",
-    package: "@rslib/core",
-    bin: "rslib",
-    path: "bin/rslib.js",
-    args: ["build"],
-  },
   "test:node": {
     cwd: ".",
     package: "@rstest/core",
@@ -236,9 +229,9 @@ for (const activated of [true, false]) {
     );
     assert.ifError(blocked.error);
     assert.equal(blocked.status, 19, blocked.stderr);
-    // check:node traverses the shared and package builds, tests, and type checks.
+    // check:node traverses the package build, tests, and type checks.
     for (const [task, expected] of [
-      ["check:node", ["build:shared", "build:node:ts", "test:node", "check:node:types"]],
+      ["check:node", ["build:node:ts", "test:node", "check:node:types"]],
       ["check:typescript", ["check:typescript"]],
       ["lint:node", ["lint:node"]],
       ["lint:node:fix", ["lint:node:fix"]],
@@ -355,19 +348,15 @@ test("leaf tasks preserve CLI options while building only required dependencies"
     assert.equal(result.status, 0, result.stderr);
     assert.deepEqual(
       rows(result.stdout).map((row) => row.args),
-      [
-        ...(task === "test:node" ? [] : [tasks["build:shared"].args]),
-        [...tasks[task].args, ...args],
-      ],
+      [[...tasks[task].args, ...args]],
     );
   }
 });
 
 for (const [failed, expected] of [
-  ["build:shared", []],
-  ["build:node:ts", ["build:shared"]],
-  ["test:node", ["build:shared", "build:node:ts"]],
-  ["check:node:types", ["build:shared", "build:node:ts", "test:node"]],
+  ["build:node:ts", []],
+  ["test:node", ["build:node:ts"]],
+  ["check:node:types", ["build:node:ts", "test:node"]],
 ] as const) {
   test(`a ${failed} failure preserves diagnostics and stops subsequent checks`, (t) => {
     const { run, cliPaths } = fixture(t, { activated: false });
@@ -385,11 +374,3 @@ for (const [failed, expected] of [
     );
   });
 }
-
-test("a failed shared build prevents the Node TypeScript build", (t) => {
-  const { run, cliPaths } = fixture(t);
-  writeFileSync(cliPaths["build:shared"], "process.exit(23);\n");
-  const result = run(["run", "build:node:ts"]);
-  assert.equal(result.status, 23);
-  assert.deepEqual(rows(result.stdout), []);
-});

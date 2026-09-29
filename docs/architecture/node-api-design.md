@@ -1,6 +1,6 @@
 # Node.js / TypeScript 适配层设计
 
-> **历史资料**：此文记录原生 Node 适配层的历史设计。当前 `@matharts/ziwei` 已改为纯 TypeScript 实现；公开行为请核对[领域合同](domain-contract.md)、[实现状态](implementations.md)和包测试。
+> **历史资料**：此文记录原生 Node 适配层及其旧 TypeScript 门面的设计。D-273 已从零重写纯 TypeScript API 与引擎；现行公开接口见 [TypeScript API](typescript-api.md)，领域行为见[领域合同](domain-contract.md)，验证范围见[实现状态](implementations.md)。
 
 本文说明已实现的 Node API 合同：输入、查询、只读数据、对象身份、错误与生命周期。构建和使用见 [Node 包说明](../../packages/ziwei/README.md)，当前范围与待交付内容见 [README](../../README.md#范围)。本机验收和优化记录保留在后文，不代表当前提交的远端 CI、全部平台或性能结论。
 
@@ -21,7 +21,7 @@
 
 采用持有 Rust 核心的 `Natal` 门面，加普通深层只读数据快照。事实读取用属性，定位、聚合与限运用方法；保留核心全部查询能力。单项查询不依赖全盘快照，只有 `profile`、`palaces` 这两个不可变对象属性按实例惰性保存。
 
-- [设计声明](node-api/index.d.ts)：已确认的导出、输入、字段、查询与错误合同。实际包的手写类型位于 [types.ts](../../packages/ziwei/src/types.ts)，消费端使用构建生成的声明。
+- [历史设计声明](node-api/index.d.ts)：旧 Node 门面的导出、输入、字段、查询与错误合同。旧 `src/types.ts` 已退役；现行类型由 [TypeScript 包根](../../packages/ziwei/src/index.ts)导出，消费端使用构建生成的声明。
 
 - [完整调用用例](node-api/examples.ts)：两类输入、十二宫、宫内与全盘查星、四化、大限、流年和错误处理。
 

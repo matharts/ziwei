@@ -217,9 +217,6 @@ importers:
 
   packages/ziwei:
     devDependencies:
-      '@matharts/ziwei-shared':
-        specifier: workspace:*
-        version: link:../ziwei-shared
       '@microsoft/api-extractor':
         specifier: 'catalog:'
         version: 7.59.1(@types/node@24.13.4)
@@ -229,18 +226,6 @@ importers:
       playwright:
         specifier: 'catalog:'
         version: 1.63.0
-      typescript:
-        specifier: 'catalog:'
-        version: 7.0.2
-
-  packages/ziwei-shared:
-    devDependencies:
-      '@microsoft/api-extractor':
-        specifier: 'catalog:'
-        version: 7.59.1(@types/node@24.13.4)
-      '@rslib/core':
-        specifier: 'catalog:'
-        version: 1.0.0(@microsoft/api-extractor@7.59.1(@types/node@24.13.4))(typescript@7.0.2)
       typescript:
         specifier: 'catalog:'
         version: 7.0.2

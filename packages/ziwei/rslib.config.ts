@@ -10,7 +10,7 @@ export default defineConfig({
       format: "esm",
       bundle: true,
       syntax: "es2022",
-      dts: { bundle: { bundledPackages: ["@matharts/ziwei-shared"] }, abortOnError: true },
+      dts: { bundle: true, abortOnError: true },
     },
   ],
   output: {

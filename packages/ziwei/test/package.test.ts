@@ -73,12 +73,12 @@ test("the packed TypeScript package is a clean Node consumer with no native runt
   );
 
   const consumerSource = `
-    import { Ziwei, Branch, StarName, type Natal, type NatalSnapshot } from '@matharts/ziwei';
+    import { Ziwei, Branch, StarName, type Natal, type Palace } from '@matharts/ziwei';
     const natal: Natal = Ziwei.fromBirth({ gender: 1, birthYear: 1984, birthMonth: 1, birthDay: 6, birthHour: Branch.Zi });
-    const snapshot: NatalSnapshot = natal.toJSON();
+    const palace: Palace = natal.palace(Branch.Yin);
     const star = natal.star(StarName.WuQu);
     const name: string = star.nameHans;
-    void snapshot; void name;
+    void palace; void name;
   `;
   const esmSource = join(directory, "consumer.ts");
   const cjsSource = join(directory, "consumer.cts");

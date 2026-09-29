@@ -14,7 +14,7 @@
 
 - **领域与架构**：探索或变更领域概念、术语、历法规则、分析语义或架构，读取 [领域文档](docs/agents/domain.md)。
 
-- **TypeScript 包**：修改 `packages/ziwei`、`packages/ziwei-shared` 或相关测试与配置时，读取 [TypeScript 包约定](packages/ziwei/AGENTS.md)；涉及公开 API 或领域语义时，再读取 [领域合同](docs/architecture/domain-contract.md)与[实现状态表](docs/architecture/implementations.md)。
+- **TypeScript 包**：修改 `packages/ziwei` 或相关测试与配置时，读取 [TypeScript 包约定](packages/ziwei/AGENTS.md)；涉及公开 API 或领域语义时，再读取 [领域合同](docs/architecture/domain-contract.md)与[实现状态表](docs/architecture/implementations.md)。
 
 - **浏览器消费**：修改 `@matharts/ziwei` 的浏览器入口、Worker 验证或分发时，同时核对 [TypeScript 包约定](packages/ziwei/AGENTS.md)及真实浏览器测试。
 

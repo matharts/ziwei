@@ -20,7 +20,7 @@
 | `bindings/node` 调用 Rust | 已移除绑定源码与原生产物流程；Rust 领域核心仍独立保留 |
 | `bindings/wasm`、`packages/ziwei-wasm` 曾在仓库中 | 已移除 Wasm 专属源码、包、任务和 CI |
 | `packages/ziwei` 曾为 Node 原生消费包 | 保持 `@matharts/ziwei` 包身份和根入口，内部改为纯 TypeScript 并增加浏览器消费验收 |
-| `packages/ziwei-shared` 共享 JavaScript 输入、错误与只读投影 | 保持现有适配职责；不能直接提升为跨语言规则核心 |
+| `packages/ziwei-shared` 曾共享 JavaScript 输入、错误与只读投影 | 纯 TypeScript 包独立实现后已删除；不再承担适配职责，也不是跨语言规则核心 |
 | `CONTEXT.md`、V1 决策表、适配合同记载领域语义 | 明确各文档职责，提取语言无关合同，避免复制成多份权威文本 |
 | Rust 固定命例已有独立手算预期 | 提取为语言无关数据，保留来源和推导，不由引擎输出重写预期 |
 
@@ -43,7 +43,7 @@ crates/ziwei/                现有 Rust 原生实现
 packages/ziwei/             改造现有 @matharts/ziwei 为纯 TypeScript 领域实现和消费包
 ```
 
-上图是当前主要布局，省略私有 TypeScript 共享模块；新增文件随相应阶段落地。`@matharts/ziwei` 公开 API 以既有合同及类型测试核对；未来 Kotlin、Swift、Go、Python 等不预定顺序或目录。
+上图记录 D-273 之前的布局。`@matharts/ziwei` 现行公开 API 以 [TypeScript API](typescript-api.md) 与类型测试核对；未来 Kotlin、Swift、Go、Python 等不预定顺序或目录。
 
 ## 阶段一：明确规格权威与实现边界
 
@@ -95,7 +95,7 @@ packages/ziwei/             改造现有 @matharts/ziwei 为纯 TypeScript 领�
 
 ## 阶段四：实现独立 TypeScript 引擎
 
-**进入条件**：语言与包身份已选定：TypeScript 直接实现 `@matharts/ziwei`，让 Node 和浏览器运行同一套不依赖 Rust、FFI 或 Wasm 的排盘规则。公开 API 以现有合同为起点；原生句柄相关的内部行为不继承。
+**进入条件**：语言与包身份已选定：TypeScript 直接实现 `@matharts/ziwei`，让 Node 和浏览器运行同一套不依赖 Rust、FFI 或 Wasm 的排盘规则。D-273 又确认公开 API 与规则实现从零重写，以 Rust crate 的公开领域能力为清单；原生句柄和旧 Node 门面的对象形状不继承。
 
 TypeScript 独立实现两类建盘、完整本命事实、只读查询、四化与期间计算；Node 和浏览器直接运行同一实现。现有类型、名称和只读投影只有在不引入 Rust／Wasm 依赖且职责合适时复用，不把新规则混入现有适配共享层。
 
@@ -144,6 +144,6 @@ A → E 已按本地开发顺序推进。完整 V1 的共享 conformance 覆盖�
 - [当前 Rust 与适配层架构](rust-package-design.md)
 - [当前适配合同](adapter-contract.md)
 - [固定规则样例及推导](../../crates/ziwei/tests/fixtures/README.md)
-- [现有 JavaScript 适配共享层](../../packages/ziwei-shared/README.md)
+- 历史 JavaScript 适配共享层已随 D-273 重写退役；当前入口见 [TypeScript API](typescript-api.md)。
 - [工程验证规则](../agents/engineering.md)
 - [性能基准规范](../engineering/benchmarks.md)

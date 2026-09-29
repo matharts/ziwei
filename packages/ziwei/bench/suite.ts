@@ -14,20 +14,34 @@ declare global {
 export type Protocol = ReturnType<typeof protocol>;
 export type Sample = ReturnType<typeof sampleOrder>[number];
 
-export const suite = { id: "ziwei-typescript-node-public-512", version: 2 };
+export const suite = { id: "ziwei-typescript-node-public-512", version: 12 };
 export const corpusHash = "2cbeaeef0fc8b448d4f4dc89e7f10012bb9c2a88fcfd1ede763bd08afdae9f92";
 const counts = {
   fromBirth: 16384,
   fromParameters: 16384,
   birthAndFirstPalaces: 1024,
-  birthAndToJSON: 1024,
-  birthAndStringify: 1024,
+  birthAndFirstPalace: 1024,
+  birthAndFirstPalaceByStar: 1024,
+  birthAndFirstStar: 1024,
+  birthAndFirstBirthTransformations: 1024,
+  birthAndFirstSelfTransformations: 1024,
+  birthAndFirstSanfang: 1024,
+  birthAndSanfangThenPalaces: 1024,
+  lifecycleBirth: 512,
+  lifecycleParameters: 512,
+  birthAndFacts: 1024,
+  birthAndFirstPalaceTransformation: 1024,
+  birthAndFirstPalaceTransformations: 1024,
+  palaceStar: 16384,
   hotPalaces: 131072,
   star: 16384,
   birthTransformations: 2048,
   selfTransformations: 1024,
+  palaceTransformation: 16384,
   palaceTransformations: 16384,
+  palaceTransformationSources: 4096,
   decade: 4096,
+  decadeYears: 4096,
   yearly: 4096,
 };
 
@@ -102,7 +116,7 @@ function resourceState() {
 
 async function measure(smoke: boolean) {
   assert.ok(global.gc, "基准必须以 --expose-gc 运行");
-  const { Ziwei, StarName } = await import("@matharts/ziwei");
+  const { Ziwei, Branch, StarName } = await import("@matharts/ziwei");
   const inputs = corpus();
   assert.equal(hash(inputs), corpusHash, "固定输入语料发生变化");
   const { births, parameters } = inputs;
@@ -129,18 +143,66 @@ async function measure(smoke: boolean) {
     }).star("WuQu").birthTransformation,
     "C",
   );
+  const lifecycle = (chart: ReturnType<typeof Ziwei.fromBirth>, index: number) => {
+    let checksum = chart.palaces.length;
+    for (const name of StarName.ALL) {
+      checksum += chart.palaceByStar(name).branch;
+      checksum += chart.star(name).name.length;
+    }
+    checksum += chart.birthTransformations().length;
+    checksum += chart.selfTransformations().length;
+    for (const source of Branch.ALL) {
+      checksum += chart.palaceTransformations(source).length;
+      checksum += chart.palaceTransformationSources(source).length;
+    }
+    checksum += chart.decadeYears(index % 12).length;
+    return [chart, checksum];
+  };
   const operations: Record<string, (index: number) => unknown> = {
     fromBirth: (i) => Ziwei.fromBirth(births[i & 511]),
     fromParameters: (i) => Ziwei.fromParameters(parameters[i & 511]),
     birthAndFirstPalaces: (i) => Ziwei.fromBirth(births[i & 511]).palaces,
-    birthAndToJSON: (i) => Ziwei.fromBirth(births[i & 511]).toJSON(),
-    birthAndStringify: (i) => JSON.stringify(Ziwei.fromBirth(births[i & 511])),
+    birthAndFirstPalace: (i) => Ziwei.fromBirth(births[i & 511]).palace((i % 12) as Branch),
+    birthAndFirstPalaceByStar: (i) =>
+      Ziwei.fromBirth(births[i & 511]).palaceByStar(StarName.ALL[i % 18]),
+    birthAndFirstStar: (i) => Ziwei.fromBirth(births[i & 511]).star(StarName.ALL[i % 18]),
+    birthAndFirstBirthTransformations: (i) =>
+      Ziwei.fromBirth(births[i & 511]).birthTransformations(),
+    birthAndFirstSelfTransformations: (i) => Ziwei.fromBirth(births[i & 511]).selfTransformations(),
+    birthAndFirstSanfang: (i) =>
+      Ziwei.fromBirth(births[i & 511]).sanfangPalaces(
+        (i % 12) as Branch,
+        Math.floor(i / 12) % 2 === 0,
+      ),
+    birthAndSanfangThenPalaces: (i) => {
+      const chart = Ziwei.fromBirth(births[i & 511]);
+      chart.sanfangPalaces((i % 12) as Branch, Math.floor(i / 12) % 2 === 0);
+      return chart.palaces;
+    },
+    lifecycleBirth: (i) => lifecycle(Ziwei.fromBirth(births[i & 511]), i),
+    lifecycleParameters: (i) => lifecycle(Ziwei.fromParameters(parameters[i & 511]), i),
+    birthAndFacts: (i) => {
+      const natal = Ziwei.fromBirth(births[i & 511]);
+      return [natal.profile, natal.palaces, natal.fiveElementBureau];
+    },
+    birthAndFirstPalaceTransformation: (i) =>
+      Ziwei.fromBirth(births[i & 511]).palaceTransformation((i % 12) as Branch, "C"),
+    birthAndFirstPalaceTransformations: (i) =>
+      Ziwei.fromBirth(births[i & 511]).palaceTransformations((i % 12) as Branch),
+    palaceStar: (i) => {
+      const chart = charts[i & 1023];
+      return chart.palaces[i % 12].star(StarName.ALL[i % 18]);
+    },
     hotPalaces: (i) => charts[i & 1023].palaces,
     star: (i) => charts[i & 1023].star(StarName.ALL[i % 18]),
     birthTransformations: (i) => charts[i & 1023].birthTransformations(),
     selfTransformations: (i) => charts[i & 1023].selfTransformations(),
+    palaceTransformation: (i) => charts[i & 1023].palaceTransformation((i % 12) as Branch, "C"),
     palaceTransformations: (i) => charts[i & 1023].palaceTransformations((i % 12) as Branch),
+    palaceTransformationSources: (i) =>
+      charts[i & 1023].palaceTransformationSources((i % 12) as Branch),
     decade: (i) => charts[i & 1023].decade(i % 12),
+    decadeYears: (i) => charts[i & 1023].decadeYears(i % 12),
     yearly: (i) => charts[i & 1023].yearly(i % 12, i % 10),
   };
   const nativeLibraries = Object.keys(createRequire(import.meta.url).cache).filter((path) =>
